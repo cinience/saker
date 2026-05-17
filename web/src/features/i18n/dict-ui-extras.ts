@@ -90,6 +90,7 @@ export const dictUiExtras = {
   "question.other": { en: "Other", zh: "其他" },
   "question.otherPlaceholder": { en: "Enter your answer...", zh: "输入你的答案…" },
   "question.submit": { en: "Submit", zh: "提交" },
+  "question.submitted": { en: "Answer submitted", zh: "答案已提交" },
 
   // -- Layout --
   "layout.skipToMain": { en: "Skip to main content", zh: "跳转到主要内容" },

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback } from "react";
+import { useAgent, UseAgentUpdate } from "@copilotkit/react-core/v2";
 import type { Thread, SkillInfo } from "@/features/rpc/types";
 import { ThreadPanel } from "./ThreadPanel";
 import { EmptyState } from "./EmptyState";
@@ -8,6 +9,8 @@ import { useT } from "@/features/i18n";
 import { CopilotChat } from "@copilotkit/react-ui";
 import "@copilotkit/react-ui/styles.css";
 import "./copilot-theme.css";
+import { StatusBar } from "./StatusBar";
+import type { TurnStatus } from "./chatUtils";
 
 export interface ChatMainViewProps {
   isMobile: boolean;
@@ -20,6 +23,7 @@ export interface ChatMainViewProps {
   deleteThread: (id: string) => void;
   panelCollapsed: boolean;
   wsHealthy: boolean;
+  turnStatus: TurnStatus;
   onAutoCreateThread: (title: string) => Promise<void>;
   skills: SkillInfo[];
 }
@@ -46,10 +50,13 @@ export function ChatMainView({
   deleteThread,
   panelCollapsed,
   wsHealthy,
+  turnStatus,
   onAutoCreateThread,
   skills,
 }: ChatMainViewProps) {
   const { t } = useT();
+  const { agent } = useAgent({ updates: [UseAgentUpdate.OnRunStatusChanged] });
+  const effectiveTurnStatus: TurnStatus = agent?.isRunning ? "running" : turnStatus;
 
   const handleSubmitMessage = useCallback(
     async (text: string) => {
@@ -100,6 +107,9 @@ export function ChatMainView({
             />
           </div>
         )}
+        <div className="chat-main-status">
+          <StatusBar connected={wsHealthy} turnStatus={effectiveTurnStatus} />
+        </div>
         <CopilotChat
           className={`saker-copilot-chat${activeThreadId ? " saker-copilot-chat--active" : ""}`}
           onSubmitMessage={handleSubmitMessage}

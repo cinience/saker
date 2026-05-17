@@ -16,12 +16,15 @@ function resolveApiBase(): string {
 
 async function postHitlResponse(runId: string, path: string, body: Record<string, unknown>) {
   const base = resolveApiBase();
-  await fetch(`${base}/v1/agents/run/${runId}/${path}`, {
+  const resp = await fetch(`${base}/v1/agents/run/${runId}/${path}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     credentials: "include",
     body: JSON.stringify(body),
   });
+  if (!resp.ok) {
+    throw new Error(`HITL response failed: ${resp.status} ${resp.statusText}`);
+  }
 }
 
 export function useApprovalAction() {
@@ -45,8 +48,8 @@ export function useApprovalAction() {
         reason: (args.reason as string) ?? "",
       };
 
-      const onRespond = (id: string, decision: "allow" | "deny") => {
-        postHitlResponse(args.run_id as string, "approval", {
+      const onRespond = async (id: string, decision: "allow" | "deny") => {
+        await postHitlResponse(args.run_id as string, "approval", {
           approval_id: id,
           decision,
         });
@@ -84,8 +87,8 @@ export function useQuestionAction() {
       };
 
       const onRespond = useCallback(
-        (id: string, answers: Record<string, string>) => {
-          postHitlResponse(args.run_id as string, "answer", {
+        async (id: string, answers: Record<string, string>) => {
+          await postHitlResponse(args.run_id as string, "answer", {
             question_id: id,
             answers,
           });
