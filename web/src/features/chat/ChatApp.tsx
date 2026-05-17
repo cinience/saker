@@ -165,6 +165,11 @@ export function ChatApp({ authRequired, authenticated, onLogin, onLogout, authPr
     activeThreadId || undefined
   );
 
+  useEffect(() => {
+    if (activeView === "canvas") return;
+    rpcRef.current?.disconnect();
+  }, [activeView]);
+
   // Initialize RPC client.
   useEffect(() => {
     const rpc = new RPCClient(resolveWsUrl());
@@ -324,9 +329,9 @@ export function ChatApp({ authRequired, authenticated, onLogin, onLogout, authPr
       setThreads(list);
       const { threadId } = parseHash();
       if (threadId) {
-        // Subscribe lazily — switchThread calls rpc.request("thread/subscribe")
-        // which triggers ensureConnected. Intentional: a deep-link visitor
-        // gets streaming as soon as they land on a real thread.
+        // Chat deep links should not open the WebSocket; CopilotKit loads
+        // history via AG-UI HTTP/SSE. Canvas still subscribes when the active
+        // hash view is canvas because it needs realtime canvas/tool updates.
         switchThreadRef.current?.(threadId);
       }
 
@@ -440,13 +445,15 @@ export function ChatApp({ authRequired, authenticated, onLogin, onLogout, authPr
   const switchThread = useCallback(
     async (threadId: string) => {
       if (!requireAuth()) return;
-      const rpc = rpcRef.current;
-      if (!rpc) return;
 
       // Detect reconnect: same thread being re-subscribed after server restart.
       const isReconnect = threadId === activeThreadId;
+      const currentView = parseHash().view;
+      const viewForHash = currentView === "skills" || currentView === "settings" ? "chats" : currentView;
+      const needsStreamingSubscription = viewForHash === "canvas";
+      const rpc = rpcRef.current;
 
-      if (activeThreadId && !isReconnect) {
+      if (needsStreamingSubscription && rpc && activeThreadId && !isReconnect) {
         rpc
           .request("thread/unsubscribe", { threadId: activeThreadId })
           .catch(() => {});
@@ -454,8 +461,6 @@ export function ChatApp({ authRequired, authenticated, onLogin, onLogout, authPr
 
       setActiveThreadId(threadId);
       // Sync thread ID into URL hash (preserve current view).
-      const currentView = parseHash().view;
-      const viewForHash = currentView === "skills" || currentView === "settings" ? "chats" : currentView;
       window.location.hash = `${viewForHash}/${threadId}`;
       if (viewForHash !== currentView) {
         setActiveViewRaw(viewForHash);
@@ -474,11 +479,16 @@ export function ChatApp({ authRequired, authenticated, onLogin, onLogout, authPr
         // Save current thread's canvas before clearing — resetCanvas() sets
         // intentionalClear which would cause the bridge effect's deferred
         // saveToServer to overwrite the previous thread's data with empty state.
-        if (activeThreadId) {
+        if (activeThreadId && rpc?.connected) {
           saveToServer(rpc, activeThreadId).catch(() => {});
         }
         resetCanvas();
       }
+
+      if (!needsStreamingSubscription) {
+        return;
+      }
+      if (!rpc) return;
 
       try {
         const result = await rpc.request<{ items: ThreadItem[] }>(

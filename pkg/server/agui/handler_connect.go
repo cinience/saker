@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -93,6 +94,9 @@ func convertMessages(msgs []conversation.Message) []aguitypes.Message {
 	out := make([]aguitypes.Message, 0, len(msgs))
 	for i := range msgs {
 		m := &msgs[i]
+		if shouldSkipHistoryMessage(m, out) {
+			continue
+		}
 		am := aguitypes.Message{
 			ID:         strconv.FormatInt(m.ID, 10),
 			Role:       aguitypes.Role(m.Role),
@@ -105,6 +109,25 @@ func convertMessages(msgs []conversation.Message) []aguitypes.Message {
 		out = append(out, am)
 	}
 	return out
+}
+
+func shouldSkipHistoryMessage(m *conversation.Message, out []aguitypes.Message) bool {
+	if m == nil {
+		return true
+	}
+	content := strings.TrimSpace(m.Content)
+	if m.Role == "user" && strings.HasPrefix(content, "[System] You asked questions in plain text.") {
+		return true
+	}
+	if len(out) == 0 {
+		return false
+	}
+	prev := out[len(out)-1]
+	return string(prev.Role) == m.Role &&
+		strings.TrimSpace(fmt.Sprint(prev.Content)) == content &&
+		prev.ToolCallID == m.ToolCallID &&
+		len(prev.ToolCalls) == 0 &&
+		len(m.ToolCalls) == 0
 }
 
 // convertToolCalls deserializes the stored [{id, name, arguments}] JSON
