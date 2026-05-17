@@ -348,6 +348,56 @@ func TestCopilotKitAPI_ConnectWithHistory(t *testing.T) {
 		len(snapshot.Messages), snapshot.Messages[0].Content, snapshot.Messages[1].Content)
 }
 
+func TestCopilotKitAPI_ConnectCleansLegacyDuplicateHistory(t *testing.T) {
+	ts, cs := setupTestGateway(t)
+
+	threadID := "thread_legacy_dirty"
+	_, _ = cs.CreateThreadWithID(context.Background(),
+		threadID, "default", "localhost", "Legacy Dirty", "agui")
+	turnID, _ := cs.OpenTurn(context.Background(), threadID, "")
+
+	for i := 0; i < 3; i++ {
+		cs.AppendEvent(context.Background(), conversation.AppendEventInput{
+			ThreadID: threadID, ProjectID: "default", TurnID: turnID,
+			Kind: conversation.EventKindUserMessage, ContentText: "生成一张图片",
+		})
+	}
+	cs.AppendEvent(context.Background(), conversation.AppendEventInput{
+		ThreadID: threadID, ProjectID: "default", TurnID: turnID,
+		Kind:        conversation.EventKindUserMessage,
+		ContentText: "[System] You asked questions in plain text. You MUST reformat them using the ask_user_question tool with structured options. Call the tool now.",
+	})
+	cs.AppendEvent(context.Background(), conversation.AppendEventInput{
+		ThreadID: threadID, ProjectID: "default", TurnID: turnID,
+		Kind: conversation.EventKindAssistantText, ContentText: "好的，已生成。",
+	})
+
+	resp := postJSON(t, ts.URL+"/v1/agents/run", map[string]any{
+		"method": "agent/connect",
+		"body":   map[string]any{"threadId": threadID, "runId": "run_dirty"},
+	})
+
+	events := parseSSEEvents(t, resp)
+	var snapshot struct {
+		Messages []struct {
+			Role    string `json:"role"`
+			Content string `json:"content"`
+		} `json:"messages"`
+	}
+	if err := json.Unmarshal([]byte(events[1].Data), &snapshot); err != nil {
+		t.Fatalf("parse snapshot: %v", err)
+	}
+	if len(snapshot.Messages) != 2 {
+		t.Fatalf("expected cleaned user+assistant messages, got %d: %+v", len(snapshot.Messages), snapshot.Messages)
+	}
+	if snapshot.Messages[0].Role != "user" || snapshot.Messages[0].Content != "生成一张图片" {
+		t.Fatalf("unexpected first message: %+v", snapshot.Messages[0])
+	}
+	if snapshot.Messages[1].Role != "assistant" {
+		t.Fatalf("unexpected second message: %+v", snapshot.Messages[1])
+	}
+}
+
 // 8. agent/connect — thread with tool calls
 func TestCopilotKitAPI_ConnectWithToolCalls(t *testing.T) {
 	ts, cs := setupTestGateway(t)

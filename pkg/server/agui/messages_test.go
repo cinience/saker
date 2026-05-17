@@ -21,6 +21,9 @@ func TestMessagesToRequest_SimpleUser(t *testing.T) {
 	if req.SessionID != "thread_1" {
 		t.Errorf("SessionID = %q, want thread_1", req.SessionID)
 	}
+	if !req.Ephemeral {
+		t.Error("Ephemeral should be true so AG-UI does not double-persist runtime history")
+	}
 }
 
 func TestMessagesToRequest_LastUserMessage(t *testing.T) {

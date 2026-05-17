@@ -33,6 +33,11 @@ func messagesToRequest(input aguitypes.RunAgentInput, identity Identity) api.Req
 	req := api.Request{
 		Prompt:    prompt,
 		SessionID: input.ThreadID,
+		// AG-UI owns persistence for this HTTP stream. Leaving runtime-level
+		// history persistence enabled records the same turn a second time from
+		// the internal model history, including tool repair prompts that were
+		// never shown in the web chat.
+		Ephemeral: true,
 	}
 	if identity.Username != "" {
 		req.User = identity.Username

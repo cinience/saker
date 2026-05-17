@@ -33,6 +33,7 @@ export class RPCClient {
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private reconnectAttempt = 0;
   private _connected = false;
+  private intentionalDisconnect = false;
   private projectIdProvider: ProjectIdProvider | null = null;
 
   constructor(url: string) {
@@ -53,6 +54,7 @@ export class RPCClient {
   }
 
   connect() {
+    this.intentionalDisconnect = false;
     if (
       this.ws &&
       (this.ws.readyState === WebSocket.OPEN ||
@@ -76,7 +78,9 @@ export class RPCClient {
       const err = new Error("WebSocket disconnected");
       for (const p of this.pending.values()) p.reject(err);
       this.pending.clear();
-      this.scheduleReconnect();
+      if (!this.intentionalDisconnect) {
+        this.scheduleReconnect();
+      }
     };
 
     this.ws.onerror = (event) => {
@@ -90,6 +94,7 @@ export class RPCClient {
   }
 
   disconnect() {
+    this.intentionalDisconnect = true;
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
