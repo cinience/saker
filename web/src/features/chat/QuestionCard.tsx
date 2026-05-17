@@ -5,7 +5,7 @@ import { useT } from "@/features/i18n";
 
 interface Props {
   question: QuestionRequest;
-  onRespond: (id: string, answers: Record<string, string>) => void;
+  onRespond: (id: string, answers: Record<string, string>) => void | Promise<void>;
 }
 
 export function QuestionCard({ question, onRespond }: Props) {
@@ -14,9 +14,12 @@ export function QuestionCard({ question, onRespond }: Props) {
   const [selections, setSelections] = useState<Record<string, string[]>>({});
   const [otherTexts, setOtherTexts] = useState<Record<string, string>>({});
   const [showOther, setShowOther] = useState<Record<string, boolean>>({});
+  const [submitting, setSubmitting] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
 
   const toggleOption = useCallback(
     (qText: string, label: string, multi: boolean) => {
+      if (submitting || submitted) return;
       setSelections((prev) => {
         const current = prev[qText] || [];
         if (multi) {
@@ -34,10 +37,11 @@ export function QuestionCard({ question, onRespond }: Props) {
         setOtherTexts((prev) => ({ ...prev, [qText]: "" }));
       }
     },
-    []
+    [submitting, submitted]
   );
 
   const toggleOther = useCallback((qText: string, multi: boolean) => {
+    if (submitting || submitted) return;
     setShowOther((prev) => {
       const next = !prev[qText];
       if (!next) {
@@ -48,7 +52,7 @@ export function QuestionCard({ question, onRespond }: Props) {
     if (!multi) {
       setSelections((prev) => ({ ...prev, [qText]: [] }));
     }
-  }, []);
+  }, [submitting, submitted]);
 
   const canSubmit = question.questions.every((q) => {
     const sel = selections[q.question] || [];
@@ -56,8 +60,8 @@ export function QuestionCard({ question, onRespond }: Props) {
     return sel.length > 0 || other;
   });
 
-  const handleSubmit = useCallback(() => {
-    if (!canSubmit) return;
+  const handleSubmit = useCallback(async () => {
+    if (!canSubmit || submitting || submitted) return;
     const answers: Record<string, string> = {};
     for (const q of question.questions) {
       const sel = selections[q.question] || [];
@@ -70,11 +74,18 @@ export function QuestionCard({ question, onRespond }: Props) {
         answers[q.question] = sel.join(", ");
       }
     }
-    onRespond(question.id, answers);
-  }, [canSubmit, question, selections, showOther, otherTexts, onRespond]);
+    setSubmitting(true);
+    try {
+      await onRespond(question.id, answers);
+      setSubmitted(true);
+    } catch (e) {
+      console.error("question response error:", e);
+      setSubmitting(false);
+    }
+  }, [canSubmit, submitting, submitted, question, selections, showOther, otherTexts, onRespond]);
 
   return (
-    <div className="question-card">
+    <div className={`question-card${submitted ? " question-card--submitted" : ""}`}>
       {question.questions.map((q, qi) => {
         const selected = selections[q.question] || [];
         const isOtherActive = showOther[q.question] || false;
@@ -91,6 +102,7 @@ export function QuestionCard({ question, onRespond }: Props) {
                     key={oi}
                     className={`question-option ${isSelected ? "selected" : ""}`}
                     onClick={() => toggleOption(q.question, opt.label, q.multiSelect)}
+                    disabled={submitting || submitted}
                   >
                     <span className="question-option-check">
                       {isSelected && <Check size={14} />}
@@ -107,6 +119,7 @@ export function QuestionCard({ question, onRespond }: Props) {
               <button
                 className={`question-option question-option-other ${isOtherActive ? "selected" : ""}`}
                 onClick={() => toggleOther(q.question, q.multiSelect)}
+                disabled={submitting || submitted}
               >
                 <span className="question-option-check">
                   {isOtherActive && <Check size={14} />}
@@ -126,6 +139,7 @@ export function QuestionCard({ question, onRespond }: Props) {
                 onKeyDown={(e) => {
                   if (e.key === "Enter") handleSubmit();
                 }}
+                disabled={submitting || submitted}
                 autoFocus
               />
             )}
@@ -133,13 +147,17 @@ export function QuestionCard({ question, onRespond }: Props) {
         );
       })}
       <div className="question-actions">
-        <button
-          className="question-submit-btn"
-          onClick={handleSubmit}
-          disabled={!canSubmit}
-        >
-          {t("question.submit")}
-        </button>
+        {submitted ? (
+          <div className="card-response-status">{t("question.submitted")}</div>
+        ) : (
+          <button
+            className="question-submit-btn"
+            onClick={handleSubmit}
+            disabled={!canSubmit || submitting}
+          >
+            {submitting ? t("common.submitting") : t("question.submit")}
+          </button>
+        )}
       </div>
     </div>
   );

@@ -1,10 +1,11 @@
+import { useState } from "react";
 import type { ApprovalRequest } from "@/features/rpc/types";
 import DOMPurify from "dompurify";
 import { useT } from "@/features/i18n";
 
 interface Props {
   approval: ApprovalRequest;
-  onRespond: (id: string, decision: "allow" | "deny") => void;
+  onRespond: (id: string, decision: "allow" | "deny") => void | Promise<void>;
 }
 
 function highlightJson(json: string): string {
@@ -28,8 +29,23 @@ function highlightJson(json: string): string {
 
 export function ApprovalCard({ approval, onRespond }: Props) {
   const { t } = useT();
+  const [submitting, setSubmitting] = useState<"allow" | "deny" | null>(null);
+  const [submitted, setSubmitted] = useState<"allow" | "deny" | null>(null);
+
+  const respond = async (decision: "allow" | "deny") => {
+    if (submitting || submitted) return;
+    setSubmitting(decision);
+    try {
+      await onRespond(approval.id, decision);
+      setSubmitted(decision);
+    } catch (e) {
+      console.error("approval response error:", e);
+      setSubmitting(null);
+    }
+  };
+
   return (
-    <div className="approval-card">
+    <div className={`approval-card${submitted ? " approval-card--submitted" : ""}`}>
       <div className="tool-info">
         <strong>{approval.tool_name}</strong> {t("approval.requiresApproval")}
       </div>
@@ -50,20 +66,26 @@ export function ApprovalCard({ approval, onRespond }: Props) {
             }}
           />
         )}
-      <div className="actions">
-        <button
-          className="btn-allow"
-          onClick={() => onRespond(approval.id, "allow")}
-        >
-          {t("approval.allow")}
-        </button>
-        <button
-          className="btn-deny"
-          onClick={() => onRespond(approval.id, "deny")}
-        >
-          {t("approval.deny")}
-        </button>
-      </div>
+      {submitted ? (
+        <div className="card-response-status">{t("approval.submitted")}</div>
+      ) : (
+        <div className="actions">
+          <button
+            className="btn-allow"
+            onClick={() => respond("allow")}
+            disabled={!!submitting}
+          >
+            {submitting === "allow" ? t("common.submitting") : t("approval.allow")}
+          </button>
+          <button
+            className="btn-deny"
+            onClick={() => respond("deny")}
+            disabled={!!submitting}
+          >
+            {submitting === "deny" ? t("common.submitting") : t("approval.deny")}
+          </button>
+        </div>
+      )}
     </div>
   );
 }

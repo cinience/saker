@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useLayoutEffect, useRef } from "react";
-import { useCopilotContext } from "@copilotkit/react-core";
+import { useAgent, UseAgentUpdate } from "@copilotkit/react-core/v2";
 
 const RUNTIME_URL =
   typeof window !== "undefined"
@@ -22,20 +22,15 @@ interface SnapshotMessage {
   toolCallId?: string;
 }
 
-function getAgent(ctx: ReturnType<typeof useCopilotContext>) {
-  const copilotkit = (ctx as any).copilotkit ?? ctx;
-  return typeof copilotkit.getAgent === "function"
-    ? copilotkit.getAgent("default")
-    : null;
-}
-
 export function useCopilotThreadSync(threadId: string) {
-  const ctx = useCopilotContext();
+  const { agent } = useAgent({
+    updates: [UseAgentUpdate.OnMessagesChanged, UseAgentUpdate.OnRunStatusChanged],
+  });
   const prevThreadIdRef = useRef<string | null>(null);
-  const loadingRef = useRef(false);
+  const prevAgentRef = useRef<typeof agent | null>(null);
+  const loadSeqRef = useRef(0);
 
   useLayoutEffect(() => {
-    const agent = getAgent(ctx);
     if (!agent) return;
 
     if (threadId) {
@@ -45,35 +40,39 @@ export function useCopilotThreadSync(threadId: string) {
     if (threadId !== prevThreadIdRef.current && prevThreadIdRef.current !== null) {
       agent.setMessages([]);
     }
-  }, [threadId, ctx]);
+  }, [threadId, agent]);
 
   useEffect(() => {
-    if (threadId === prevThreadIdRef.current) return;
-    prevThreadIdRef.current = threadId;
-
-    if (!threadId) return;
-    if (loadingRef.current) return;
-
-    const agent = getAgent(ctx);
     if (!agent) return;
+    if (!threadId) {
+      prevThreadIdRef.current = threadId;
+      prevAgentRef.current = agent;
+      return;
+    }
 
-    loadingRef.current = true;
+    const sameThread = threadId === prevThreadIdRef.current;
+    const sameAgent = agent === prevAgentRef.current;
+    if (sameThread && sameAgent) return;
+
+    prevThreadIdRef.current = threadId;
+    prevAgentRef.current = agent;
+
+    const loadSeq = ++loadSeqRef.current;
 
     fetchMessagesViaConnect(threadId)
       .then((msgs) => {
         if (
-          msgs.length > 0 &&
+          loadSeqRef.current === loadSeq &&
           prevThreadIdRef.current === threadId &&
-          agent &&
           !agent.isRunning
         ) {
           agent.setMessages(msgs as any);
         }
       })
-      .finally(() => {
-        loadingRef.current = false;
+      .catch((err) => {
+        console.warn("copilot thread sync failed:", err);
       });
-  }, [threadId, ctx]);
+  }, [threadId, agent]);
 }
 
 async function fetchMessagesViaConnect(

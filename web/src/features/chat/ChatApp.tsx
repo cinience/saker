@@ -323,7 +323,7 @@ export function ChatApp({ authRequired, authenticated, onLogin, onLogout, authPr
       const list = threadsRes.threads || [];
       setThreads(list);
       const { threadId } = parseHash();
-      if (threadId && list.some((t) => t.id === threadId)) {
+      if (threadId) {
         // Subscribe lazily — switchThread calls rpc.request("thread/subscribe")
         // which triggers ensureConnected. Intentional: a deep-link visitor
         // gets streaming as soon as they land on a real thread.
@@ -1079,6 +1079,7 @@ export function ChatApp({ authRequired, authenticated, onLogin, onLogout, authPr
           deleteThread={deleteThread}
           panelCollapsed={panelCollapsed}
           wsHealthy={wsHealthy}
+          turnStatus={turnStatus}
           onAutoCreateThread={handleAutoCreateThread}
           skills={skills}
         />

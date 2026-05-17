@@ -45,6 +45,7 @@ export const dictCore = {
   "status.waiting": { en: "Waiting for approval", zh: "等待审批" },
   "status.error": { en: "Error occurred", zh: "发生错误" },
   "status.ready": { en: "Ready", zh: "就绪" },
+  "common.submitting": { en: "Submitting...", zh: "提交中..." },
 
   // -- MessageStream --
   "message.you": { en: "You", zh: "你" },
@@ -70,6 +71,7 @@ export const dictCore = {
   "approval.requiresApproval": { en: "requires approval", zh: "需要审批" },
   "approval.allow": { en: "Allow", zh: "允许" },
   "approval.deny": { en: "Deny", zh: "拒绝" },
+  "approval.submitted": { en: "Response submitted", zh: "已提交响应" },
 } as const;
 
 export type DictCoreKey = keyof typeof dictCore;
