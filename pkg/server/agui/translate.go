@@ -21,6 +21,9 @@ type streamState struct {
 	textStarted bool
 	// toolCalls tracks which tool call IDs have been started.
 	toolCalls map[string]bool
+	// suppressedToolCalls tracks runtime tool call IDs that are represented by
+	// side-channel AG-UI action events instead of raw tool lifecycle events.
+	suppressedToolCalls map[string]bool
 	// lastToolID is the ID of the currently open tool call.
 	lastToolID string
 	// lastStep is the name of the currently open STEP.
@@ -31,10 +34,11 @@ type streamState struct {
 
 func newStreamState(threadID, runID string) *streamState {
 	return &streamState{
-		threadID:  threadID,
-		runID:     runID,
-		msgID:     fmt.Sprintf("msg_%s", runID),
-		toolCalls: make(map[string]bool),
+		threadID:            threadID,
+		runID:               runID,
+		msgID:               fmt.Sprintf("msg_%s", runID),
+		toolCalls:           make(map[string]bool),
+		suppressedToolCalls: make(map[string]bool),
 	}
 }
 
@@ -61,6 +65,9 @@ func (s *streamState) translateEvent(ctx context.Context, w io.Writer, sseW sseW
 
 	case api.EventToolExecutionStart:
 		if evt.Name == "ask_user_question" {
+			if evt.ToolUseID != "" {
+				s.suppressedToolCalls[evt.ToolUseID] = true
+			}
 			return nil
 		}
 		if s.lastToolID != "" {
@@ -86,6 +93,10 @@ func (s *streamState) translateEvent(ctx context.Context, w io.Writer, sseW sseW
 		toolID := evt.ToolUseID
 		if toolID == "" {
 			toolID = s.lastToolID
+		}
+		if toolID != "" && s.suppressedToolCalls[toolID] {
+			delete(s.suppressedToolCalls, toolID)
+			return nil
 		}
 		if toolID != "" {
 			if err := writeSSE(ctx, w, sseW, aguievents.NewToolCallEndEvent(toolID)); err != nil {

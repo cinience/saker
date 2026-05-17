@@ -173,6 +173,33 @@ func TestTranslateEvent_AskUserQuestionToolExecutionStartSkipped(t *testing.T) {
 	}
 }
 
+func TestTranslateEvent_AskUserQuestionToolExecutionResultSkipped(t *testing.T) {
+	t.Parallel()
+	state := newStreamState("t1", "r1")
+	w := &capturingSSEWriter{}
+
+	_ = state.translateEvent(context.Background(), &bytes.Buffer{}, w, api.StreamEvent{
+		Type:      api.EventToolExecutionStart,
+		ToolUseID: "toolu_ask",
+		Name:      "ask_user_question",
+		Input: map[string]any{
+			"questions": []map[string]any{{"question": "Which one?", "options": []string{"A"}}},
+		},
+	}, nopFilter{})
+	_ = state.translateEvent(context.Background(), &bytes.Buffer{}, w, api.StreamEvent{
+		Type:      api.EventToolExecutionResult,
+		ToolUseID: "toolu_ask",
+		Output:    "A",
+	}, nopFilter{})
+
+	if len(w.events) != 0 {
+		t.Fatalf("ask_user_question raw lifecycle should be suppressed, got %v", w.types())
+	}
+	if state.suppressedToolCalls["toolu_ask"] {
+		t.Fatal("suppressed tool call should be cleared after result")
+	}
+}
+
 func TestTranslateEvent_ToolExecutionStart_ClosesOpenTool(t *testing.T) {
 	t.Parallel()
 	state := newStreamState("t1", "r1")
