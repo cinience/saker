@@ -61,6 +61,16 @@ type Request struct {
 	ForceSkills          []string
 	User                 string // Authenticated username (set by server for per-user isolation)
 	UserRole             string // User role: "admin" or "user"
+	// PassthroughTools lists tool names that should NOT be executed by the
+	// agent loop. When the model emits one of these tool calls, the agent
+	// exits with StopReasonToolPassthrough so the caller can relay the
+	// call back to the client (e.g. HITL tools like ask_user_question).
+	PassthroughTools []string
+	// ExtraTools are additional tool definitions injected by the caller
+	// (e.g. CopilotKit HITL tools) that are sent to the LLM alongside
+	// saker's internal registry tools. They are NOT registered in the
+	// tool executor — only used for model awareness.
+	ExtraTools []model.ToolDefinition
 }
 
 // Response aggregates the final agent result together with metadata emitted
@@ -129,6 +139,12 @@ func (r Request) normalized(defaultMode ModeContext, fallbackSession string) Req
 	}
 	if len(req.ForceSkills) > 0 {
 		req.ForceSkills = append([]string(nil), req.ForceSkills...)
+	}
+	if len(req.PassthroughTools) > 0 {
+		req.PassthroughTools = append([]string(nil), req.PassthroughTools...)
+	}
+	if len(req.ExtraTools) > 0 {
+		req.ExtraTools = append([]model.ToolDefinition(nil), req.ExtraTools...)
 	}
 	if len(req.ContentBlocks) > 0 {
 		req.ContentBlocks = append([]model.ContentBlock(nil), req.ContentBlocks...)

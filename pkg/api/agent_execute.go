@@ -101,6 +101,18 @@ func (rt *Runtime) runAgentWithMiddleware(prep preparedRun, extras ...middleware
 		toolDefs = filtered
 	}
 
+	if len(prep.extraTools) > 0 {
+		existing := make(map[string]struct{}, len(toolDefs))
+		for _, td := range toolDefs {
+			existing[td.Name] = struct{}{}
+		}
+		for _, et := range prep.extraTools {
+			if _, ok := existing[et.Name]; !ok {
+				toolDefs = append(toolDefs, et)
+			}
+		}
+	}
+
 	modelAdapter := &conversationModel{
 		base:               selectedModel,
 		history:            prep.history,
@@ -187,6 +199,7 @@ func (rt *Runtime) runAgentWithMiddleware(prep preparedRun, extras ...middleware
 		MaxTokens:           rt.opts.MaxTokens,
 		ModelName:           budgetModelName,
 		RepeatLoopThreshold: rt.opts.RepeatLoopThreshold,
+		PassthroughTools:    prep.passthroughTools,
 	})
 	if err != nil {
 		return runResult{}, err

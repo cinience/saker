@@ -72,9 +72,18 @@ func (g *Gateway) handleConnect(c *gin.Context, body []byte) {
 
 	sseW := aguisse.NewSSEWriter().WithLogger(g.deps.Logger)
 
-	writeSSE(w, sseW, aguievents.NewRunStartedEvent(threadID, runID))
-	writeSSE(w, sseW, aguievents.NewMessagesSnapshotEvent(aguiMessages))
-	writeSSE(w, sseW, aguievents.NewRunFinishedEvent(threadID, runID))
+	if err := writeSSE(c.Request.Context(), w, sseW, aguievents.NewRunStartedEvent(threadID, runID)); err != nil {
+		g.deps.Logger.Warn("agui connect: failed to write run start", "thread_id", threadID, "run_id", runID, "error", err)
+		return
+	}
+	if err := writeSSE(c.Request.Context(), w, sseW, aguievents.NewMessagesSnapshotEvent(aguiMessages)); err != nil {
+		g.deps.Logger.Warn("agui connect: failed to write snapshot", "thread_id", threadID, "run_id", runID, "error", err)
+		return
+	}
+	if err := writeSSE(c.Request.Context(), w, sseW, aguievents.NewRunFinishedEvent(threadID, runID)); err != nil {
+		g.deps.Logger.Warn("agui connect: failed to write run finished", "thread_id", threadID, "run_id", runID, "error", err)
+		return
+	}
 	flusher.Flush()
 }
 

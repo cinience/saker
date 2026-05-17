@@ -40,6 +40,11 @@ const (
 	StopReasonContextDeadline StopReason = "aborted_deadline"
 	// StopReasonModelError — model.Generate returned an error.
 	StopReasonModelError StopReason = "model_error"
+	// StopReasonToolPassthrough — model emitted a tool call that is in
+	// Options.PassthroughTools. The agent loop exits without executing
+	// the call so the caller (e.g. synapse AG-UI handler) can relay it
+	// back to the client as a HITL event.
+	StopReasonToolPassthrough StopReason = "tool_passthrough"
 )
 
 // classifyError maps an error to the StopReason that best describes why the
@@ -236,6 +241,12 @@ func (a *Agent) Run(ctx context.Context, c *Context) (*ModelOutput, error) {
 			return out, nil
 		}
 
+		if len(a.opts.PassthroughTools) > 0 && hasPassthroughTool(out.ToolCalls, a.opts.PassthroughTools) {
+			out.StopReason = StopReasonToolPassthrough
+			_ = a.mw.Execute(ctx, middleware.StageAfterAgent, state)
+			return out, nil
+		}
+
 		var firstMiddlewareErr error
 
 		for _, call := range out.ToolCalls {
@@ -363,6 +374,23 @@ func totalTokens(u model.Usage) int {
 
 // toolCallSig captures the signature of a tool call for repeat detection.
 type toolCallSig struct{ name, input string }
+
+// hasPassthroughTool returns true when any ToolCall.Name appears in the
+// passthrough list. Used to short-circuit the agent loop so HITL tools
+// (ask_user_question, confirmAction) are relayed to the client instead
+// of being executed locally.
+func hasPassthroughTool(calls []ToolCall, passthrough []string) bool {
+	set := make(map[string]struct{}, len(passthrough))
+	for _, name := range passthrough {
+		set[name] = struct{}{}
+	}
+	for _, call := range calls {
+		if _, ok := set[call.Name]; ok {
+			return true
+		}
+	}
+	return false
+}
 
 // tailRepeatCount returns how many of the most recent entries in calls are
 // identical to the very last one (always >= 1 when calls is non-empty).

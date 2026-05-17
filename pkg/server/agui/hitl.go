@@ -19,7 +19,7 @@ import (
 const hitlTimeout = 5 * time.Minute
 
 type sideEvent struct {
-	event aguievents.Event
+	events []aguievents.Event
 }
 
 type pendingApproval struct {
@@ -110,8 +110,7 @@ func (g *Gateway) makeAskQuestionHandler(runID string, sideCh chan<- sideEvent) 
 			"questions":   items,
 		}
 
-		evt := aguievents.NewCustomEvent("question_request", aguievents.WithValue(payload))
-		sideCh <- sideEvent{event: evt}
+		sideCh <- sideEvent{events: actionEvents("question_request", "question_"+questionID, payload)}
 
 		g.deps.Logger.Info("question_request sent, waiting for answer",
 			"run_id", runID, "question_id", questionID)
@@ -149,8 +148,7 @@ func (g *Gateway) makePermissionHandler(runID string, sideCh chan<- sideEvent) a
 			"reason":      req.Reason,
 		}
 
-		evt := aguievents.NewCustomEvent("approval_request", aguievents.WithValue(payload))
-		sideCh <- sideEvent{event: evt}
+		sideCh <- sideEvent{events: actionEvents("approval_request", "approval_"+approvalID, payload)}
 
 		g.deps.Logger.Info("approval_request sent, waiting for decision",
 			"run_id", runID, "approval_id", approvalID)
@@ -166,5 +164,17 @@ func (g *Gateway) makePermissionHandler(runID string, sideCh chan<- sideEvent) a
 			g.hitl.removeApproval(runID)
 			return coreevents.PermissionDeny, ctx.Err()
 		}
+	}
+}
+
+func actionEvents(name, toolCallID string, payload map[string]any) []aguievents.Event {
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		raw = []byte("{}")
+	}
+	return []aguievents.Event{
+		aguievents.NewToolCallStartEvent(toolCallID, name),
+		aguievents.NewToolCallArgsEvent(toolCallID, string(raw)),
+		aguievents.NewToolCallEndEvent(toolCallID),
 	}
 }

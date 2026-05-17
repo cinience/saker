@@ -135,6 +135,9 @@ func MessagesToRequest(ctx context.Context, msgs []ChatMessage, extra ExtraBody,
 	if len(extra.AllowedTools) > 0 {
 		req.ToolWhitelist = extra.AllowedTools
 	}
+	if len(extra.PassthroughTools) > 0 {
+		req.PassthroughTools = extra.PassthroughTools
+	}
 	return req, nil
 }
 

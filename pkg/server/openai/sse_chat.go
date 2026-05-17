@@ -263,7 +263,7 @@ func mapStopReason(s string) string {
 	switch strings.ToLower(strings.TrimSpace(s)) {
 	case "end_turn", "stop_sequence":
 		return "stop"
-	case "tool_use":
+	case "tool_use", "tool_passthrough":
 		return "tool_calls"
 	case "max_tokens":
 		return "length"
