@@ -66,6 +66,11 @@ type Options struct {
 	// via model.EstimateCost. Empty disables MaxBudgetUSD even if it is
 	// configured. The MaxTokens guard does not require ModelName.
 	ModelName string
+	// PassthroughTools lists tool names that should NOT be executed by the
+	// agent loop. When the model emits a tool call whose name appears here,
+	// Run exits with StopReasonToolPassthrough so the caller can relay the
+	// call back to the client (e.g. HITL tools like ask_user_question).
+	PassthroughTools []string
 }
 
 func (o Options) withDefaults() Options {

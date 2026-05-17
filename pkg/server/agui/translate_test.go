@@ -32,10 +32,12 @@ type capturedEvent struct {
 // capturingSSEWriter records event types written via writeSSE.
 type capturingSSEWriter struct {
 	events []capturedEvent
+	ctxErr error
 }
 
-func (c *capturingSSEWriter) WriteEventWithType(_ context.Context, _ io.Writer, _ aguievents.Event, eventType string) error {
+func (c *capturingSSEWriter) WriteEventWithType(ctx context.Context, _ io.Writer, _ aguievents.Event, eventType string) error {
 	c.events = append(c.events, capturedEvent{eventType: eventType})
+	c.ctxErr = ctx.Err()
 	return nil
 }
 
@@ -52,7 +54,7 @@ func TestTranslateEvent_TextDelta_FirstEmitsStart(t *testing.T) {
 	state := newStreamState("t1", "r1")
 	w := &capturingSSEWriter{}
 	evt := api.StreamEvent{Type: api.EventContentBlockDelta, Delta: &api.Delta{Text: "hello"}}
-	state.translateEvent(&bytes.Buffer{}, w, evt, nopFilter{})
+	_ = state.translateEvent(context.Background(), &bytes.Buffer{}, w, evt, nopFilter{})
 
 	types := w.types()
 	if len(types) != 2 {
@@ -71,10 +73,10 @@ func TestTranslateEvent_TextDelta_SubsequentSkipsStart(t *testing.T) {
 	state := newStreamState("t1", "r1")
 	w := &capturingSSEWriter{}
 	evt := api.StreamEvent{Type: api.EventContentBlockDelta, Delta: &api.Delta{Text: "a"}}
-	state.translateEvent(&bytes.Buffer{}, w, evt, nopFilter{})
+	_ = state.translateEvent(context.Background(), &bytes.Buffer{}, w, evt, nopFilter{})
 	w.events = nil
 
-	state.translateEvent(&bytes.Buffer{}, w, evt, nopFilter{})
+	_ = state.translateEvent(context.Background(), &bytes.Buffer{}, w, evt, nopFilter{})
 	types := w.types()
 	if len(types) != 1 {
 		t.Fatalf("expected 1 event, got %d: %v", len(types), types)
@@ -88,12 +90,12 @@ func TestTranslateEvent_TextDelta_EmptySkipped(t *testing.T) {
 	t.Parallel()
 	state := newStreamState("t1", "r1")
 	w := &capturingSSEWriter{}
-	state.translateEvent(&bytes.Buffer{}, w, api.StreamEvent{Type: api.EventContentBlockDelta, Delta: &api.Delta{Text: ""}}, nopFilter{})
+	_ = state.translateEvent(context.Background(), &bytes.Buffer{}, w, api.StreamEvent{Type: api.EventContentBlockDelta, Delta: &api.Delta{Text: ""}}, nopFilter{})
 	if len(w.events) != 0 {
 		t.Errorf("empty text should emit nothing, got %d events", len(w.events))
 	}
 
-	state.translateEvent(&bytes.Buffer{}, w, api.StreamEvent{Type: api.EventContentBlockDelta, Delta: nil}, nopFilter{})
+	_ = state.translateEvent(context.Background(), &bytes.Buffer{}, w, api.StreamEvent{Type: api.EventContentBlockDelta, Delta: nil}, nopFilter{})
 	if len(w.events) != 0 {
 		t.Errorf("nil delta should emit nothing, got %d events", len(w.events))
 	}
@@ -109,7 +111,7 @@ func TestTranslateEvent_ToolExecutionStart(t *testing.T) {
 		Name:      "bash",
 		Input:     map[string]string{"cmd": "ls"},
 	}
-	state.translateEvent(&bytes.Buffer{}, w, evt, nopFilter{})
+	_ = state.translateEvent(context.Background(), &bytes.Buffer{}, w, evt, nopFilter{})
 
 	types := w.types()
 	if len(types) != 2 {
@@ -138,7 +140,7 @@ func TestTranslateEvent_ToolExecutionStart_NoInput(t *testing.T) {
 		ToolUseID: "tc_2",
 		Name:      "read",
 	}
-	state.translateEvent(&bytes.Buffer{}, w, evt, nopFilter{})
+	_ = state.translateEvent(context.Background(), &bytes.Buffer{}, w, evt, nopFilter{})
 
 	types := w.types()
 	if len(types) != 1 {
@@ -149,16 +151,38 @@ func TestTranslateEvent_ToolExecutionStart_NoInput(t *testing.T) {
 	}
 }
 
+func TestTranslateEvent_AskUserQuestionToolExecutionStartSkipped(t *testing.T) {
+	t.Parallel()
+	state := newStreamState("t1", "r1")
+	w := &capturingSSEWriter{}
+
+	_ = state.translateEvent(context.Background(), &bytes.Buffer{}, w, api.StreamEvent{
+		Type:      api.EventToolExecutionStart,
+		ToolUseID: "toolu_ask",
+		Name:      "ask_user_question",
+		Input: map[string]any{
+			"questions": []map[string]any{{"question": "Which one?", "options": []string{"A"}}},
+		},
+	}, nopFilter{})
+
+	if len(w.events) != 0 {
+		t.Fatalf("ask_user_question side channel should suppress raw tool call, got %v", w.types())
+	}
+	if state.lastToolID != "" {
+		t.Fatalf("lastToolID = %q, want empty", state.lastToolID)
+	}
+}
+
 func TestTranslateEvent_ToolExecutionStart_ClosesOpenTool(t *testing.T) {
 	t.Parallel()
 	state := newStreamState("t1", "r1")
 	w := &capturingSSEWriter{}
-	state.translateEvent(&bytes.Buffer{}, w, api.StreamEvent{
+	_ = state.translateEvent(context.Background(), &bytes.Buffer{}, w, api.StreamEvent{
 		Type: api.EventToolExecutionStart, ToolUseID: "tc_1", Name: "bash",
 	}, nopFilter{})
 	w.events = nil
 
-	state.translateEvent(&bytes.Buffer{}, w, api.StreamEvent{
+	_ = state.translateEvent(context.Background(), &bytes.Buffer{}, w, api.StreamEvent{
 		Type: api.EventToolExecutionStart, ToolUseID: "tc_2", Name: "grep",
 	}, nopFilter{})
 
@@ -181,7 +205,7 @@ func TestTranslateEvent_ToolExecutionResult(t *testing.T) {
 	state.lastToolID = "tc_1"
 	state.toolCalls["tc_1"] = true
 
-	state.translateEvent(&bytes.Buffer{}, w, api.StreamEvent{
+	_ = state.translateEvent(context.Background(), &bytes.Buffer{}, w, api.StreamEvent{
 		Type: api.EventToolExecutionResult, ToolUseID: "tc_1",
 	}, nopFilter{})
 
@@ -205,7 +229,7 @@ func TestTranslateEvent_IterationStartStop(t *testing.T) {
 	state := newStreamState("t1", "r1")
 	w := &capturingSSEWriter{}
 
-	state.translateEvent(&bytes.Buffer{}, w, api.StreamEvent{Type: api.EventIterationStart}, nopFilter{})
+	_ = state.translateEvent(context.Background(), &bytes.Buffer{}, w, api.StreamEvent{Type: api.EventIterationStart}, nopFilter{})
 	types := w.types()
 	if len(types) != 1 || types[0] != "STEP_STARTED" {
 		t.Fatalf("iteration_start: got %v, want [STEP_STARTED]", types)
@@ -215,7 +239,7 @@ func TestTranslateEvent_IterationStartStop(t *testing.T) {
 	}
 	w.events = nil
 
-	state.translateEvent(&bytes.Buffer{}, w, api.StreamEvent{Type: api.EventIterationStop}, nopFilter{})
+	_ = state.translateEvent(context.Background(), &bytes.Buffer{}, w, api.StreamEvent{Type: api.EventIterationStop}, nopFilter{})
 	types = w.types()
 	if len(types) != 1 || types[0] != "STEP_FINISHED" {
 		t.Fatalf("iteration_stop: got %v, want [STEP_FINISHED]", types)
@@ -230,10 +254,10 @@ func TestTranslateEvent_IterationStart_ClosesOpenStep(t *testing.T) {
 	state := newStreamState("t1", "r1")
 	w := &capturingSSEWriter{}
 
-	state.translateEvent(&bytes.Buffer{}, w, api.StreamEvent{Type: api.EventIterationStart}, nopFilter{})
+	_ = state.translateEvent(context.Background(), &bytes.Buffer{}, w, api.StreamEvent{Type: api.EventIterationStart}, nopFilter{})
 	w.events = nil
 
-	state.translateEvent(&bytes.Buffer{}, w, api.StreamEvent{Type: api.EventIterationStart}, nopFilter{})
+	_ = state.translateEvent(context.Background(), &bytes.Buffer{}, w, api.StreamEvent{Type: api.EventIterationStart}, nopFilter{})
 	types := w.types()
 	if len(types) != 2 {
 		t.Fatalf("expected 2 events, got %d: %v", len(types), types)
@@ -254,7 +278,7 @@ func TestTranslateEvent_Error(t *testing.T) {
 	state := newStreamState("t1", "r1")
 	w := &capturingSSEWriter{}
 
-	state.translateEvent(&bytes.Buffer{}, w, api.StreamEvent{
+	_ = state.translateEvent(context.Background(), &bytes.Buffer{}, w, api.StreamEvent{
 		Type: api.EventError, Output: "something broke",
 	}, nopFilter{})
 
@@ -269,7 +293,7 @@ func TestTranslateEvent_Error_DefaultMessage(t *testing.T) {
 	state := newStreamState("t1", "r1")
 	w := &capturingSSEWriter{}
 
-	state.translateEvent(&bytes.Buffer{}, w, api.StreamEvent{Type: api.EventError}, nopFilter{})
+	_ = state.translateEvent(context.Background(), &bytes.Buffer{}, w, api.StreamEvent{Type: api.EventError}, nopFilter{})
 
 	if len(w.events) != 1 || w.types()[0] != "RUN_ERROR" {
 		t.Fatalf("got %v, want [RUN_ERROR]", w.types())
@@ -285,7 +309,7 @@ func TestFinalize_FullSequence(t *testing.T) {
 	state.lastStep = "iteration_1"
 
 	w := &capturingSSEWriter{}
-	state.finalize(&bytes.Buffer{}, w, nopFilter{})
+	_ = state.finalize(context.Background(), &bytes.Buffer{}, w, nopFilter{})
 
 	types := w.types()
 	want := []string{"TOOL_CALL_END", "TEXT_MESSAGE_END", "STEP_FINISHED", "RUN_FINISHED"}
@@ -303,7 +327,7 @@ func TestFinalize_MinimalNoOpenState(t *testing.T) {
 	t.Parallel()
 	state := newStreamState("t1", "r1")
 	w := &capturingSSEWriter{}
-	state.finalize(&bytes.Buffer{}, w, nopFilter{})
+	_ = state.finalize(context.Background(), &bytes.Buffer{}, w, nopFilter{})
 
 	types := w.types()
 	if len(types) != 1 || types[0] != "RUN_FINISHED" {
@@ -318,7 +342,7 @@ func TestFinalize_FlushesFilterTail(t *testing.T) {
 	f := &tailFilter{buf: "leftover"}
 
 	w := &capturingSSEWriter{}
-	state.finalize(&bytes.Buffer{}, w, f)
+	_ = state.finalize(context.Background(), &bytes.Buffer{}, w, f)
 
 	types := w.types()
 	if len(types) != 3 {
@@ -329,6 +353,22 @@ func TestFinalize_FlushesFilterTail(t *testing.T) {
 	}
 	if types[1] != "TEXT_MESSAGE_END" {
 		t.Errorf("then end message, got %q", types[1])
+	}
+}
+
+func TestWriteSSE_UsesCallerContext(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	w := &capturingSSEWriter{}
+	err := writeSSE(ctx, &bytes.Buffer{}, w, aguievents.NewRunFinishedEvent("thread_1", "run_1"))
+
+	if err != context.Canceled {
+		t.Fatalf("writeSSE error = %v, want context.Canceled", err)
+	}
+	if len(w.events) != 0 {
+		t.Fatalf("canceled context should not call SSE writer, got %d events", len(w.events))
 	}
 }
 

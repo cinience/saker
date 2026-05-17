@@ -15,8 +15,8 @@ import (
 	toolbuiltin "github.com/saker-ai/saker/pkg/tool/builtin"
 
 	aguievents "github.com/ag-ui-protocol/ag-ui/sdks/community/go/pkg/core/events"
-	aguisse "github.com/ag-ui-protocol/ag-ui/sdks/community/go/pkg/encoding/sse"
 	aguitypes "github.com/ag-ui-protocol/ag-ui/sdks/community/go/pkg/core/types"
+	aguisse "github.com/ag-ui-protocol/ag-ui/sdks/community/go/pkg/encoding/sse"
 )
 
 const keepaliveInterval = 15 * time.Second
@@ -93,8 +93,28 @@ func (g *Gateway) handleRun(c *gin.Context) {
 
 	g.persistUserMessage(c.Request.Context(), threadID, turnID, projectID, sakerReq.Prompt)
 
-	ctx, cancel := context.WithTimeout(c.Request.Context(), server.DefaultTurnTimeout)
-	defer cancel()
+	g.deps.Logger.Info("agui run request received",
+		"thread_id", threadID,
+		"run_id", runID,
+		"turn_id", turnID,
+		"project_id", projectID,
+		"user", identity.Username,
+		"message_count", len(input.Messages),
+		"context_count", len(input.Context),
+		"prompt_len", len(sakerReq.Prompt),
+	)
+
+	baseCtx, timeoutCancel := context.WithTimeout(c.Request.Context(), server.DefaultTurnTimeout)
+	defer timeoutCancel()
+	ctx, finishRun, ok := g.runContext(baseCtx, runID)
+	if !ok {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": gin.H{
+			"message": "agui gateway is shutting down",
+			"type":    "server_shutdown",
+		}})
+		return
+	}
+	defer finishRun()
 
 	sideCh := make(chan sideEvent, 8)
 	ctx = toolbuiltin.WithAskQuestionFunc(ctx, g.makeAskQuestionHandler(runID, sideCh))
@@ -106,12 +126,23 @@ func (g *Gateway) handleRun(c *gin.Context) {
 
 	eventCh, err := g.deps.Runtime.RunStream(ctx, sakerReq)
 	if err != nil {
+		g.deps.Logger.Error("agui runtime failed to start",
+			"thread_id", threadID,
+			"run_id", runID,
+			"turn_id", turnID,
+			"error", err,
+		)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": gin.H{
 			"message": "failed to start run: " + err.Error(),
 			"type":    "server_error",
 		}})
 		return
 	}
+	g.deps.Logger.Info("agui runtime stream started",
+		"thread_id", threadID,
+		"run_id", runID,
+		"turn_id", turnID,
+	)
 
 	g.streamSSE(c, ctx, eventCh, sideCh, threadID, runID, turnID, projectID)
 }
@@ -119,6 +150,13 @@ func (g *Gateway) handleRun(c *gin.Context) {
 // streamSSE writes the AG-UI event stream to the client as SSE.
 func (g *Gateway) streamSSE(c *gin.Context, ctx context.Context, eventCh <-chan api.StreamEvent, sideCh <-chan sideEvent, threadID, runID, turnID, projectID string) {
 	w := c.Writer
+	if err := http.NewResponseController(w).SetWriteDeadline(time.Time{}); err != nil {
+		g.deps.Logger.Debug("agui sse write deadline not adjustable",
+			"thread_id", threadID,
+			"run_id", runID,
+			"error", err,
+		)
+	}
 	w.Header().Set("Content-Type", "text/event-stream; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-cache, no-store, no-transform")
 	w.Header().Set("Connection", "keep-alive")
@@ -135,8 +173,23 @@ func (g *Gateway) streamSSE(c *gin.Context, ctx context.Context, eventCh <-chan 
 	state := newStreamState(threadID, runID)
 	filter := server.NewStreamArtifactFilter()
 	var accumulated strings.Builder
+	eventCounts := make(map[string]int)
 
-	writeSSE(w, sseW, aguievents.NewRunStartedEvent(threadID, runID))
+	g.deps.Logger.Info("agui sse stream opened",
+		"thread_id", threadID,
+		"run_id", runID,
+		"turn_id", turnID,
+		"project_id", projectID,
+	)
+	if err := writeSSE(ctx, w, sseW, aguievents.NewRunStartedEvent(threadID, runID)); err != nil {
+		g.deps.Logger.Warn("agui sse write failed",
+			"thread_id", threadID,
+			"run_id", runID,
+			"event_type", "RUN_STARTED",
+			"error", err,
+		)
+		return
+	}
 	flusher.Flush()
 
 	keepalive := time.NewTicker(keepaliveInterval)
@@ -146,22 +199,82 @@ func (g *Gateway) streamSSE(c *gin.Context, ctx context.Context, eventCh <-chan 
 		select {
 		case evt, ok := <-eventCh:
 			if !ok {
-				state.finalize(w, sseW, filter)
-				flusher.Flush()
+				if err := state.finalize(ctx, w, sseW, filter); err != nil {
+					g.deps.Logger.Warn("agui sse finalize failed",
+						"thread_id", threadID,
+						"run_id", runID,
+						"turn_id", turnID,
+						"error", err,
+					)
+				} else {
+					flusher.Flush()
+				}
 				g.persistAssistantMessage(context.Background(), threadID, turnID, projectID, accumulated.String())
 				if g.deps.ConversationStore != nil {
 					_ = g.deps.ConversationStore.CloseTurn(context.Background(), turnID, "completed")
 				}
+				g.deps.Logger.Info("agui runtime stream completed",
+					"thread_id", threadID,
+					"run_id", runID,
+					"turn_id", turnID,
+					"assistant_len", accumulated.Len(),
+					"event_counts", eventCounts,
+				)
 				return
 			}
+			eventCounts[string(evt.Type)]++
+			g.deps.Logger.Info("agui runtime event received",
+				"thread_id", threadID,
+				"run_id", runID,
+				"turn_id", turnID,
+				"event_type", evt.Type,
+				"tool_use_id", evt.ToolUseID,
+				"tool_name", evt.Name,
+				"delta_len", deltaTextLen(evt),
+			)
 			if evt.Type == api.EventContentBlockDelta && evt.Delta != nil && evt.Delta.Text != "" {
 				accumulated.WriteString(evt.Delta.Text)
 			}
-			state.translateEvent(w, sseW, evt, filter)
+			if err := state.translateEvent(ctx, w, sseW, evt, filter); err != nil {
+				g.deps.Logger.Warn("agui sse translate/write failed",
+					"thread_id", threadID,
+					"run_id", runID,
+					"turn_id", turnID,
+					"event_type", evt.Type,
+					"error", err,
+				)
+				return
+			}
 			flusher.Flush()
 
 		case se := <-sideCh:
-			writeSSE(w, sseW, se.event)
+			if len(se.events) == 0 {
+				continue
+			}
+			sideTypes := make([]string, 0, len(se.events))
+			for _, event := range se.events {
+				if event == nil {
+					continue
+				}
+				sideTypes = append(sideTypes, string(event.Type()))
+				if err := writeSSE(ctx, w, sseW, event); err != nil {
+					g.deps.Logger.Warn("agui side-event write failed",
+						"thread_id", threadID,
+						"run_id", runID,
+						"turn_id", turnID,
+						"event_type", event.Type(),
+						"error", err,
+					)
+					return
+				}
+			}
+			g.deps.Logger.Info("agui side event sent",
+				"thread_id", threadID,
+				"run_id", runID,
+				"turn_id", turnID,
+				"event_count", len(se.events),
+				"event_types", sideTypes,
+			)
 			flusher.Flush()
 
 		case <-keepalive.C:
@@ -171,12 +284,24 @@ func (g *Gateway) streamSSE(c *gin.Context, ctx context.Context, eventCh <-chan 
 			flusher.Flush()
 
 		case <-ctx.Done():
-			writeSSE(w, sseW, aguievents.NewRunErrorEvent("request cancelled", aguievents.WithRunID(runID)))
-			writeSSE(w, sseW, aguievents.NewRunFinishedEvent(threadID, runID))
-			flusher.Flush()
+			g.deps.Logger.Info("agui runtime stream cancelled",
+				"thread_id", threadID,
+				"run_id", runID,
+				"turn_id", turnID,
+				"error", ctx.Err(),
+				"assistant_len", accumulated.Len(),
+				"event_counts", eventCounts,
+			)
 			return
 		}
 	}
+}
+
+func deltaTextLen(evt api.StreamEvent) int {
+	if evt.Delta == nil {
+		return 0
+	}
+	return len(evt.Delta.Text)
 }
 
 func mergeMetadata(base, extra map[string]any) map[string]any {

@@ -14,6 +14,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/gin-gonic/gin"
 	"github.com/saker-ai/saker/pkg/api"
 	"github.com/saker-ai/saker/pkg/config"
 	"github.com/saker-ai/saker/pkg/conversation"
@@ -22,10 +23,9 @@ import (
 	"github.com/saker-ai/saker/pkg/project"
 	"github.com/saker-ai/saker/pkg/sandbox/landlockenv"
 	"github.com/saker-ai/saker/pkg/server"
-	sakersynapse "github.com/saker-ai/saker/pkg/synapse"
 	aguigw "github.com/saker-ai/saker/pkg/server/agui"
 	openaigw "github.com/saker-ai/saker/pkg/server/openai"
-	"github.com/gin-gonic/gin"
+	sakersynapse "github.com/saker-ai/saker/pkg/synapse"
 )
 
 type openaiGatewayFlags struct {
@@ -204,6 +204,7 @@ func (a *App) runServerMode(stdout, stderr io.Writer, opts api.Options, addr, da
 	var sessionValidator func(*gin.Context) (string, string, bool)
 
 	var gw *openaigw.Gateway
+	var agw *aguigw.Gateway
 	srvOpts.EngineHook = func(engine *gin.Engine) error {
 		if gwFlags.Enabled {
 			deps := openaigw.Deps{
@@ -228,9 +229,11 @@ func (a *App) runServerMode(stdout, stderr io.Writer, opts api.Options, addr, da
 			Options:           aguigw.Options{Enabled: true, DevBypassAuth: gwFlags.DevBypassAuth},
 			SessionValidator:  sessionValidator,
 		}
-		if _, err := aguigw.RegisterAGUIGateway(engine, aguiDeps); err != nil {
+		g, err := aguigw.RegisterAGUIGateway(engine, aguiDeps)
+		if err != nil {
 			return fmt.Errorf("register agui gateway: %w", err)
 		}
+		agw = g
 
 		return nil
 	}
@@ -316,6 +319,9 @@ func (a *App) runServerMode(stdout, stderr io.Writer, opts api.Options, addr, da
 
 	select {
 	case err := <-errCh:
+		if agw != nil {
+			agw.Shutdown()
+		}
 		if gw != nil {
 			gw.Shutdown()
 		}
@@ -327,6 +333,9 @@ func (a *App) runServerMode(stdout, stderr io.Writer, opts api.Options, addr, da
 		}
 		shutCtx, shutCancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer shutCancel()
+		if agw != nil {
+			agw.Shutdown()
+		}
 		if gw != nil {
 			gw.Shutdown()
 		}

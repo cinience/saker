@@ -3,7 +3,8 @@
   "license": "SKL-1.0",
   "pnpm": {
     "overrides": {
-      "global-agent": "^4.1.0"
+      "global-agent": "^4.1.0",
+      "streamdown": "^2.5.0"
     }
   }
 }

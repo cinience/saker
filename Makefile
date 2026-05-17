@@ -197,6 +197,11 @@ desktop: web-build
 # Build and run server (frontend + backend + start)
 run: server
 	@lsof -ti :10112 | xargs -r kill 2>/dev/null && echo "Killed process on port 10112" || true
+	@LOG_DIR="$${SAKER_LOG_DIR:-$$HOME/.saker/server/logs}"; \
+	if [ -d "$$LOG_DIR" ]; then \
+		echo "Cleaning server logs: $$LOG_DIR"; \
+		rm -rf "$$LOG_DIR"/* 2>/dev/null || true; \
+	fi
 	@if [ -f .env ]; then set -a && . ./.env && set +a; fi; $(BINARY) --server
 
 # Eval suites (offline — no API key needed)

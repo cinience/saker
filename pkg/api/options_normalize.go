@@ -5,7 +5,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/saker-ai/saker/pkg/agent"
 	coremw "github.com/saker-ai/saker/pkg/core/eventmw"
 	corehooks "github.com/saker-ai/saker/pkg/core/hooks"
 	"github.com/saker-ai/saker/pkg/middleware"
@@ -80,8 +79,8 @@ func (o Options) withDefaults() Options {
 			// Headless one-shot CI runs: 50 mirrors the subagent default and
 			// gives builds enough headroom for multi-step refactors.
 			o.MaxIterations = 50
-		default: // EntryPointCLI / unset — preserve historical behavior.
-			o.MaxIterations = agent.DefaultMaxIterations
+		default: // EntryPointCLI / unset
+			o.MaxIterations = 200
 		}
 	}
 	return o

@@ -41,25 +41,32 @@ func newStreamState(threadID, runID string) *streamState {
 // translateEvent converts a single saker StreamEvent into zero or more AG-UI
 // events written directly to the SSE writer. The text filter strips XML
 // function-call artifacts from text deltas.
-func (s *streamState) translateEvent(w io.Writer, sseW sseWriter, evt api.StreamEvent, filter textFilter) {
+func (s *streamState) translateEvent(ctx context.Context, w io.Writer, sseW sseWriter, evt api.StreamEvent, filter textFilter) error {
 	switch evt.Type {
 	case api.EventContentBlockDelta:
 		if evt.Delta == nil || evt.Delta.Text == "" {
-			return
+			return nil
 		}
 		safe := filter.Push(evt.Delta.Text)
 		if safe == "" {
-			return
+			return nil
 		}
 		if !s.textStarted {
 			s.textStarted = true
-			writeSSE(w, sseW, aguievents.NewTextMessageStartEvent(s.msgID, aguievents.WithRole("assistant")))
+			if err := writeSSE(ctx, w, sseW, aguievents.NewTextMessageStartEvent(s.msgID, aguievents.WithRole("assistant"))); err != nil {
+				return err
+			}
 		}
-		writeSSE(w, sseW, aguievents.NewTextMessageContentEvent(s.msgID, safe))
+		return writeSSE(ctx, w, sseW, aguievents.NewTextMessageContentEvent(s.msgID, safe))
 
 	case api.EventToolExecutionStart:
+		if evt.Name == "ask_user_question" {
+			return nil
+		}
 		if s.lastToolID != "" {
-			writeSSE(w, sseW, aguievents.NewToolCallEndEvent(s.lastToolID))
+			if err := writeSSE(ctx, w, sseW, aguievents.NewToolCallEndEvent(s.lastToolID)); err != nil {
+				return err
+			}
 		}
 		toolID := evt.ToolUseID
 		if toolID == "" {
@@ -67,10 +74,12 @@ func (s *streamState) translateEvent(w io.Writer, sseW sseWriter, evt api.Stream
 		}
 		s.toolCalls[toolID] = true
 		s.lastToolID = toolID
-		writeSSE(w, sseW, aguievents.NewToolCallStartEvent(toolID, evt.Name, aguievents.WithParentMessageID(s.msgID)))
+		if err := writeSSE(ctx, w, sseW, aguievents.NewToolCallStartEvent(toolID, evt.Name, aguievents.WithParentMessageID(s.msgID))); err != nil {
+			return err
+		}
 		args := inputToJSON(evt.Input)
 		if args != "" && args != "{}" {
-			writeSSE(w, sseW, aguievents.NewToolCallArgsEvent(toolID, args))
+			return writeSSE(ctx, w, sseW, aguievents.NewToolCallArgsEvent(toolID, args))
 		}
 
 	case api.EventToolExecutionResult:
@@ -79,7 +88,9 @@ func (s *streamState) translateEvent(w io.Writer, sseW sseWriter, evt api.Stream
 			toolID = s.lastToolID
 		}
 		if toolID != "" {
-			writeSSE(w, sseW, aguievents.NewToolCallEndEvent(toolID))
+			if err := writeSSE(ctx, w, sseW, aguievents.NewToolCallEndEvent(toolID)); err != nil {
+				return err
+			}
 			if s.lastToolID == toolID {
 				s.lastToolID = ""
 			}
@@ -90,14 +101,18 @@ func (s *streamState) translateEvent(w io.Writer, sseW sseWriter, evt api.Stream
 		s.iterCount++
 		stepName := fmt.Sprintf("iteration_%d", s.iterCount)
 		if s.lastStep != "" {
-			writeSSE(w, sseW, aguievents.NewStepFinishedEvent(s.lastStep))
+			if err := writeSSE(ctx, w, sseW, aguievents.NewStepFinishedEvent(s.lastStep)); err != nil {
+				return err
+			}
 		}
 		s.lastStep = stepName
-		writeSSE(w, sseW, aguievents.NewStepStartedEvent(stepName))
+		return writeSSE(ctx, w, sseW, aguievents.NewStepStartedEvent(stepName))
 
 	case api.EventIterationStop:
 		if s.lastStep != "" {
-			writeSSE(w, sseW, aguievents.NewStepFinishedEvent(s.lastStep))
+			if err := writeSSE(ctx, w, sseW, aguievents.NewStepFinishedEvent(s.lastStep)); err != nil {
+				return err
+			}
 			s.lastStep = ""
 		}
 
@@ -108,28 +123,37 @@ func (s *streamState) translateEvent(w io.Writer, sseW sseWriter, evt api.Stream
 				msg = s
 			}
 		}
-		writeSSE(w, sseW, aguievents.NewRunErrorEvent(msg, aguievents.WithRunID(s.runID)))
+		return writeSSE(ctx, w, sseW, aguievents.NewRunErrorEvent(msg, aguievents.WithRunID(s.runID)))
 	}
+	return nil
 }
 
 // finalize emits closing events for any open tool calls, text message,
 // steps, and the RUN_FINISHED event.
-func (s *streamState) finalize(w io.Writer, sseW sseWriter, filter textFilter) {
+func (s *streamState) finalize(ctx context.Context, w io.Writer, sseW sseWriter, filter textFilter) error {
 	if s.lastToolID != "" {
-		writeSSE(w, sseW, aguievents.NewToolCallEndEvent(s.lastToolID))
+		if err := writeSSE(ctx, w, sseW, aguievents.NewToolCallEndEvent(s.lastToolID)); err != nil {
+			return err
+		}
 		s.lastToolID = ""
 	}
 	if tail := filter.Flush(); tail != "" && s.textStarted {
-		writeSSE(w, sseW, aguievents.NewTextMessageContentEvent(s.msgID, tail))
+		if err := writeSSE(ctx, w, sseW, aguievents.NewTextMessageContentEvent(s.msgID, tail)); err != nil {
+			return err
+		}
 	}
 	if s.textStarted {
-		writeSSE(w, sseW, aguievents.NewTextMessageEndEvent(s.msgID))
+		if err := writeSSE(ctx, w, sseW, aguievents.NewTextMessageEndEvent(s.msgID)); err != nil {
+			return err
+		}
 	}
 	if s.lastStep != "" {
-		writeSSE(w, sseW, aguievents.NewStepFinishedEvent(s.lastStep))
+		if err := writeSSE(ctx, w, sseW, aguievents.NewStepFinishedEvent(s.lastStep)); err != nil {
+			return err
+		}
 		s.lastStep = ""
 	}
-	writeSSE(w, sseW, aguievents.NewRunFinishedEvent(s.threadID, s.runID))
+	return writeSSE(ctx, w, sseW, aguievents.NewRunFinishedEvent(s.threadID, s.runID))
 }
 
 // textFilter abstracts the stream artifact filter used to strip XML
@@ -144,11 +168,14 @@ type sseWriter interface {
 	WriteEventWithType(ctx context.Context, w io.Writer, event aguievents.Event, eventType string) error
 }
 
-// writeSSE is a convenience wrapper that writes an AG-UI event as a typed
-// SSE frame. Errors are swallowed — a failed write means the client
-// disconnected and the main loop will catch it via ctx.Done().
-func writeSSE(w io.Writer, sseW sseWriter, event aguievents.Event) {
-	_ = sseW.WriteEventWithType(context.Background(), w, event, string(event.Type()))
+// writeSSE writes an AG-UI event as a typed SSE frame using the caller's
+// request/run context so shutdown and client disconnects do not wait for the
+// SDK writer's network timeout.
+func writeSSE(ctx context.Context, w io.Writer, sseW sseWriter, event aguievents.Event) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return sseW.WriteEventWithType(ctx, w, event, string(event.Type()))
 }
 
 // inputToJSON serializes a StreamEvent.Input (typed as interface{}) to a

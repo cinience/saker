@@ -12,6 +12,7 @@ import (
 
 	"github.com/saker-ai/saker/pkg/api"
 	"github.com/saker-ai/saker/pkg/conversation"
+	"github.com/saker-ai/saker/pkg/model"
 	"github.com/saker-ai/saker/pkg/runhub"
 	"github.com/saker-ai/saker/pkg/server"
 	toolbuiltin "github.com/saker-ai/saker/pkg/tool/builtin"
@@ -80,6 +81,19 @@ func (g *Gateway) handleChatCompletions(c *gin.Context) {
 	if err != nil {
 		InvalidRequest(c, err.Error())
 		return
+	}
+
+	// Inject client-provided tools as ExtraTools so the LLM is aware of
+	// them (e.g. HITL tools like ask_user_question, confirmAction). These
+	// are NOT registered in saker's tool executor — they're passthrough.
+	if len(req.Tools) > 0 {
+		for _, ct := range req.Tools {
+			sakerReq.ExtraTools = append(sakerReq.ExtraTools, model.ToolDefinition{
+				Name:        ct.Function.Name,
+				Description: ct.Function.Description,
+				Parameters:  ct.Function.Parameters,
+			})
+		}
 	}
 
 	// Forward the OpenAI standard sampling knobs (temperature, top_p,

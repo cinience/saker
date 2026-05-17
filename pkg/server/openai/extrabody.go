@@ -97,6 +97,12 @@ type ExtraBody struct {
 	// tools whose canonical name appears in this list are sent to the LLM.
 	// Maps directly to api.Request.ToolWhitelist.
 	AllowedTools []string
+
+	// PassthroughTools lists tool names that the agent loop should NOT
+	// execute. When the model emits one of these tool calls, the agent
+	// exits so the caller can relay the call back to the client (e.g.
+	// HITL tools like ask_user_question, confirmAction).
+	PassthroughTools []string
 }
 
 // EffectiveHumanInputMode resolves the alias (Interactive) onto
@@ -245,6 +251,14 @@ func ParseExtraBody(raw map[string]any) (ExtraBody, error) {
 			return out, fmt.Errorf("extra_body.allowed_tools: %w", err)
 		}
 		out.AllowedTools = s
+	}
+
+	if v, ok := raw["passthrough_tools"]; ok {
+		s, err := coerceStringSlice(v)
+		if err != nil {
+			return out, fmt.Errorf("extra_body.passthrough_tools: %w", err)
+		}
+		out.PassthroughTools = s
 	}
 
 	if v, ok := raw["system_prompt_mode"]; ok {

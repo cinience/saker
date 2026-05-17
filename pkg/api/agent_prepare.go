@@ -40,6 +40,11 @@ type preparedRun struct {
 	// MaxIterations). Zero falls back to rt.opts.MaxIterations; -1 means
 	// explicit unlimited even if the runtime had a positive default.
 	maxIterationsOverride int
+	// passthroughTools are tool names the agent loop should NOT execute.
+	passthroughTools []string
+	// extraTools are additional tool definitions sent to the LLM alongside
+	// registry tools (e.g. HITL tools from the client).
+	extraTools []model.ToolDefinition
 }
 
 type runResult struct {
@@ -194,6 +199,8 @@ func (rt *Runtime) prepare(ctx context.Context, req Request) (preparedRun, error
 		personaSystemPrompt: personaSysPrompt,
 		personaPromptBlocks: personaBlocks,
 		personaDisallowed:   personaDisallowed,
+		passthroughTools:    normalized.PassthroughTools,
+		extraTools:          normalized.ExtraTools,
 	}, nil
 }
 

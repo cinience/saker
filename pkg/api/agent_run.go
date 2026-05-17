@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/saker-ai/saker/pkg/agent"
 	coreevents "github.com/saker-ai/saker/pkg/core/events"
 	"github.com/saker-ai/saker/pkg/logging"
 	"github.com/saker-ai/saker/pkg/metrics"
@@ -231,6 +232,19 @@ func (rt *Runtime) RunStream(ctx context.Context, req Request) (<-chan StreamEve
 		}()
 
 		result, runErr = rt.runAgentWithMiddleware(prep, progressMW)
+
+		if runErr == nil && result.output != nil && result.output.StopReason == agent.StopReasonToolPassthrough {
+			for _, tc := range result.output.ToolCalls {
+				progressChan <- StreamEvent{
+					Type:      EventToolExecutionStart,
+					ToolUseID: tc.ID,
+					Name:      tc.Name,
+					Input:     tc.Input,
+					SessionID: sessionID,
+				}
+			}
+		}
+
 		close(progressChan)
 		<-done
 
