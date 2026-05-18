@@ -7,11 +7,13 @@ import (
 	"github.com/saker-ai/saker/pkg/middleware"
 )
 
-// DefaultMaxIterations is the safety limit applied when MaxIterations is 0.
-// This is the bare-core fallback used by callers that don't override it.
-// Higher-level surfaces (api.Options, subagents, eval) layer their own
-// surface-appropriate defaults on top via withDefaults().
-const DefaultMaxIterations = 30
+// DefaultMaxIterations is the fallback applied when MaxIterations is 0.
+// -1 means unlimited: the agent loop runs until the model emits a
+// stop-turn signal, hits RepeatLoopThreshold, or is stopped by
+// MaxBudgetUSD / MaxTokens / Timeout. Higher-level surfaces
+// (api.Options, subagents, eval) layer their own surface-appropriate
+// defaults via withDefaults().
+const DefaultMaxIterations = -1
 
 // DefaultSubagentMaxIterations bounds independent agent loops launched as
 // subagents. 50 mirrors Claude Code's MAX_AGENT_TURNS in

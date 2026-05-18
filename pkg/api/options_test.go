@@ -4,7 +4,6 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/saker-ai/saker/pkg/agent"
 	"github.com/saker-ai/saker/pkg/middleware"
 )
 
@@ -91,7 +90,7 @@ func TestOptionsMaxIterationsLayeredDefaults(t *testing.T) {
 	}{
 		{name: "platform_unlimited", entrypoint: EntryPointPlatform, want: -1},
 		{name: "ci_capped_at_50", entrypoint: EntryPointCI, want: 50},
-		{name: "cli_default_30", entrypoint: EntryPointCLI, want: agent.DefaultMaxIterations},
+		{name: "cli_capped_at_200", entrypoint: EntryPointCLI, want: 200},
 	}
 	for _, tc := range cases {
 		tc := tc
