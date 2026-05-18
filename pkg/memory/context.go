@@ -3,6 +3,8 @@ package memory
 import (
 	"fmt"
 	"strings"
+
+	"github.com/saker-ai/saker/pkg/textutil"
 )
 
 // BuildContext reads the memory index and returns a formatted context string
@@ -20,7 +22,7 @@ func (s *Store) BuildContext(maxTokens int) (string, error) {
 	if maxTokens > 0 {
 		charBudget := maxTokens * 4
 		if len(index) > charBudget {
-			index = index[:charBudget]
+			index = textutil.TruncateRunes(index, charBudget)
 		}
 	}
 

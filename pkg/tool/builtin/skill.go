@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/saker-ai/saker/pkg/runtime/skills"
+	"github.com/saker-ai/saker/pkg/textutil"
 	"github.com/saker-ai/saker/pkg/tool"
 )
 
@@ -199,13 +200,14 @@ func formatSkillsWithinBudget(defs []skills.Definition, contextWindowTokens int)
 	// Tier 2: proportionally truncated descriptions.
 	var b strings.Builder
 	for _, e := range entries {
-		desc := e.desc
-		if r := []rune(desc); len(r) > maxDescLen-1 {
-		    desc = string(r[:maxDescLen-1]) + "…"
-		}
+		desc := truncateDescription(e.desc, maxDescLen)
 		b.WriteString(formatSkillEntry(e.name, desc))
 	}
 	return b.String()
+}
+
+func truncateDescription(desc string, maxLen int) string {
+	return textutil.TruncateRunesWithin(desc, maxLen, "…")
 }
 
 func formatSkillEntry(name, description string) string {
@@ -231,10 +233,7 @@ func compactDescription(desc string, maxLen int) string {
 		}
 	}
 	result := strings.Join(kept, " ")
-	if len(result) > maxLen {
-		return result[:maxLen-1] + "…"
-	}
-	return result
+	return truncateDescription(result, maxLen)
 }
 
 func (s *SkillTool) Execute(ctx context.Context, params map[string]interface{}) (*tool.ToolResult, error) {

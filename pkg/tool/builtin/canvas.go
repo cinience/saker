@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/saker-ai/saker/pkg/model"
+	"github.com/saker-ai/saker/pkg/textutil"
 	"github.com/saker-ai/saker/pkg/tool"
 )
 
@@ -351,10 +352,7 @@ func defaultEdgeType(t string) string {
 }
 
 func truncate(s string, maxLen int) string {
-	if maxLen <= 0 || len(s) <= maxLen {
-		return s
-	}
-	return s[:maxLen] + "…"
+	return textutil.TruncateRunesAfter(s, maxLen, "…")
 }
 
 // canvasListNodesDescription explains the on-demand canvas summary tool.
@@ -511,10 +509,7 @@ func buildCanvasListSummary(threadID string, doc *canvasDoc) string {
 // canvasTruncate collapses newlines and clips overly long values.
 func canvasTruncate(s string, max int) string {
 	s = strings.ReplaceAll(s, "\n", " ")
-	if max <= 0 || len(s) <= max {
-		return s
-	}
-	return s[:max] + "…"
+	return textutil.TruncateRunesAfter(s, max, "…")
 }
 
 // canvasSanitize swaps angle brackets for visually similar guillemets so user

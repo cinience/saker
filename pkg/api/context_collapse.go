@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/saker-ai/saker/pkg/message"
+	"github.com/saker-ai/saker/pkg/textutil"
 )
 
 // CollapseConfig controls tool output folding to save tokens.
@@ -152,7 +153,7 @@ func collapseOutput(toolName, output string, maxLen int) string {
 	}
 
 	if len(summary) > maxLen {
-		summary = summary[:maxLen-1] + "…"
+		summary = textutil.TruncateRunesWithin(summary, maxLen, "…")
 	}
 	return summary
 }

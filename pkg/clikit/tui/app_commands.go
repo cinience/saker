@@ -10,10 +10,11 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/google/uuid"
 	"github.com/saker-ai/saker/pkg/api"
 	"github.com/saker-ai/saker/pkg/artifact"
 	"github.com/saker-ai/saker/pkg/clikit"
-	"github.com/google/uuid"
+	"github.com/saker-ai/saker/pkg/textutil"
 )
 
 // runStream starts streaming the model response in a goroutine and sends
@@ -177,14 +178,14 @@ func extractToolParamsFromJSON(toolName, inputJSON string) string {
 			lines := strings.SplitN(cmd, "\n", 3)
 			display := strings.Join(lines[:min(len(lines), 2)], " ")
 			if len(display) > 80 {
-				return display[:77] + "…"
+				return textutil.TruncateRunesWithin(display, 78, "…")
 			}
 			return display
 		}
 	case strings.Contains(strings.ToLower(toolName), "grep"):
 		if pat, ok := m["pattern"].(string); ok {
 			if len(pat) > 60 {
-				return pat[:57] + "…"
+				return textutil.TruncateRunesWithin(pat, 58, "…")
 			}
 			return pat
 		}
@@ -364,7 +365,7 @@ func truncLine(s string, maxLen int) string {
 	if len(s) <= maxLen {
 		return s
 	}
-	return s[:maxLen-1] + "…"
+	return textutil.TruncateRunesWithin(s, maxLen, "…")
 }
 
 func lastNonEmpty(lines []string) string {

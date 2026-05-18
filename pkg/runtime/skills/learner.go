@@ -9,6 +9,8 @@ import (
 	"sync"
 	"time"
 	"unicode"
+
+	"github.com/saker-ai/saker/pkg/textutil"
 )
 
 // SkillRefiner optionally refines learned skill content using a model.
@@ -306,7 +308,7 @@ func buildSkillMD(name string, input LearningInput) string {
 	for i, tc := range input.ToolCalls {
 		params := tc.Params
 		if len(params) > 60 {
-			params = params[:57] + "..."
+			params = textutil.TruncateRunesWithin(params, 60, "...")
 		}
 		sb.WriteString(fmt.Sprintf("%d. `%s`", i+1, tc.Name))
 		if params != "" {
@@ -318,7 +320,7 @@ func buildSkillMD(name string, input LearningInput) string {
 	if output := strings.TrimSpace(input.Output); output != "" {
 		sb.WriteString("\n## Result\n\n")
 		if len(output) > 500 {
-			output = output[:497] + "..."
+			output = textutil.TruncateRunesWithin(output, 500, "...")
 		}
 		sb.WriteString(output)
 		sb.WriteString("\n")
@@ -335,7 +337,7 @@ func appendToSkillMD(existing string, input LearningInput) string {
 	for i, tc := range input.ToolCalls {
 		params := tc.Params
 		if len(params) > 60 {
-			params = params[:57] + "..."
+			params = textutil.TruncateRunesWithin(params, 60, "...")
 		}
 		sb.WriteString(fmt.Sprintf("%d. `%s`", i+1, tc.Name))
 		if params != "" {
@@ -346,7 +348,7 @@ func appendToSkillMD(existing string, input LearningInput) string {
 	if output := strings.TrimSpace(input.Output); output != "" {
 		sb.WriteString("\n")
 		if len(output) > 300 {
-			output = output[:297] + "..."
+			output = textutil.TruncateRunesWithin(output, 300, "...")
 		}
 		sb.WriteString(output)
 		sb.WriteString("\n")
@@ -433,10 +435,7 @@ var stopWords = map[string]bool{
 
 func truncateStr(s string, max int) string {
 	s = strings.TrimSpace(s)
-	if len(s) <= max {
-		return s
-	}
-	return s[:max-3] + "..."
+	return textutil.TruncateRunesWithin(s, max, "...")
 }
 
 // Patch applies a targeted find-and-replace to a learned skill's SKILL.md.

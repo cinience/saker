@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+
+	"github.com/saker-ai/saker/pkg/textutil"
 )
 
 // GuardVerdict is the outcome of a security scan.
@@ -68,7 +70,7 @@ func (g *SkillGuard) Scan(content string) GuardResult {
 			if rule.pattern.MatchString(line) {
 				snippet := trimmed
 				if len(snippet) > 120 {
-					snippet = snippet[:117] + "..."
+					snippet = textutil.TruncateRunesWithin(snippet, 120, "...")
 				}
 				findings = append(findings, GuardFinding{
 					Category: rule.category,

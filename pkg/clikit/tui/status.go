@@ -6,6 +6,7 @@ import (
 
 	"charm.land/lipgloss/v2"
 	"github.com/saker-ai/saker/pkg/model"
+	"github.com/saker-ai/saker/pkg/textutil"
 )
 
 // StatusBar renders the bottom status line below the input box.
@@ -174,5 +175,5 @@ func abbreviateModel(name string) string {
 	if len(name) <= 24 {
 		return name
 	}
-	return name[:21] + "…"
+	return textutil.TruncateRunesWithin(name, 22, "…")
 }

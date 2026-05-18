@@ -9,6 +9,7 @@ import (
 	"charm.land/bubbles/v2/spinner"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/saker-ai/saker/pkg/textutil"
 )
 
 const stallThreshold = 3 * time.Second
@@ -122,7 +123,7 @@ func toolVerb(name, params string) string {
 		if params != "" {
 			display := params
 			if len(display) > 40 {
-				display = display[:37] + "..."
+				display = textutil.TruncateRunesWithin(display, 40, "...")
 			}
 			return fmt.Sprintf("Running `%s`...", display)
 		}

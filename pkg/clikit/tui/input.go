@@ -8,6 +8,7 @@ import (
 	"charm.land/bubbles/v2/textarea"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/saker-ai/saker/pkg/textutil"
 )
 
 const (
@@ -490,7 +491,7 @@ func truncInputLine(s string, max int) string {
 	if len(s) <= max {
 		return s
 	}
-	return s[:max-1] + "…"
+	return textutil.TruncateRunesWithin(s, max, "…")
 }
 
 // Focused returns whether the textarea has focus.

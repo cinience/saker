@@ -446,27 +446,19 @@ func TestCopilotKitAPI_ConnectWithToolCalls(t *testing.T) {
 	}
 	json.Unmarshal([]byte(events[1].Data), &snapshot)
 
-	if len(snapshot.Messages) != 3 {
-		t.Fatalf("expected 3 messages (user, assistant, tool), got %d", len(snapshot.Messages))
+	if len(snapshot.Messages) != 2 {
+		t.Fatalf("expected 2 visible messages (user, assistant), got %d", len(snapshot.Messages))
 	}
 
 	assistantMsg := snapshot.Messages[1]
 	if assistantMsg.Role != "assistant" {
 		t.Errorf("msg[1].role = %q, want assistant", assistantMsg.Role)
 	}
-	if len(assistantMsg.ToolCalls) != 1 {
-		t.Fatalf("expected 1 tool call, got %d", len(assistantMsg.ToolCalls))
+	if len(assistantMsg.ToolCalls) != 0 {
+		t.Fatalf("tool calls should not be returned in visible chat history, got %d", len(assistantMsg.ToolCalls))
 	}
 
-	toolMsg := snapshot.Messages[2]
-	if toolMsg.Role != "tool" {
-		t.Errorf("msg[2].role = %q, want tool", toolMsg.Role)
-	}
-	if toolMsg.ToolCallID != "call_001" {
-		t.Errorf("msg[2].toolCallId = %q, want call_001", toolMsg.ToolCallID)
-	}
-
-	t.Logf("PASS: agent/connect (tools) → %d messages, assistant has %d tool_calls",
+	t.Logf("PASS: agent/connect (tools) → %d visible messages, assistant has %d tool_calls",
 		len(snapshot.Messages), len(assistantMsg.ToolCalls))
 }
 

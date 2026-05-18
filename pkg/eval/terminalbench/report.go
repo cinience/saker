@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/saker-ai/saker/pkg/textutil"
 )
 
 // writeReport persists the structured report alongside a human-readable
@@ -224,7 +226,7 @@ func oneLine(s string, max int) string {
 	s = strings.ReplaceAll(s, "\n", " ")
 	s = strings.ReplaceAll(s, "\r", " ")
 	if max > 0 && len(s) > max {
-		s = s[:max] + "…"
+		s = textutil.TruncateRunesAfter(s, max, "…")
 	}
 	return s
 }

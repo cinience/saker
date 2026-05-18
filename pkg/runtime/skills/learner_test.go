@@ -49,6 +49,9 @@ func TestTruncateStr(t *testing.T) {
 	if got := truncateStr("a longer string here", 12); got != "a longer ..." {
 		t.Errorf("truncateStr long = %q", got)
 	}
+	if got := truncateStr("这是一个很长的技能提示", 10); got != "这是一个很长的..." {
+		t.Errorf("truncateStr multibyte = %q", got)
+	}
 }
 
 func TestShouldLearn(t *testing.T) {

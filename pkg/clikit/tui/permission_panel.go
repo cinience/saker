@@ -6,6 +6,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/saker-ai/saker/pkg/textutil"
 )
 
 // PermissionDecision captures the user's response to a permission prompt.
@@ -19,8 +20,8 @@ const (
 
 // PermissionPanelOutcome is delivered when the user finishes.
 type PermissionPanelOutcome struct {
-	Decision PermissionDecision
-	Feedback string
+	Decision  PermissionDecision
+	Feedback  string
 	Cancelled bool
 }
 
@@ -150,7 +151,7 @@ func (p *PermissionPanel) View() string {
 		}
 		detail := p.request.Detail
 		if len(detail) > 500 {
-			detail = detail[:497] + "..."
+			detail = textutil.TruncateRunesWithin(detail, 500, "...")
 		}
 		b.WriteString("\n" + detailStyle.Width(maxW).Render(detail) + "\n")
 	}

@@ -10,6 +10,7 @@ import (
 	"github.com/saker-ai/saker/pkg/middleware"
 	"github.com/saker-ai/saker/pkg/model"
 	"github.com/saker-ai/saker/pkg/runtime/skills"
+	"github.com/saker-ai/saker/pkg/textutil"
 )
 
 type AvailableSkill struct {
@@ -242,7 +243,7 @@ func (r *modelSkillRefiner) Refine(ctx context.Context, name string, input skill
 	toolsSummary := formatToolSummary(input.ToolCalls)
 	output := strings.TrimSpace(input.Output)
 	if len(output) > 500 {
-		output = output[:497] + "..."
+		output = textutil.TruncateRunesWithin(output, 500, "...")
 	}
 
 	existingContext := ""
@@ -279,10 +280,7 @@ func formatToolSummary(calls []skills.ToolCallSummary) string {
 }
 
 func truncateForRefine(s string, max int) string {
-	if len(s) <= max {
-		return s
-	}
-	return s[:max-3] + "..."
+	return textutil.TruncateRunesWithin(s, max, "...")
 }
 
 // SkillContent returns the full content of a skill for on-demand loading (tier-2).

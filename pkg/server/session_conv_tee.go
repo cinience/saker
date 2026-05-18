@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/saker-ai/saker/pkg/conversation"
 	"github.com/google/uuid"
+	"github.com/saker-ai/saker/pkg/conversation"
 )
 
 const (
@@ -131,16 +131,18 @@ func (t *convTee) recordItem(threadID, role, content, turnID string, artifacts [
 	t.appendEvent(threadID, role, "", content, turnID, artifacts)
 }
 
-// recordToolItem mirrors AppendToolItem. SessionStore does not retain
-// tool_call_id (the wire shape never reached this layer), so the resulting
-// event is demoted to System per the same safety net used in
-// pkg/api/conversation_persist.go. Tool name is preserved in ContentJSON so
-// reconstructors can still attribute the result to a specific tool.
+// recordToolItem intentionally does not mirror tool output into the unified
+// conversation Store. SessionStore keeps the realtime/tool UI state, while
+// conversation.Store is the user-visible transcript. Persisting every tool
+// result here both bloats the DB and makes reload history look unlike the
+// original chat.
 func (t *convTee) recordToolItem(threadID, toolName, content, turnID string, artifacts []Artifact) {
-	if t == nil {
-		return
-	}
-	t.appendEvent(threadID, "tool", toolName, content, turnID, artifacts)
+	_ = t
+	_ = threadID
+	_ = toolName
+	_ = content
+	_ = turnID
+	_ = artifacts
 }
 
 func (t *convTee) appendEvent(threadID, role, toolName, content, turnID string, artifacts []Artifact) {
@@ -184,19 +186,14 @@ func (t *convTee) appendEvent(threadID, role, toolName, content, turnID string, 
 	}
 }
 
-// classifyConvTeeEvent maps SessionStore role values to conversation
-// EventKind. Tool results are demoted to System because SessionStore loses
-// the tool_call_id needed for EventKindToolResult — without it the
-// projection layer rejects the insert. Mirrors the safety net in
-// pkg/api/conversation_persist.go.
+// classifyConvTeeEvent maps visible SessionStore role values to conversation
+// EventKind.
 func classifyConvTeeEvent(role string) (conversation.EventKind, string) {
 	switch strings.ToLower(strings.TrimSpace(role)) {
 	case "user":
 		return conversation.EventKindUserMessage, "user"
 	case "assistant":
 		return conversation.EventKindAssistantText, "assistant"
-	case "tool", "function":
-		return conversation.EventKindSystem, "tool"
 	case "system", "developer":
 		return conversation.EventKindSystem, "system"
 	default:

@@ -7,6 +7,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/saker-ai/saker/pkg/textutil"
 )
 
 // isLowValueToolOutput returns true if the tool output is noise that shouldn't
@@ -52,7 +54,7 @@ func formatToolResult(toolName string, output interface{}) string {
 	const maxLen = 500
 	summary := out
 	if len(summary) > maxLen {
-		summary = summary[:maxLen] + "…"
+		summary = textutil.TruncateRunesAfter(summary, maxLen, "…")
 	}
 	return fmt.Sprintf("[%s] %s", toolName, summary)
 }

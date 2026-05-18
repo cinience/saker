@@ -103,9 +103,6 @@ func convertMessages(msgs []conversation.Message) []aguitypes.Message {
 			Content:    m.Content,
 			ToolCallID: m.ToolCallID,
 		}
-		if len(m.ToolCalls) > 0 {
-			am.ToolCalls = convertToolCalls(m.ToolCalls)
-		}
 		out = append(out, am)
 	}
 	return out
@@ -116,6 +113,12 @@ func shouldSkipHistoryMessage(m *conversation.Message, out []aguitypes.Message) 
 		return true
 	}
 	content := strings.TrimSpace(m.Content)
+	if m.Role == "tool" {
+		return true
+	}
+	if m.Role == "assistant" && content == "" && len(m.ToolCalls) > 0 {
+		return true
+	}
 	if m.Role == "user" && strings.HasPrefix(content, "[System] You asked questions in plain text.") {
 		return true
 	}
@@ -126,8 +129,7 @@ func shouldSkipHistoryMessage(m *conversation.Message, out []aguitypes.Message) 
 	return string(prev.Role) == m.Role &&
 		strings.TrimSpace(fmt.Sprint(prev.Content)) == content &&
 		prev.ToolCallID == m.ToolCallID &&
-		len(prev.ToolCalls) == 0 &&
-		len(m.ToolCalls) == 0
+		len(prev.ToolCalls) == 0
 }
 
 // convertToolCalls deserializes the stored [{id, name, arguments}] JSON

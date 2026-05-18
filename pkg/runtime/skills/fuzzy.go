@@ -3,6 +3,8 @@ package skills
 import (
 	"fmt"
 	"strings"
+
+	"github.com/saker-ai/saker/pkg/textutil"
 )
 
 // FuzzyPatchResult captures the outcome of a fuzzy find-and-replace operation.
@@ -227,24 +229,14 @@ func extractContext(content, needle string, maxLen int) string {
 	if idx < 0 {
 		return extractPreview(content, maxLen)
 	}
-	start := idx - 50
-	if start < 0 {
-		start = 0
-	}
-	end := idx + len(needle) + 50
-	if end > len(content) {
-		end = len(content)
-	}
-	preview := content[start:end]
-	if len(preview) > maxLen {
-		preview = preview[:maxLen]
-	}
-	return preview
+	before := textutil.TailRunes(content[:idx], 50)
+	after := textutil.TruncateRunes(content[idx+len(needle):], 50)
+	return textutil.TruncateRunes(before+needle+after, maxLen)
 }
 
 func extractPreview(content string, maxLen int) string {
 	if len(content) <= maxLen {
 		return content
 	}
-	return content[:maxLen-3] + "..."
+	return textutil.TruncateRunesWithin(content, maxLen, "...")
 }

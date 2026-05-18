@@ -15,6 +15,7 @@ import (
 	"github.com/saker-ai/saker/pkg/runtime/skills"
 	"github.com/saker-ai/saker/pkg/sandbox"
 	sandboxenv "github.com/saker-ai/saker/pkg/sandbox/env"
+	"github.com/saker-ai/saker/pkg/textutil"
 	"github.com/saker-ai/saker/pkg/tool"
 	toolbuiltin "github.com/saker-ai/saker/pkg/tool/builtin"
 	aigotools "github.com/saker-ai/saker/pkg/tool/builtin/aigo"
@@ -360,10 +361,7 @@ func resolveModel(ctx context.Context, opts Options) (model.Model, error) {
 }
 
 func truncateString(s string, max int) string {
-	if len(s) <= max {
-		return s
-	}
-	return s[:max-3] + "..."
+	return textutil.TruncateRunesWithin(s, max, "...")
 }
 
 func defaultSessionID(entry EntryPoint) string {

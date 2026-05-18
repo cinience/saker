@@ -102,6 +102,9 @@ func TestTruncate(t *testing.T) {
 	if truncate("short", 10) != "short" {
 		t.Error("short string should not be truncated")
 	}
+	if got := truncate("这是一个很长的错误响应", 6); got != "这是一个很长..." {
+		t.Errorf("multibyte truncated string: got %q", got)
+	}
 	long := strings.Repeat("a", 250)
 	got := truncate(long, 200)
 	if len(got) != 203 { // 200 + 3 for "..."
