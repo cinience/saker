@@ -46,12 +46,7 @@ cpk-web-inspector {
 }
 
 .saker-copilot-chat .copilotKitMessagesContainer {
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  max-width: 768px;
-  margin: 0 auto;
-  padding: 20px 24px 12px;
+  padding: 20px 40px 12px;
 }
 
 /* ── Messages: shared base ── */
@@ -59,7 +54,6 @@ cpk-web-inspector {
   border-radius: 14px;
   font-size: 15px;
   line-height: 1.75;
-  max-width: 88%;
   margin-bottom: 22px;
   word-break: break-word;
 }
@@ -70,17 +64,16 @@ cpk-web-inspector {
   color: var(--text, #e2e8f0);
   border-radius: 20px 20px 4px 20px;
   padding: 12px 18px;
-  align-self: flex-end;
+  margin-left: auto;
   max-width: 75%;
 }
 
-/* ── Assistant messages: left-aligned ── */
+/* ── Assistant messages: transparent ── */
 .saker-copilot-chat .copilotKitMessage.copilotKitAssistantMessage {
   background: color-mix(in srgb, var(--bg, #0a0a0a) 18%, transparent);
   color: var(--text, #e2e8f0);
   padding: 10px 12px;
-  max-width: 90%;
-  align-self: flex-start;
+  max-width: 85%;
 }
 
 /* ── Message controls (copy/etc.) ── */
