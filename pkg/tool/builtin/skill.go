@@ -200,8 +200,8 @@ func formatSkillsWithinBudget(defs []skills.Definition, contextWindowTokens int)
 	var b strings.Builder
 	for _, e := range entries {
 		desc := e.desc
-		if len(desc) > maxDescLen {
-			desc = desc[:maxDescLen-1] + "…"
+		if r := []rune(desc); len(r) > maxDescLen-1 {
+		    desc = string(r[:maxDescLen-1]) + "…"
 		}
 		b.WriteString(formatSkillEntry(e.name, desc))
 	}
