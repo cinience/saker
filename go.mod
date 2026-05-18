@@ -22,7 +22,7 @@ require (
 	github.com/go-git/go-git/v5 v5.18.0
 	github.com/go-jose/go-jose/v4 v4.1.4
 	github.com/go-ldap/ldap/v3 v3.4.13
-	github.com/godeps/aigo v0.16.0
+	github.com/godeps/aigo v0.21.0
 	github.com/godeps/goim v0.1.2
 	github.com/godeps/govm v0.1.4-0.20260320035657-7ab34655fe79
 	github.com/google/uuid v1.6.0
@@ -249,5 +249,3 @@ require (
 	modernc.org/memory v1.11.0 // indirect
 	modernc.org/sqlite v1.49.1 // indirect
 )
-
-replace github.com/godeps/aigo v0.16.0 => ./godeps/aigo
