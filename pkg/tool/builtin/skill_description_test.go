@@ -111,6 +111,7 @@ func TestCompactDescription(t *testing.T) {
 		{"multi line", "line1\nline2\nline3\nline4", 100, "line1 line2 line3"},
 		{"skip blanks", "line1\n\nline2", 100, "line1 line2"},
 		{"truncate", "a very long description that exceeds the limit", 20, "a very long descrip…"},
+		{"truncate multibyte", "这是一个很长的技能描述", 10, "这是一个很长的技能…"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

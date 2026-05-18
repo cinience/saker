@@ -12,6 +12,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/saker-ai/saker/pkg/textutil"
 )
 
 func defaultTransport() *http.Transport {
@@ -83,10 +85,7 @@ func (e *APIError) Error() string {
 }
 
 func truncate(s string, n int) string {
-	if len(s) <= n {
-		return s
-	}
-	return s[:n] + "..."
+	return textutil.TruncateRunesAfter(s, n, "...")
 }
 
 func (c *Client) newRequest(ctx context.Context, method, path string, body io.Reader) (*http.Request, error) {

@@ -162,6 +162,9 @@ func TestTruncate(t *testing.T) {
 	if got := truncate("a long string here", 10); got != "a long ..." {
 		t.Errorf("truncate long = %q", got)
 	}
+	if got := truncate("这是一个很长的记忆内容", 10); got != "这是一个很长的..." {
+		t.Errorf("truncate multibyte = %q", got)
+	}
 }
 
 func TestExtractAgentOutput(t *testing.T) {

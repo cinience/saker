@@ -7,8 +7,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/saker-ai/saker/pkg/apps"
 	"github.com/gin-gonic/gin"
+	"github.com/saker-ai/saker/pkg/apps"
+	"github.com/saker-ai/saker/pkg/textutil"
 )
 
 // ── Share-token management ────────────────────────────────────────────────────
@@ -60,7 +61,7 @@ func (s *Server) handleAppsShareCollection(c *gin.Context) {
 		for i, st := range kf.ShareTokens {
 			preview := st.Token
 			if len(preview) > 6 {
-				preview = preview[:6] + "…"
+				preview = textutil.TruncateRunesAfter(preview, 6, "…")
 			}
 			out[i] = apiShareToken{
 				TokenPreview: preview,

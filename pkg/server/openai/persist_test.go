@@ -12,10 +12,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gin-gonic/gin"
 	"github.com/saker-ai/saker/pkg/api"
 	"github.com/saker-ai/saker/pkg/conversation"
 	"github.com/saker-ai/saker/pkg/runhub"
-	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
 
@@ -47,11 +47,11 @@ func newPersistTestGateway(t *testing.T, runner Runner) (*Gateway, *gin.Engine, 
 			Enabled:             true,
 			MaxRuns:             10,
 			MaxRunsPerTenant:    5,
-			RingSize:             64,
-			ExpiresAfterSeconds:  60,
-			MaxRequestBodyBytes:  1024 * 1024,
-			ErrorDetailMode:      "dev",
-			DevBypassAuth:        true,
+			RingSize:            64,
+			ExpiresAfterSeconds: 60,
+			MaxRequestBodyBytes: 1024 * 1024,
+			ErrorDetailMode:     "dev",
+			DevBypassAuth:       true,
 		},
 	}
 	require.NoError(t, deps.Options.Validate())
@@ -118,9 +118,9 @@ func TestPersist_NonStreaming_RoundTrip(t *testing.T) {
 	require.NotEmpty(t, threadID, "X-Saker-Thread-Id header must be set")
 
 	ctx := context.Background()
-	// Block until the second assistant_text delta has been recorded.
-	// Inputs are recorded synchronously before the response so they're
-	// already on disk by the time we look.
+	// Assistant text is finalized once at stream end; inputs are recorded
+	// synchronously before the response so they're already on disk by the
+	// time we look.
 	waitForKind(t, ctx, store, threadID, conversation.EventKindAssistantText)
 
 	events, err := store.GetEvents(ctx, threadID, conversation.GetEventsOpts{})
@@ -145,20 +145,7 @@ func TestPersist_NonStreaming_RoundTrip(t *testing.T) {
 	require.True(t, sawSystem, "system input should be recorded")
 	require.True(t, sawUser, "user input should be recorded")
 
-	// Allow a brief catch-up so the second assistant chunk lands too.
-	deadline := time.Now().Add(1 * time.Second)
-	for assistantCount < 2 && time.Now().Before(deadline) {
-		time.Sleep(10 * time.Millisecond)
-		events, err = store.GetEvents(ctx, threadID, conversation.GetEventsOpts{})
-		require.NoError(t, err)
-		assistantText, assistantCount = "", 0
-		for _, e := range events {
-			if conversation.EventKind(e.Kind) == conversation.EventKindAssistantText {
-				assistantText += e.ContentText
-				assistantCount++
-			}
-		}
-	}
+	require.Equal(t, 1, assistantCount, "streaming deltas should be persisted as one final assistant message")
 	require.Equal(t, "Hello world", assistantText, "both deltas must concatenate to the full reply")
 }
 
@@ -254,7 +241,7 @@ func TestPersist_ToolExecutionOutputNotPersisted(t *testing.T) {
 	}
 }
 
-func TestPersist_ToolExecutionResultLandsInLog(t *testing.T) {
+func TestPersist_ToolExecutionResultSkippedByDefault(t *testing.T) {
 	t.Parallel()
 	isErr := false
 	runner := newFakeRunnerStream(
@@ -266,6 +253,41 @@ func TestPersist_ToolExecutionResultLandsInLog(t *testing.T) {
 	body, _ := json.Marshal(map[string]any{
 		"model":    "gpt-4",
 		"messages": []map[string]any{{"role": "user", "content": "search"}},
+	})
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	eng.ServeHTTP(rec, req)
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	threadID := rec.Header().Get("X-Saker-Thread-Id")
+	require.NotEmpty(t, threadID)
+
+	ctx := context.Background()
+	time.Sleep(200 * time.Millisecond)
+	events, err := store.GetEvents(ctx, threadID, conversation.GetEventsOpts{})
+	require.NoError(t, err)
+	for _, e := range events {
+		require.NotEqual(t, string(conversation.EventKindToolResult), e.Kind)
+		require.NotEqual(t, string(conversation.EventKindAssistantToolCall), e.Kind)
+	}
+}
+
+func TestPersist_ToolExecutionResultLandsInLogWhenExposed(t *testing.T) {
+	t.Parallel()
+	isErr := false
+	runner := newFakeRunnerStream(
+		api.StreamEvent{Type: api.EventToolExecutionStart, ToolUseID: "tool-2", Name: "search", Input: `{"q":"test"}`},
+		api.StreamEvent{Type: api.EventToolExecutionResult, ToolUseID: "tool-2", Name: "search", Output: `{"hits":3}`, IsError: &isErr},
+	)
+	_, eng, store := newPersistTestGateway(t, runner)
+
+	body, _ := json.Marshal(map[string]any{
+		"model":    "gpt-4",
+		"messages": []map[string]any{{"role": "user", "content": "search"}},
+		"extra_body": map[string]any{
+			"expose_tool_calls": true,
+		},
 	})
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewReader(body))

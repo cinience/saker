@@ -12,6 +12,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/saker-ai/saker/pkg/textutil"
 )
 
 // MemoryType defines the category of a memory entry.
@@ -198,7 +200,7 @@ func (s *Store) updateIndexLocked() error {
 		}
 		line := fmt.Sprintf("- [%s](%s) — %s", entry.Name, filename, desc)
 		if len(line) > maxIndexLineLen {
-			line = line[:maxIndexLineLen-1] + "…"
+			line = textutil.TruncateRunesWithin(line, maxIndexLineLen, "…")
 		}
 		sb.WriteString(line)
 		sb.WriteString("\n")
@@ -311,7 +313,7 @@ func filenameToName(filename string) string {
 // truncateIndex enforces maxEntrypointLines and maxEntrypointBytes.
 func truncateIndex(content string) string {
 	if len(content) > maxEntrypointBytes {
-		content = content[:maxEntrypointBytes]
+		content = textutil.TruncateBytes(content, maxEntrypointBytes)
 	}
 	lines := strings.SplitN(content, "\n", maxEntrypointLines+1)
 	if len(lines) > maxEntrypointLines {

@@ -8,9 +8,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/saker-ai/saker/pkg/api"
 	"github.com/google/uuid"
 	"github.com/robfig/cron/v3"
+	"github.com/saker-ai/saker/pkg/api"
+	"github.com/saker-ai/saker/pkg/textutil"
 )
 
 // silentMarker is the exact response an agent can return to suppress delivery
@@ -207,7 +208,7 @@ func (s *Scheduler) executeJob(job *CronJob) {
 
 	// Truncate summary.
 	if len(summary) > 500 {
-		summary = summary[:500] + "..."
+		summary = textutil.TruncateRunesAfter(summary, 500, "...")
 	}
 	s.finishRun(job, run, &finishTime, "ok", summary, "")
 }

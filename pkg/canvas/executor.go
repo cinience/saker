@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/saker-ai/saker/pkg/api"
+	"github.com/saker-ai/saker/pkg/textutil"
 	"github.com/saker-ai/saker/pkg/tool"
 )
 
@@ -448,10 +449,7 @@ func filterEmpty(in []string) []string {
 }
 
 func truncate(s string, max int) string {
-	if len(s) <= max {
-		return s
-	}
-	return s[:max]
+	return textutil.TruncateRunes(s, max)
 }
 
 // rateLimitedSaver coalesces canvas writes during a run so a 50-node DAG

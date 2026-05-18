@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/saker-ai/saker/pkg/api"
+	"github.com/saker-ai/saker/pkg/textutil"
 )
 
 // ActiveTurn represents a currently running agent turn.
@@ -160,8 +161,5 @@ func (t *ActiveTurnTracker) Count() int {
 }
 
 func truncateStr(s string, maxLen int) string {
-	if len(s) <= maxLen {
-		return s
-	}
-	return s[:maxLen] + "..."
+	return textutil.TruncateRunesAfter(s, maxLen, "...")
 }

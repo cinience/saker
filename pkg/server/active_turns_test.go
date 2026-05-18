@@ -141,4 +141,5 @@ func TestTruncateStr(t *testing.T) {
 	require.Equal(t, "abc", truncateStr("abc", 5))
 	require.Equal(t, "abcde", truncateStr("abcde", 5))
 	require.Equal(t, "abcde...", truncateStr("abcdefgh", 5))
+	require.Equal(t, "这是一个很...", truncateStr("这是一个很长的提示", 5))
 }

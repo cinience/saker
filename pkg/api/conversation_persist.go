@@ -11,6 +11,7 @@ import (
 
 	"github.com/saker-ai/saker/pkg/conversation"
 	"github.com/saker-ai/saker/pkg/message"
+	"github.com/saker-ai/saker/pkg/textutil"
 )
 
 // conversationPersistTimeout caps a single persistHistory write into the
@@ -276,7 +277,7 @@ func conversationTitleFromTail(tail []message.Message) string {
 			continue
 		}
 		if len(text) > 80 {
-			text = text[:80]
+			text = textutil.TruncateRunes(text, 80)
 		}
 		return text
 	}

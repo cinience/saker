@@ -8,6 +8,7 @@ import (
 
 	"github.com/saker-ai/saker/pkg/logging"
 	"github.com/saker-ai/saker/pkg/memory"
+	"github.com/saker-ai/saker/pkg/textutil"
 )
 
 // MemoryNudgeConfig controls when and how the memory nudge fires.
@@ -206,8 +207,5 @@ func slugify(s string, maxLen int) string {
 }
 
 func truncate(s string, maxLen int) string {
-	if len(s) <= maxLen {
-		return s
-	}
-	return s[:maxLen-3] + "..."
+	return textutil.TruncateRunesWithin(s, maxLen, "...")
 }

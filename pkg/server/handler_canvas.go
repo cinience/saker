@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/saker-ai/saker/pkg/textutil"
 )
 
 // canvasDir returns the legacy single-project canvas directory. New call
@@ -179,10 +181,7 @@ func firstNonEmpty(values ...string) string {
 
 func truncateLine(s string, max int) string {
 	s = strings.ReplaceAll(s, "\n", " ")
-	if max <= 0 || len(s) <= max {
-		return s
-	}
-	return s[:max] + "…"
+	return textutil.TruncateRunesAfter(s, max, "…")
 }
 
 // canvasKeywords are the substrings whose presence in the user's prompt

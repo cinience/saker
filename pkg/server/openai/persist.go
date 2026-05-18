@@ -11,6 +11,7 @@ import (
 
 	"github.com/saker-ai/saker/pkg/api"
 	"github.com/saker-ai/saker/pkg/conversation"
+	"github.com/saker-ai/saker/pkg/textutil"
 )
 
 // closeTurnTimeout caps the wall-clock budget for the post-stream
@@ -34,11 +35,12 @@ const closeTurnTimeout = 5 * time.Second
 // producer goroutine. The producer is the sole event-source for the
 // rest of the run, so no mutex is required.
 type chatPersister struct {
-	store     *conversation.Store
-	threadID  string
-	projectID string
-	turnID    string
-	logger    *slog.Logger
+	store             *conversation.Store
+	threadID          string
+	projectID         string
+	turnID            string
+	persistToolEvents bool
+	logger            *slog.Logger
 }
 
 // openChatPersister resolves the conversation thread for this request
@@ -120,11 +122,12 @@ func (g *Gateway) openChatPersister(ctx context.Context, req ChatRequest, extra 
 	}
 
 	return &chatPersister{
-		store:     store,
-		threadID:  threadID,
-		projectID: projectID,
-		turnID:    turnID,
-		logger:    logger,
+		store:             store,
+		threadID:          threadID,
+		projectID:         projectID,
+		turnID:            turnID,
+		persistToolEvents: extra.ExposeToolCalls,
+		logger:            logger,
 	}, nil
 }
 
@@ -159,6 +162,9 @@ func (p *chatPersister) recordInputMessage(ctx context.Context, m ChatMessage) e
 	case "assistant":
 		kind = conversation.EventKindAssistantText
 	case "tool", "function":
+		if !p.persistToolEvents {
+			return nil
+		}
 		kind = conversation.EventKindToolResult
 	default:
 		return fmt.Errorf("unknown role %q", m.Role)
@@ -174,7 +180,7 @@ func (p *chatPersister) recordInputMessage(ctx context.Context, m ChatMessage) e
 		Role:        role,
 		ContentText: text,
 	}
-	if len(m.ToolCalls) > 0 {
+	if len(m.ToolCalls) > 0 && p.persistToolEvents {
 		in.ContentJSON = m.ToolCalls
 	}
 	if role == "tool" || role == "function" {
@@ -188,9 +194,9 @@ func (p *chatPersister) recordInputMessage(ctx context.Context, m ChatMessage) e
 	return nil
 }
 
-// recordEvent persists a single saker StreamEvent to the conversation
-// log. Called by the producer goroutine AFTER the chunk has been
-// hubRun.Publish'd, so a slow DB never gates SSE delivery.
+// recordEvent persists a single non-text saker StreamEvent to the
+// conversation log. Assistant text deltas are intentionally finalized once
+// via recordAssistantText so streaming does not amplify DB writes.
 //
 // Errors are logged and swallowed: dropping an event is bad, but
 // breaking the chat for the user mid-stream is worse.
@@ -200,22 +206,11 @@ func (p *chatPersister) recordEvent(ctx context.Context, evt api.StreamEvent) {
 	}
 	switch evt.Type {
 	case api.EventContentBlockDelta:
-		if evt.Delta == nil || evt.Delta.Text == "" {
+		return
+	case api.EventToolExecutionStart:
+		if !p.persistToolEvents {
 			return
 		}
-		_, err := p.store.AppendEvent(ctx, conversation.AppendEventInput{
-			ThreadID:    p.threadID,
-			ProjectID:   p.projectID,
-			TurnID:      p.turnID,
-			Kind:        conversation.EventKindAssistantText,
-			Role:        "assistant",
-			ContentText: evt.Delta.Text,
-		})
-		if err != nil {
-			p.logger.Warn("conversation persister: assistant_text append failed",
-				"thread_id", p.threadID, "turn_id", p.turnID, "err", err)
-		}
-	case api.EventToolExecutionStart:
 		args := stringifyOutput(evt.Input)
 		payload := map[string]any{
 			"id":   evt.ToolUseID,
@@ -241,6 +236,9 @@ func (p *chatPersister) recordEvent(ctx context.Context, evt api.StreamEvent) {
 		// Intermediate output — skip persistence. The authoritative final
 		// state (with metadata/error flags) arrives via EventToolExecutionResult.
 	case api.EventToolExecutionResult:
+		if !p.persistToolEvents {
+			return
+		}
 		text := stringifyOutput(evt.Output)
 		payload := map[string]any{
 			"tool_use_id": evt.ToolUseID,
@@ -280,6 +278,28 @@ func (p *chatPersister) recordEvent(ctx context.Context, evt api.StreamEvent) {
 			p.logger.Warn("conversation persister: error append failed",
 				"thread_id", p.threadID, "turn_id", p.turnID, "err", err)
 		}
+	}
+}
+
+func (p *chatPersister) recordAssistantText(ctx context.Context, text string) {
+	if p == nil {
+		return
+	}
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return
+	}
+	_, err := p.store.AppendEvent(ctx, conversation.AppendEventInput{
+		ThreadID:    p.threadID,
+		ProjectID:   p.projectID,
+		TurnID:      p.turnID,
+		Kind:        conversation.EventKindAssistantText,
+		Role:        "assistant",
+		ContentText: text,
+	})
+	if err != nil {
+		p.logger.Warn("conversation persister: assistant_text append failed",
+			"thread_id", p.threadID, "turn_id", p.turnID, "err", err)
 	}
 }
 
@@ -339,7 +359,7 @@ func chatTitleFromRequest(req ChatRequest) string {
 			continue
 		}
 		if len(text) > 80 {
-			text = text[:80]
+			text = textutil.TruncateRunes(text, 80)
 		}
 		return text
 	}

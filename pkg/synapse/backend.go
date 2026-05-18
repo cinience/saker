@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/saker-ai/saker/pkg/textutil"
 	synapsev1 "github.com/saker-ai/saker/proto/synapse/v1"
 )
 
@@ -56,8 +57,8 @@ func NewHTTPBackend(baseURL string) *HTTPBackend {
 		client: &http.Client{
 			Transport: &http.Transport{
 				MaxIdleConnsPerHost: 4,
-				IdleConnTimeout:    90 * time.Second,
-				DisableCompression: true,
+				IdleConnTimeout:     90 * time.Second,
+				DisableCompression:  true,
 			},
 		},
 	}
@@ -334,8 +335,5 @@ func tryExtractUsage(data []byte) *synapsev1.Usage {
 }
 
 func truncate(s string, n int) string {
-	if len(s) <= n {
-		return s
-	}
-	return s[:n] + "…"
+	return textutil.TruncateRunesAfter(s, n, "…")
 }

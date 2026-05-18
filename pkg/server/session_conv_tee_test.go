@@ -156,13 +156,12 @@ func TestConvTee_AppendItemWithArtifactsEncodesArtifacts(t *testing.T) {
 	}
 }
 
-func TestConvTee_AppendToolItemDemotedToSystem(t *testing.T) {
+func TestConvTee_AppendToolItemSkipped(t *testing.T) {
 	t.Parallel()
 	store, conv := newSessionStoreWithTee(t, "default")
 	thread := store.CreateThread("t")
 
-	// SessionStore loses tool_call_id, so the tee must demote to System and
-	// keep tool_name in ContentJSON for forensics.
+	store.AppendItem(thread.ID, "user", "find it", "turn-1")
 	store.AppendToolItem(thread.ID, "search_web", `{"hits":3}`, "turn-1", nil)
 
 	events, err := conv.GetEvents(context.Background(), thread.ID, conversation.GetEventsOpts{Limit: 100})
@@ -170,20 +169,10 @@ func TestConvTee_AppendToolItemDemotedToSystem(t *testing.T) {
 		t.Fatalf("conv.GetEvents: %v", err)
 	}
 	if len(events) != 1 {
-		t.Fatalf("events len = %d, want 1", len(events))
+		t.Fatalf("events len = %d, want 1 visible user event", len(events))
 	}
-	if events[0].Kind != string(conversation.EventKindSystem) {
-		t.Errorf("events[0].Kind = %q, want System (demoted)", events[0].Kind)
-	}
-	if events[0].Role != "tool" {
-		t.Errorf("events[0].Role = %q, want tool (preserved)", events[0].Role)
-	}
-	var payload map[string]any
-	if err := json.Unmarshal(events[0].ContentJSON, &payload); err != nil {
-		t.Fatalf("decode ContentJSON: %v", err)
-	}
-	if name, _ := payload["tool_name"].(string); name != "search_web" {
-		t.Errorf("payload.tool_name = %v, want search_web", payload["tool_name"])
+	if events[0].Kind != string(conversation.EventKindUserMessage) || events[0].Role != "user" {
+		t.Errorf("events[0] = kind %q role %q, want visible user event", events[0].Kind, events[0].Role)
 	}
 }
 
@@ -307,8 +296,6 @@ func TestConvTee_RoleClassification(t *testing.T) {
 		{"assistant", conversation.EventKindAssistantText, "assistant"},
 		{"system", conversation.EventKindSystem, "system"},
 		{"developer", conversation.EventKindSystem, "system"},
-		{"tool", conversation.EventKindSystem, "tool"},
-		{"function", conversation.EventKindSystem, "tool"},
 		{"weird", conversation.EventKindSystem, "weird"},
 	}
 	for _, tc := range cases {

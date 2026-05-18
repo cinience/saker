@@ -450,6 +450,7 @@ func TestRuntimeToolsTruncateString(t *testing.T) {
 		{"abcdef", 3, "..."},
 		{"", 10, ""},
 		{"x", 1, "x"},
+		{"这是一个很长的参数内容", 10, "这是一个很长的..."},
 	}
 	for _, tt := range tests {
 		t.Run(fmt.Sprintf("%q/%d", tt.input, tt.max), func(t *testing.T) {

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/saker-ai/saker/pkg/api"
+	"github.com/saker-ai/saker/pkg/textutil"
 )
 
 const titleMaxInputLen = 500
@@ -17,10 +18,10 @@ const titleMaxOutputLen = 80
 // a goroutine so it never blocks the main turn.
 func generateThreadTitle(rt *api.Runtime, userMsg, assistantMsg string) (string, error) {
 	if len(userMsg) > titleMaxInputLen {
-		userMsg = userMsg[:titleMaxInputLen]
+		userMsg = textutil.TruncateRunes(userMsg, titleMaxInputLen)
 	}
 	if len(assistantMsg) > titleMaxInputLen {
-		assistantMsg = assistantMsg[:titleMaxInputLen]
+		assistantMsg = textutil.TruncateRunes(assistantMsg, titleMaxInputLen)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -74,7 +75,7 @@ func cleanTitle(raw string) string {
 
 	// Enforce max length.
 	if len(s) > titleMaxOutputLen {
-		s = s[:titleMaxOutputLen]
+		s = textutil.TruncateRunes(s, titleMaxOutputLen)
 	}
 
 	return strings.TrimSpace(s)

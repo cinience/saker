@@ -10,13 +10,13 @@ import (
 	"strings"
 	"time"
 
+	"github.com/gin-gonic/gin"
 	"github.com/saker-ai/saker/pkg/api"
 	"github.com/saker-ai/saker/pkg/conversation"
 	"github.com/saker-ai/saker/pkg/model"
 	"github.com/saker-ai/saker/pkg/runhub"
 	"github.com/saker-ai/saker/pkg/server"
 	toolbuiltin "github.com/saker-ai/saker/pkg/tool/builtin"
-	"github.com/gin-gonic/gin"
 	"go.opentelemetry.io/otel/trace"
 )
 
@@ -284,6 +284,7 @@ func (g *Gateway) runChatProducer(eventCh <-chan api.StreamEvent, hubRun *runhub
 	defer producerCancel()
 	builder := newChatChunkBuilder(chunkID, hubRun.ID, model, g.deps.Options.ErrorDetailMode)
 	filter := server.NewStreamArtifactFilter()
+	var assistantText strings.Builder
 
 	// Use a dedicated ctx for persistence writes that stays alive past
 	// any client disconnect — see chatPersister docs for the rationale.
@@ -296,6 +297,9 @@ func (g *Gateway) runChatProducer(eventCh <-chan api.StreamEvent, hubRun *runhub
 	for evt := range eventCh {
 		if evt.Type == api.EventError {
 			finalStatus = runhub.RunStatusFailed
+		}
+		if evt.Type == api.EventContentBlockDelta && evt.Delta != nil && evt.Delta.Text != "" {
+			assistantText.WriteString(evt.Delta.Text)
 		}
 		chunks, _ := builder.translate(evt, exposeTools, filter)
 		for _, ch := range chunks {
@@ -310,6 +314,7 @@ func (g *Gateway) runChatProducer(eventCh <-chan api.StreamEvent, hubRun *runhub
 		// persister.
 		persister.recordEvent(persistCtx, evt)
 	}
+	persister.recordAssistantText(persistCtx, server.CleanAssistantReply(assistantText.String()))
 
 	// If the saker stream closed without ever firing a finish-bearing
 	// chunk, synthesize a "stop" so SDKs see a clean end-of-stream.

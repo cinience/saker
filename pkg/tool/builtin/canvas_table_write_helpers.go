@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/saker-ai/saker/pkg/textutil"
 )
 
 // canvas_table_write_helpers.go owns the validation/normalisation helpers
@@ -174,7 +176,7 @@ func clampString(s string) string {
 	if len(s) <= canvasTableMaxCellChars {
 		return s
 	}
-	return s[:canvasTableMaxCellChars] + "…"
+	return textutil.TruncateRunesAfter(s, canvasTableMaxCellChars, "…")
 }
 
 func ifEmpty(s, fallback string) string {
