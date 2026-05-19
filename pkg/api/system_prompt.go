@@ -153,12 +153,11 @@ func sectionUsingTools(toolNames []string) string {
 
 	if toolSet["ask_user_question"] {
 		sb.WriteString(`
- - Use ask_user_question to interact with the user when you need to:
-   - Clarify ambiguous instructions or gather requirements before proceeding
-   - Offer choices between multiple valid approaches
-   - Get user decisions on implementation details
-   - Confirm before destructive or irreversible actions
-   Do NOT guess the user's intent — ask when uncertain. Do NOT just describe options in text — use this tool to present structured choices.`)
+ - Use ask_user_question ONLY when you genuinely need structured user input to proceed:
+   - Choosing between multiple valid implementation approaches
+   - Confirming before destructive or irreversible actions
+   - Gathering specific requirements that cannot be reasonably inferred
+   NEVER use this tool for greetings, simple questions, or when you can provide a helpful direct answer. Always prefer responding directly unless the task truly requires a structured choice from the user.`)
 	}
 
 	return sb.String()

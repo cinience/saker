@@ -18,6 +18,11 @@ import (
 
 const hitlTimeout = 5 * time.Minute
 
+// hitlQuestionTimeout is a short grace period for the frontend to display a
+// question UI and collect an answer. If no response arrives in time, a
+// fallback answer is returned so the agent loop continues instead of hanging.
+const hitlQuestionTimeout = 5 * time.Second
+
 type sideEvent struct {
 	events []aguievents.Event
 }
@@ -119,9 +124,17 @@ func (g *Gateway) makeAskQuestionHandler(runID string, sideCh chan<- sideEvent) 
 		case answers := <-resultCh:
 			g.hitl.removeQuestion(runID)
 			return answers, nil
-		case <-time.After(hitlTimeout):
+		case <-time.After(hitlQuestionTimeout):
 			g.hitl.removeQuestion(runID)
-			return nil, fmt.Errorf("question timed out after %s", hitlTimeout)
+			// Return a fallback answer so the agent loop continues instead of
+			// hanging when the frontend has no question UI wired up.
+			fallback := make(map[string]string, len(questions))
+			for _, q := range questions {
+				fallback[q.Question] = "User did not respond. Proceed with your best judgment and do not ask again."
+			}
+			g.deps.Logger.Info("question timed out, returning fallback",
+				"run_id", runID, "question_id", questionID)
+			return fallback, nil
 		case <-ctx.Done():
 			g.hitl.removeQuestion(runID)
 			return nil, ctx.Err()
