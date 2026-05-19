@@ -244,11 +244,11 @@ export class RPCClient {
 
 /** Resolve WebSocket URL based on current page context. */
 export function resolveWsUrl(): string {
-  if (typeof window === "undefined") return "ws://127.0.0.1:10112/ws";
+  if (typeof window === "undefined") return "ws://127.0.0.1:17000/ws";
   const { protocol, hostname, host, port } = window.location;
   const wsProt = protocol === "https:" ? "wss:" : "ws:";
-  // Dev mode: frontend on 10111, server on 10112
-  if (port === "10111") return `${wsProt}//${hostname}:10112/ws`;
+  // Dev mode: frontend on 10111, server on 17000
+  if (port === "10111") return `${wsProt}//${hostname}:17000/ws`;
   // Embedded mode: same origin
   return `${wsProt}//${host}/ws`;
 }

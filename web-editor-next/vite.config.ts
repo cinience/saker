@@ -16,7 +16,7 @@ export default defineConfig({
     target: "esnext",
   },
   server: {
-    port: 10112,
+    port: 17000,
     proxy: {
       "/api": "http://localhost:10110",
       "/ws": { target: "http://localhost:10110", ws: true },

@@ -10,7 +10,7 @@
 #
 # Prereqs:
 #   - Server running (e.g. `make run` in another terminal). Default base URL
-#     is http://localhost:10112; override with SAKER_API_BASE.
+#     is http://localhost:17000; override with SAKER_API_BASE.
 #   - jq installed (used to parse JSON IDs out of API responses).
 #   - ANTHROPIC_API_KEY set in the server's env so textGen has an LLM to call.
 #   - DASHSCOPE_API_KEY set in the server's env so the alibabacloud aigo
@@ -27,12 +27,12 @@
 #
 # Usage:
 #   bash scripts/seed-demo-app.sh
-#   SAKER_API_BASE=http://127.0.0.1:10112 bash scripts/seed-demo-app.sh
+#   SAKER_API_BASE=http://127.0.0.1:17000 bash scripts/seed-demo-app.sh
 #   COOKIE='session=...' bash scripts/seed-demo-app.sh    # multi-tenant mode
 
 set -euo pipefail
 
-BASE="${SAKER_API_BASE:-http://localhost:10112}"
+BASE="${SAKER_API_BASE:-http://localhost:17000}"
 COOKIE_HEADER=()
 if [[ -n "${COOKIE:-}" ]]; then
   COOKIE_HEADER=(-H "Cookie: ${COOKIE}")

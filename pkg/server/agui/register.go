@@ -81,6 +81,7 @@ func RegisterAGUIGateway(engine *gin.Engine, deps Deps) (*Gateway, error) {
 	{
 		agents.POST("/run", g.handleRun)
 		agents.POST("/run/agent/:agentId/run", g.handleRun)
+		agents.POST("/run/agent/:agentId/connect", g.handleConnectRoute)
 		agents.POST("/run/agent/:agentId/stop/:threadId", g.handleStop)
 		agents.GET("/run/info", g.handleInfo)
 		agents.POST("/run/info", g.handleInfo)

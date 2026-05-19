@@ -666,7 +666,7 @@ func TestFormatToolResult(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			got, isErr := formatToolResult(tt.evt)
+			got, _, isErr := formatToolResult(tt.evt)
 			if got != tt.want {
 				t.Errorf("formatToolResult() summary = %q, want %q", got, tt.want)
 			}

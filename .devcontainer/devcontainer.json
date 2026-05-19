@@ -34,7 +34,7 @@
     }
   },
   "postCreateCommand": "go mod download && (cd web && npm ci --no-audit --no-fund) && (cd web-editor-next && npm ci --no-audit --no-fund)",
-  "forwardPorts": [10112, 10111],
+  "forwardPorts": [17000, 10111],
   "workspaceFolder": "/workspace/saker",
   "workspaceMount": "source=${localWorkspaceFolder},target=/workspace/saker,type=bind,consistency=cached"
 }

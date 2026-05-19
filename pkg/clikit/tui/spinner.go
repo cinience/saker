@@ -2,6 +2,8 @@ package tui
 
 import (
 	"fmt"
+	"image/color"
+	"os"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -12,12 +14,19 @@ import (
 	"github.com/saker-ai/saker/pkg/textutil"
 )
 
-const stallThreshold = 3 * time.Second
+const (
+	stallThreshold    = 3 * time.Second
+	stallFadeDuration = 2 * time.Second
+	shimmerWidth      = 3
+	shimmerInterval   = 50 * time.Millisecond
+	tokenShowDelay    = 10 * time.Second
+)
 
-// SmartSpinner wraps bubbletea's spinner with status verb, stall detection,
-// and character count tracking.
+// SmartSpinner wraps bubbletea's spinner with shimmer animation, stall detection,
+// token counting, and thinking duration display.
 type SmartSpinner struct {
 	spinner spinner.Model
+	theme   Theme
 	styles  Styles
 	verb    string
 	start   time.Time
@@ -26,16 +35,28 @@ type SmartSpinner struct {
 
 	lastTokenNano atomic.Int64
 	charCount     atomic.Int64
+
+	// Shimmer state
+	shimmerIdx int
+	lastTick   time.Time
+
+	// Reduced motion
+	reducedMotion bool
 }
 
 func NewSmartSpinner(t Theme, s Styles) *SmartSpinner {
 	sp := spinner.New()
 	sp.Spinner = spinner.Dot
 	sp.Style = lipgloss.NewStyle().Foreground(t.Primary)
+
+	reduced := os.Getenv("SAKER_REDUCED_MOTION") == "1" || os.Getenv("NO_MOTION") == "1"
+
 	return &SmartSpinner{
-		spinner: sp,
-		styles:  s,
-		verb:    "Thinking...",
+		spinner:       sp,
+		theme:         t,
+		styles:        s,
+		verb:          "Thinking...",
+		reducedMotion: reduced,
 	}
 }
 
@@ -45,6 +66,8 @@ func (s *SmartSpinner) Start() {
 	s.charCount.Store(0)
 	s.stalled = false
 	s.active = true
+	s.shimmerIdx = 0
+	s.lastTick = time.Now()
 	s.verb = "Thinking..."
 }
 
@@ -81,17 +104,17 @@ func (s *SmartSpinner) Tick() tea.Cmd {
 }
 
 func (s *SmartSpinner) Update(msg tea.Msg) tea.Cmd {
+	now := time.Now()
+	if now.Sub(s.lastTick) >= shimmerInterval {
+		s.shimmerIdx++
+		s.lastTick = now
+	}
 	var cmd tea.Cmd
 	s.spinner, cmd = s.spinner.Update(msg)
 	return cmd
 }
 
 func (s *SmartSpinner) View() string {
-	icon := s.spinner.View()
-	if s.stalled {
-		icon = lipgloss.NewStyle().Foreground(s.styles.Theme.Warning).Render("●")
-	}
-
 	verb := s.verb
 	if s.stalled && !strings.Contains(s.verb, "Running") && !strings.Contains(s.verb, "Generating") {
 		verb = "Waiting..."
@@ -100,10 +123,14 @@ func (s *SmartSpinner) View() string {
 	elapsed := time.Since(s.start)
 	chars := s.charCount.Load()
 
+	// Build stats suffix
 	var stats string
 	if chars > 0 || elapsed > 2*time.Second {
 		var parts []string
-		if chars > 0 {
+		if chars > 0 && elapsed > tokenShowDelay {
+			tokens := chars / 4
+			parts = append(parts, formatTokenCount(int(tokens))+" tokens")
+		} else if chars > 0 {
 			parts = append(parts, formatCharCount(int(chars)))
 		}
 		if elapsed > 2*time.Second {
@@ -113,7 +140,104 @@ func (s *SmartSpinner) View() string {
 			stats = " (" + strings.Join(parts, ", ") + ")"
 		}
 	}
-	return icon + " " + verb + stats
+
+	fullText := verb + stats
+
+	if s.reducedMotion {
+		return s.viewReducedMotion(fullText)
+	}
+
+	if s.stalled {
+		return s.viewStalled(fullText)
+	}
+
+	return s.viewShimmer(fullText)
+}
+
+// viewShimmer renders text with a sweeping highlight animation.
+func (s *SmartSpinner) viewShimmer(text string) string {
+	runes := []rune(text)
+	textLen := len(runes)
+	if textLen == 0 {
+		return s.spinner.View() + " " + text
+	}
+
+	// Shimmer position sweeps left-to-right across the text
+	totalWidth := textLen + shimmerWidth*2
+	pos := s.shimmerIdx % totalWidth
+
+	dimStyle := lipgloss.NewStyle().Foreground(s.theme.FgDim)
+	brightStyle := lipgloss.NewStyle().Foreground(s.theme.Primary)
+	normalStyle := lipgloss.NewStyle().Foreground(s.theme.Fg)
+
+	var b strings.Builder
+	b.WriteString(s.spinner.View())
+	b.WriteString(" ")
+
+	for i, r := range runes {
+		dist := abs(i - pos + shimmerWidth)
+		if dist <= shimmerWidth {
+			// Within shimmer window — bright
+			b.WriteString(brightStyle.Render(string(r)))
+		} else if s.active && time.Since(s.start) < 500*time.Millisecond {
+			// Initial fade-in: all dim
+			b.WriteString(dimStyle.Render(string(r)))
+		} else {
+			b.WriteString(normalStyle.Render(string(r)))
+		}
+	}
+
+	return b.String()
+}
+
+// viewStalled renders with yellow→red gradient based on stall duration.
+func (s *SmartSpinner) viewStalled(text string) string {
+	lastNano := s.lastTokenNano.Load()
+	stallDur := time.Since(time.Unix(0, lastNano)) - stallThreshold
+	if stallDur < 0 {
+		stallDur = 0
+	}
+
+	// Intensity: 0.0 (just stalled, yellow) → 1.0 (fully red)
+	intensity := float64(stallDur) / float64(stallFadeDuration)
+	if intensity > 1.0 {
+		intensity = 1.0
+	}
+
+	stallColor := lerpColor(s.theme.Warning, s.theme.Error, intensity)
+	style := lipgloss.NewStyle().Foreground(stallColor)
+	icon := style.Render("●")
+
+	return icon + " " + style.Render(text)
+}
+
+// viewReducedMotion renders a static indicator without animation.
+func (s *SmartSpinner) viewReducedMotion(text string) string {
+	if s.stalled {
+		style := lipgloss.NewStyle().Foreground(s.theme.Warning)
+		return style.Render("● " + text)
+	}
+	style := lipgloss.NewStyle().Foreground(s.theme.Primary)
+	return style.Render("● " + text)
+}
+
+// lerpColor linearly interpolates between two colors.
+func lerpColor(a, b color.Color, t float64) color.Color {
+	ar, ag, ab, _ := a.RGBA()
+	br, bg, bb, _ := b.RGBA()
+
+	rr := uint8((float64(ar>>8) + t*(float64(br>>8)-float64(ar>>8))))
+	rg := uint8((float64(ag>>8) + t*(float64(bg>>8)-float64(ag>>8))))
+	rb := uint8((float64(ab>>8) + t*(float64(bb>>8)-float64(ab>>8))))
+
+	return lipgloss.Color(fmt.Sprintf("#%02X%02X%02X", rr, rg, rb))
+}
+
+func abs(n int) int {
+	if n < 0 {
+		return -n
+	}
+	return n
 }
 
 func toolVerb(name, params string) string {
@@ -192,3 +316,4 @@ func formatDuration(d time.Duration) string {
 	}
 	return fmt.Sprintf("%dm%ds", mins, rem)
 }
+

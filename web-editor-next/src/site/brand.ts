@@ -1,5 +1,5 @@
 // Stub for saker fork — original OpenCut had marketing brand metadata here.
-export const SITE_URL = "http://localhost:10112/editor";
+export const SITE_URL = "http://localhost:17000/editor";
 
 export const SITE_INFO = {
 	title: "Saker Editor",

@@ -44,8 +44,6 @@ import { TopBar } from "./TopBar";
 import { CanvasLayout } from "./CanvasLayout";
 import { ChatMainView } from "./ChatMainView";
 import { useIsMobile, parseHash, type TurnStatus, type AuthProvider } from "./chatUtils";
-import { SakerCopilotProvider } from "@/features/agui/provider";
-import { CopilotBridge } from "@/features/agui/CopilotBridge";
 
 
 interface ChatAppProps {
@@ -667,19 +665,20 @@ export function ChatApp({ authRequired, authenticated, onLogin, onLogout, authPr
     return (lastSpace > 20 ? truncated.slice(0, lastSpace) : truncated) + "...";
   }, []);
 
-  const handleAutoCreateThread = useCallback(async (title: string) => {
-    if (!requireAuth()) return;
-    try {
-      const thread = await httpRequest<Thread>("thread/create", { title });
-      flushSync(() => {
-        setThreads((prev) => [...prev, thread]);
-        setActiveThreadId(thread.id);
+  const handleThreadStarted = useCallback((threadId: string, title: string) => {
+    // AG-UI handler already persisted this thread via ensureThread().
+    // Add it to the frontend store and activate it so CopilotChat's
+    // messages area becomes visible (the --active CSS class applies).
+    const now = new Date().toISOString();
+    flushSync(() => {
+      setThreads((prev) => {
+        if (prev.some((t) => t.id === threadId)) return prev;
+        return [...prev, { id: threadId, title, created_at: now, updated_at: now }];
       });
-      window.location.hash = `chats/${thread.id}`;
-    } catch (e) {
-      console.error("auto-create thread error:", e);
-    }
-  }, [requireAuth]);
+      setActiveThreadId(threadId);
+    });
+    window.location.hash = `chats/${threadId}`;
+  }, []);
 
   /** Update thread title on the server and locally. */
   const updateThreadTitle = useCallback(
@@ -963,8 +962,6 @@ export function ChatApp({ authRequired, authenticated, onLogin, onLogout, authPr
   }, [isMobile, activeView, mobileDrawerOpen, panelCollapsed, t, togglePanel]);
 
   return (
-    <SakerCopilotProvider>
-    <CopilotBridge threadId={activeThreadId}>
     <div className="app">
       <TopBar
         username={currentUser.username}
@@ -1086,7 +1083,7 @@ export function ChatApp({ authRequired, authenticated, onLogin, onLogout, authPr
           switchThread={switchThread}
           createThread={createThread}
           deleteThread={deleteThread}
-          onAutoCreateThread={handleAutoCreateThread}
+          onThreadStarted={handleThreadStarted}
         />
       )}
       {showLogin && onLogin && (
@@ -1103,7 +1100,5 @@ export function ChatApp({ authRequired, authenticated, onLogin, onLogout, authPr
         </div>
       )}
     </div>
-    </CopilotBridge>
-    </SakerCopilotProvider>
   );
 }

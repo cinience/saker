@@ -149,10 +149,7 @@ func (p *PermissionPanel) View() string {
 		if maxW < 40 {
 			maxW = 40
 		}
-		detail := p.request.Detail
-		if len(detail) > 500 {
-			detail = textutil.TruncateRunesWithin(detail, 500, "...")
-		}
+		detail := p.renderDetail(maxW)
 		b.WriteString("\n" + detailStyle.Width(maxW).Render(detail) + "\n")
 	}
 
@@ -172,4 +169,59 @@ func (p *PermissionPanel) View() string {
 	}
 
 	return b.String()
+}
+
+// renderDetail applies syntax-aware rendering based on the tool type.
+func (p *PermissionPanel) renderDetail(maxW int) string {
+	detail := p.request.Detail
+	lower := strings.ToLower(p.request.ToolName)
+
+	switch {
+	case strings.Contains(lower, "edit"):
+		if strings.Contains(detail, "---") || strings.Contains(detail, "+++") || strings.Contains(detail, "@@") {
+			return RenderUnifiedDiff(detail, maxW, p.styles)
+		}
+		return wrapText(detail, maxW)
+	case strings.Contains(lower, "bash"):
+		return RenderBashCommand(detail, p.styles)
+	case strings.Contains(lower, "write"):
+		maxLines := (p.height - 14) / 2
+		if maxLines < 5 {
+			maxLines = 5
+		}
+		return RenderFilePreview(detail, maxLines, p.styles)
+	default:
+		if len(detail) > 500 {
+			detail = textutil.TruncateRunesWithin(detail, 500, "...")
+		}
+		return wrapText(detail, maxW)
+	}
+}
+
+// wrapText wraps text to a given width for non-markdown content.
+func wrapText(text string, width int) string {
+	if width <= 0 {
+		return text
+	}
+	lines := strings.Split(text, "\n")
+	var result []string
+	for _, line := range lines {
+		if len(line) <= width {
+			result = append(result, line)
+			continue
+		}
+		for len(line) > width {
+			cut := width
+			// Try to break at a space
+			if sp := strings.LastIndex(line[:cut], " "); sp > width/3 {
+				cut = sp + 1
+			}
+			result = append(result, line[:cut])
+			line = line[cut:]
+		}
+		if line != "" {
+			result = append(result, line)
+		}
+	}
+	return strings.Join(result, "\n")
 }

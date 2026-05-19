@@ -58,9 +58,10 @@ func (a *App) runStream(ctx context.Context, prompt string) tea.Cmd {
 					a.program.Send(StreamToolOutputMsg{Output: output})
 				}
 			case api.EventToolExecutionResult:
-				result, isErr := formatToolResult(evt)
+				result, detail, isErr := formatToolResult(evt)
 				a.program.Send(StreamToolResultMsg{
 					Output:     result,
+					Detail:     detail,
 					IsError:    isErr,
 					ImagePaths: extractImagePaths(evt),
 				})
@@ -208,14 +209,14 @@ func formatToolOutput(evt api.StreamEvent) string {
 }
 
 // formatToolResult creates a result summary from a tool_execution_result event.
-// Returns (summary, isError).
-func formatToolResult(evt api.StreamEvent) (string, bool) {
+// Returns (summary, detail, isError).
+func formatToolResult(evt api.StreamEvent) (string, string, bool) {
 	if evt.Output == nil {
-		return "", false
+		return "", "", false
 	}
 	m, ok := evt.Output.(map[string]any)
 	if !ok {
-		return "", false
+		return "", "", false
 	}
 
 	// Check for error in metadata.
@@ -228,10 +229,56 @@ func formatToolResult(evt api.StreamEvent) (string, bool) {
 
 	out, _ := m["output"].(string)
 	if out == "" {
-		return "", isErr
+		return "", "", isErr
 	}
 
-	return summarizeToolResult(evt.Name, out), isErr
+	summary := summarizeToolResult(evt.Name, out)
+	detail := toolDetailPreview(evt.Name, out)
+	return summary, detail, isErr
+}
+
+const maxDetailLines = 4
+
+// toolDetailPreview extracts a short multi-line preview from raw tool output.
+func toolDetailPreview(toolName, output string) string {
+	output = strings.TrimSpace(output)
+	if output == "" {
+		return ""
+	}
+
+	lines := strings.Split(output, "\n")
+	name := strings.ToLower(toolName)
+
+	switch {
+	case strings.Contains(name, "bash"):
+		// Show last N lines of bash output (most relevant).
+		if len(lines) <= maxDetailLines {
+			return output
+		}
+		start := len(lines) - maxDetailLines
+		return strings.Join(lines[start:], "\n")
+
+	case strings.Contains(name, "grep"):
+		// Show first N matches.
+		if len(lines) <= maxDetailLines {
+			return output
+		}
+		return strings.Join(lines[:maxDetailLines], "\n")
+
+	case strings.Contains(name, "read"):
+		// Don't preview file contents (too noisy).
+		return ""
+
+	case strings.Contains(name, "edit"), strings.Contains(name, "write"):
+		// Don't preview file writes.
+		return ""
+
+	default:
+		if len(lines) <= maxDetailLines {
+			return output
+		}
+		return strings.Join(lines[:maxDetailLines], "\n")
+	}
 }
 
 // summarizeOutput returns a short display string for raw tool output.

@@ -1,7 +1,8 @@
-// app_view.go: View() rendering for the App model and its overlays.
 package tui
 
 import (
+	"strings"
+
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 )
@@ -10,54 +11,95 @@ import (
 func (a *App) View() tea.View {
 	// Permission panel overlay (highest priority).
 	if a.permPanel != nil {
-		panelView := a.permPanel.View()
-		statusView := a.status.View()
-		view := lipgloss.JoinVertical(lipgloss.Left, panelView, statusView)
-		return tea.NewView(view)
+		return a.viewPanel(a.permPanel.View())
 	}
 
 	// Question panel overlay (interactive AskUserQuestion).
 	if a.questionPanel != nil {
-		panelView := a.questionPanel.View()
-		statusView := a.status.View()
-		view := lipgloss.JoinVertical(lipgloss.Left, panelView, statusView)
-		return tea.NewView(view)
+		return a.viewPanel(a.questionPanel.View())
 	}
 
 	// Side panel overlay.
 	if a.sidePanel != nil {
-		panelView := a.sidePanel.View()
-		statusView := a.status.View()
-		if a.sidePanel.IsInteractive() {
-			// Interactive panel (im): show panel + [spinner] + input + status.
-			inputView := a.input.View()
-			if a.spinning {
-				spinnerView := a.styles.StatusText.Render(" " + a.smartSpinner.View())
-				view := lipgloss.JoinVertical(lipgloss.Left, panelView, spinnerView, inputView, statusView)
-				return tea.NewView(view)
-			}
-			view := lipgloss.JoinVertical(lipgloss.Left, panelView, inputView, statusView)
-			return tea.NewView(view)
-		}
-		// Non-interactive panel (btw): show panel + status only.
-		view := lipgloss.JoinVertical(lipgloss.Left, panelView, statusView)
-		return tea.NewView(view)
+		return a.viewSidePanel()
 	}
 
-	statusView := a.status.View()
-	inputView := a.input.View()
-	chatView := a.chat.View()
+	// Normal inline layout: live content + spinner + input + status.
+	return a.viewNormal()
+}
 
+// viewNormal renders the inline layout (no alt-screen).
+// Completed messages are flushed via tea.Println into terminal scrollback.
+// Only the live streaming area + input + status appear in the re-rendered region.
+func (a *App) viewNormal() tea.View {
 	var parts []string
-	if chatView != "" {
-		parts = append(parts, chatView)
+
+	// Live streaming content (unflushed messages + streaming buffer)
+	liveContent := a.chat.View()
+	if liveContent != "" {
+		parts = append(parts, liveContent)
 	}
+
 	if a.spinning {
 		spinnerView := a.styles.StatusText.Render(" " + a.smartSpinner.View())
 		parts = append(parts, spinnerView)
 	}
+
+	// Notification bar (above input)
+	if notif := a.notifications.View(); notif != "" {
+		parts = append(parts, " "+notif)
+	}
+
+	// Search bar (in scroll/search mode — only useful if scrollback is in viewport)
+	if a.search.IsActive() {
+		parts = append(parts, a.search.StatusView(a.width))
+	}
+
+	inputView := a.input.View()
+	statusView := a.status.View()
 	parts = append(parts, inputView, statusView)
 
 	view := lipgloss.JoinVertical(lipgloss.Left, parts...)
+	return tea.NewView(view)
+}
+
+// viewPanel renders an overlay panel (permission/question) inline.
+func (a *App) viewPanel(panelView string) tea.View {
+	statusView := a.status.View()
+
+	// Limit panel height to avoid excessive rendering.
+	maxH := a.height - 2
+	if maxH < 5 {
+		maxH = 20
+	}
+	panelLines := strings.Split(panelView, "\n")
+	if len(panelLines) > maxH {
+		panelLines = panelLines[:maxH]
+	}
+	clipped := strings.Join(panelLines, "\n")
+
+	view := lipgloss.JoinVertical(lipgloss.Left, clipped, statusView)
+	return tea.NewView(view)
+}
+
+// viewSidePanel renders the side panel overlay inline.
+func (a *App) viewSidePanel() tea.View {
+	panelView := a.sidePanel.View()
+	statusView := a.status.View()
+
+	if a.sidePanel.IsInteractive() {
+		inputView := a.input.View()
+		var parts []string
+		parts = append(parts, panelView)
+		if a.spinning {
+			spinnerView := a.styles.StatusText.Render(" " + a.smartSpinner.View())
+			parts = append(parts, spinnerView)
+		}
+		parts = append(parts, inputView, statusView)
+		view := lipgloss.JoinVertical(lipgloss.Left, parts...)
+		return tea.NewView(view)
+	}
+
+	view := lipgloss.JoinVertical(lipgloss.Left, panelView, statusView)
 	return tea.NewView(view)
 }

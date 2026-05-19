@@ -8,13 +8,13 @@ export default defineConfig({
   workers: process.env.CI ? 1 : undefined,
   reporter: process.env.CI ? 'github' : 'list',
   use: {
-    baseURL: process.env.PLAYWRIGHT_BASE_URL || 'http://localhost:10112',
+    baseURL: process.env.PLAYWRIGHT_BASE_URL || 'http://localhost:17000',
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
   },
   webServer: {
-    command: 'cd ../.. && make server-dev && ./bin/saker --server --server-addr :10112',
-    url: 'http://localhost:10112/health',
+    command: 'cd ../.. && make server-dev && ./bin/saker --server --server-addr :17000',
+    url: 'http://localhost:17000/health',
     reuseExistingServer: !process.env.CI,
     timeout: 60_000,
   },

@@ -80,6 +80,7 @@ type StreamToolOutputMsg struct{ Output string }
 
 type StreamToolResultMsg struct {
 	Output     string
+	Detail     string // multi-line output preview (first few lines)
 	IsError    bool
 	ImagePaths []string
 }

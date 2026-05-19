@@ -34,13 +34,13 @@ export class PublicApiError extends Error {
 
 /**
  * Mirror resolveHttpBaseUrl() from web/src/features/rpc/httpRpc.ts.
- * In dev (port 10111) talk to the API server on port 10112;
+ * In dev (port 10111) talk to the API server on port 17000;
  * in embedded / production mode use the same origin.
  */
 function baseUrl(): string {
-  if (typeof window === "undefined") return "http://127.0.0.1:10112";
+  if (typeof window === "undefined") return "http://127.0.0.1:17000";
   const { protocol, hostname, host, port } = window.location;
-  if (port === "10111") return `${protocol}//${hostname}:10112`;
+  if (port === "10111") return `${protocol}//${hostname}:17000`;
   return `${protocol}//${host}`;
 }
 

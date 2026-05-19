@@ -55,11 +55,11 @@ RUN addgroup -S agent && adduser -S agent -G agent \
 WORKDIR /app
 ENV TMPDIR=/var/saker \
     ANTHROPIC_API_KEY="" \
-    SAKER_HTTP_ADDR=":10112" \
+    SAKER_HTTP_ADDR=":13000" \
     SAKER_MODEL="claude-sonnet-4-5-20250929"
 COPY --from=builder /out/saker /usr/local/bin/saker
-EXPOSE 10112
+EXPOSE 13000
 HEALTHCHECK --interval=10s --timeout=3s --start-period=5s --retries=3 \
-    CMD ["sh","-c","ADDR=${SAKER_HTTP_ADDR:-:10112}; PORT=${ADDR##*:}; [ -z \"$PORT\" ] && PORT=10112; wget -qO- http://127.0.0.1:${PORT}/health || exit 1"]
+    CMD ["sh","-c","ADDR=${SAKER_HTTP_ADDR:-:13000}; PORT=${ADDR##*:}; [ -z \"$PORT\" ] && PORT=13000; wget -qO- http://127.0.0.1:${PORT}/health || exit 1"]
 USER agent
 ENTRYPOINT ["/usr/local/bin/saker"]

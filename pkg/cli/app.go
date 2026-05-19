@@ -88,7 +88,7 @@ func New() *App {
 // @contact.url https://github.com/saker-ai/saker
 // @license.name Apache 2.0
 // @license.url https://www.apache.org/licenses/LICENSE-2.0.html
-// @host localhost:10112
+// @host localhost:17000
 // @BasePath /
 // @schemes http https
 // @securityDefinitions.apikey CookieAuth
@@ -169,7 +169,7 @@ Options:
 	gatewayAllow := flags.String("gateway-allow", "", "Comma-separated allowed user IDs (used with --gateway)")
 
 	serverMode := flags.Bool("server", false, "Run as web server")
-	serverAddr := flags.String("server-addr", ":10112", "Web server listen address")
+	serverAddr := flags.String("server-addr", ":17000", "Web server listen address")
 	serverDataDir := flags.String("server-data-dir", "", "Web server data directory (default: ~/.saker/server)")
 	serverStatic := flags.String("server-static", "", "Serve frontend from disk directory instead of embedded")
 	serverLogDir := flags.String("server-log-dir", "", "Server log directory (default: <data-dir>/logs)")

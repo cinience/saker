@@ -568,7 +568,7 @@ data: [DONE]
 from openai import OpenAI
 
 client = OpenAI(
-    base_url="http://localhost:10112/v1",
+    base_url="http://localhost:17000/v1",
     api_key="sk-your-key",
 )
 
@@ -590,7 +590,7 @@ for chunk in stream:
 #### curl (Streaming)
 
 ```bash
-curl -N http://localhost:10112/v1/chat/completions \
+curl -N http://localhost:17000/v1/chat/completions \
   -H "Authorization: Bearer sk-your-key" \
   -H "Content-Type: application/json" \
   -d '{
@@ -607,7 +607,7 @@ curl -N http://localhost:10112/v1/chat/completions \
 #### curl (Synchronous)
 
 ```bash
-curl http://localhost:10112/v1/chat/completions \
+curl http://localhost:17000/v1/chat/completions \
   -H "Authorization: Bearer sk-your-key" \
   -H "Content-Type: application/json" \
   -d '{
@@ -621,21 +621,21 @@ curl http://localhost:10112/v1/chat/completions \
 
 ```bash
 # Save the run ID from the X-Saker-Run-Id header, then reconnect:
-curl -N "http://localhost:10112/v1/runs/run_abc123/events?last_event_id=run_abc123:5" \
+curl -N "http://localhost:17000/v1/runs/run_abc123/events?last_event_id=run_abc123:5" \
   -H "Authorization: Bearer sk-your-key"
 ```
 
 #### curl (Cancel)
 
 ```bash
-curl -X DELETE http://localhost:10112/v1/runs/run_abc123 \
+curl -X DELETE http://localhost:17000/v1/runs/run_abc123 \
   -H "Authorization: Bearer sk-your-key"
 ```
 
 #### TypeScript (fetch)
 
 ```typescript
-const response = await fetch("http://localhost:10112/v1/chat/completions", {
+const response = await fetch("http://localhost:17000/v1/chat/completions", {
   method: "POST",
   headers: {
     "Authorization": "Bearer sk-your-key",

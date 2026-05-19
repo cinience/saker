@@ -59,10 +59,10 @@ git clone https://github.com/saker-ai/saker.git
 cd saker
 
 pnpm install                      # frontend dependencies
-make run                          # build frontends, embed, start server on :10112
+make run                          # build frontends, embed, start server on :17000
 ```
 
-Open `http://localhost:10112` for the workspace, `http://localhost:10112/editor/` for the video editor.
+Open `http://localhost:17000` for the workspace, `http://localhost:17000/editor/` for the video editor.
 
 ### CLI usage
 

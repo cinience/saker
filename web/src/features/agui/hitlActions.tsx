@@ -8,7 +8,7 @@ function resolveApiBase(): string {
   if (typeof window === "undefined") return "";
   const loc = window.location;
   if (loc.port === "10111") {
-    return `${loc.protocol}//${loc.hostname}:10112`;
+    return `${loc.protocol}//${loc.hostname}:17000`;
   }
   return "";
 }

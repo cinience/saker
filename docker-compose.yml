@@ -8,10 +8,10 @@ services:
     image: saker:latest
     container_name: saker
     ports:
-      - "10112:10112"
+      - "17000:17000"
     environment:
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
-      - SAKER_HTTP_ADDR=0.0.0.0:10112
+      - SAKER_HTTP_ADDR=0.0.0.0:17000
       - SAKER_MODEL=${SAKER_MODEL:-claude-sonnet-4-5-20250929}
     volumes:
       - saker_sessions:/var/saker/sessions
@@ -30,7 +30,7 @@ services:
           memory: 512M
           cpus: "0.5"
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:10112/health"]
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:17000/health"]
       interval: 10s
       timeout: 3s
       retries: 3

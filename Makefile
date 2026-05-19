@@ -193,7 +193,7 @@ desktop: web-build
 
 # Build and run server (frontend + backend + start)
 run: server
-	@lsof -ti :10112 | xargs -r kill 2>/dev/null && echo "Killed process on port 10112" || true
+	@lsof -ti :13000 | xargs -r kill 2>/dev/null && echo "Killed process on port 13000" || true
 	@LOG_DIR="$${SAKER_LOG_DIR:-$$HOME/.saker/server/logs}"; \
 	if [ -d "$$LOG_DIR" ]; then \
 		echo "Cleaning server logs: $$LOG_DIR"; \

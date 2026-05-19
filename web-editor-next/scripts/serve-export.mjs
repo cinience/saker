@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const outDir = path.resolve(__dirname, "..", "out");
-const port = parseInt(process.env.PORT || "10112", 10);
+const port = parseInt(process.env.PORT || "17000", 10);
 const basePath = "/editor";
 
 const mime = {

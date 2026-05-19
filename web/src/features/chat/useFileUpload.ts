@@ -22,9 +22,9 @@ export function useFileUpload() {
   const nextAttachIdRef = useRef(0);
 
   const resolveUploadUrl = (): string => {
-    if (typeof window === "undefined") return "http://127.0.0.1:10112/api/upload";
+    if (typeof window === "undefined") return "http://127.0.0.1:17000/api/upload";
     const { protocol, hostname, port } = window.location;
-    if (port === "10111") return `${protocol}//${hostname}:10112/api/upload`;
+    if (port === "10111") return `${protocol}//${hostname}:17000/api/upload`;
     return `${protocol}//${window.location.host}/api/upload`;
   };
 

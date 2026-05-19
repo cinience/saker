@@ -81,7 +81,7 @@ scrape_configs:
       username: admin
       password: ${SAKER_AUTH_PASS}
     static_configs:
-      - targets: ["saker.internal:10112"]
+      - targets: ["saker.internal:17000"]
 ```
 
 If the server runs without `--auth-user`, drop `basic_auth` and the route

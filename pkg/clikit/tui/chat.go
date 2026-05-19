@@ -32,10 +32,11 @@ type ChatMsg struct {
 	Role    MsgRole
 	Content string
 	// Tool-specific fields.
-	ToolName   string
-	ToolParams string // brief parameter summary
-	ToolStatus string // "pending", "success", "error"
-	ToolOutput string // result summary (e.g., "Read 42 lines", output preview)
+	ToolName     string
+	ToolParams   string // brief parameter summary
+	ToolStatus   string // "pending", "success", "error"
+	ToolOutput   string // result summary (e.g., "Read 42 lines", output preview)
+	ToolDetail   string // multi-line output preview (first few lines of raw output)
 
 	// Image-specific fields (RoleImage).
 	ImagePath string
@@ -161,6 +162,16 @@ func (c *Chat) UpdateLastToolOutput(output string) {
 	}
 }
 
+// UpdateLastToolDetail sets the detail preview of the most recent tool message.
+func (c *Chat) UpdateLastToolDetail(detail string) {
+	for i := len(c.messages) - 1; i >= 0; i-- {
+		if c.messages[i].Role == RoleTool {
+			c.messages[i].ToolDetail = detail
+			break
+		}
+	}
+}
+
 // AddBtwQuestion adds a /btw side question header (Claude Code style: yellow "/btw" + dim question).
 func (c *Chat) AddBtwQuestion(question string) {
 	c.messages = append(c.messages, ChatMsg{Role: RoleBtw, Content: question})
@@ -237,7 +248,34 @@ func (c *Chat) View() string {
 // renderMessages renders messages[from:to] into the builder.
 func (c *Chat) renderMessages(b *strings.Builder, from, to int) {
 	cw := c.contentWidth()
+
+	// Pre-compute collapsed groups for this range.
+	groups := CollapseMessages(c.messages[from:to])
+	collapsed := make(map[int]bool) // indices within [from:to] that are part of a collapsed group
+	groupStart := make(map[int]*CollapsedGroup)
+	for gi := range groups {
+		g := &groups[gi]
+		groupStart[g.StartIdx] = g
+		for idx := g.StartIdx; idx <= g.EndIdx; idx++ {
+			collapsed[idx] = true
+		}
+	}
+
 	for i := from; i < to; i++ {
+		ri := i - from // relative index
+
+		// If this is the start of a collapsed group, render the summary.
+		if g, ok := groupStart[ri]; ok {
+			b.WriteString(RenderCollapsedGroup(*g, c.styles))
+			b.WriteString("\n")
+			i = from + g.EndIdx // skip to end of group
+			continue
+		}
+		// Skip interior items of a collapsed group.
+		if collapsed[ri] {
+			continue
+		}
+
 		msg := c.messages[i]
 		switch msg.Role {
 		case RoleUser:
@@ -313,19 +351,24 @@ func (c *Chat) renderAssistant(b *strings.Builder, msg ChatMsg, width int) {
 	prevBlank := false
 	for _, line := range lines {
 		isBlank := strings.TrimSpace(line) == ""
-		// Drop blank lines before any real content and any subsequent run
-		// of consecutive blanks.
 		if isBlank && (!firstWritten || prevBlank) {
 			continue
 		}
 		prevBlank = isBlank
+
+		// Ensure lines without explicit ANSI color get bright foreground.
+		displayLine := line
+		if !strings.Contains(line, "\033[") {
+			displayLine = c.styles.AssistantText.Render(line)
+		}
+
 		if !firstWritten {
 			dot := c.styles.AssistantDot.Render(IconCircle)
-			fmt.Fprintf(b, "%s %s\n", dot, line)
+			fmt.Fprintf(b, "%s %s\n", dot, displayLine)
 			firstWritten = true
 			continue
 		}
-		fmt.Fprintf(b, "    %s\n", line)
+		fmt.Fprintf(b, "    %s\n", displayLine)
 	}
 }
 
@@ -349,7 +392,6 @@ func (c *Chat) renderTool(b *strings.Builder, msg ChatMsg) {
 	// Append status/result inline for compact display
 	switch msg.ToolStatus {
 	case "pending":
-		// Ellipsis indicates running, no extra line needed
 		parts = append(parts, c.styles.ToolParam.Render("…"))
 	case "success", "error":
 		if msg.ToolOutput != "" {
@@ -358,6 +400,15 @@ func (c *Chat) renderTool(b *strings.Builder, msg ChatMsg) {
 	}
 
 	fmt.Fprintf(b, "%s%s\n", prefix, strings.Join(parts, " "))
+
+	// Show detail preview (indented below tool line)
+	if msg.ToolDetail != "" && msg.ToolStatus != "pending" {
+		detailLines := strings.Split(msg.ToolDetail, "\n")
+		detailStyle := lipgloss.NewStyle().Foreground(c.styles.Theme.FgDim)
+		for _, line := range detailLines {
+			fmt.Fprintf(b, "        %s\n", detailStyle.Render(line))
+		}
+	}
 }
 
 // renderError renders an error/info message with indentation.
@@ -374,8 +425,19 @@ func (c *Chat) renderSystem(b *strings.Builder, msg ChatMsg, width int) {
 
 // renderImage renders an inline image with indentation.
 func (c *Chat) renderImage(b *strings.Builder, msg ChatMsg, width int) {
-	img := RenderImage(msg.ImagePath, width/2)
-	fmt.Fprintf(b, "    %s\n", img)
+	// Always show the file path clearly.
+	pathStyle := lipgloss.NewStyle().Foreground(c.styles.Theme.Secondary)
+	labelStyle := lipgloss.NewStyle().Foreground(c.styles.Theme.FgDim)
+	fmt.Fprintf(b, "    %s %s\n", labelStyle.Render("Image:"), pathStyle.Render(msg.ImagePath))
+
+	// Render inline image if terminal supports it.
+	proto := DetectImageProtocol()
+	if proto != ProtocolNone {
+		img := RenderImage(msg.ImagePath, width/2)
+		if img != "" && !strings.HasPrefix(img, "[Image:") {
+			fmt.Fprintf(b, "    %s\n", img)
+		}
+	}
 }
 
 // renderBtw renders a /btw side question header in Claude Code style:

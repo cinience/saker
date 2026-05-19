@@ -15,13 +15,13 @@ export function setHTTPProjectIdProvider(fn: ProjectIdProvider | null) {
 
 /**
  * Resolve the HTTP base URL from the current page context, mirroring
- * resolveWsUrl(): in dev (port 10111) talk to the API server on 10112,
+ * resolveWsUrl(): in dev (port 10111) talk to the API server on 17000,
  * in embedded mode use the same origin.
  */
 export function resolveHttpBaseUrl(): string {
-  if (typeof window === "undefined") return "http://127.0.0.1:10112";
+  if (typeof window === "undefined") return "http://127.0.0.1:17000";
   const { protocol, hostname, host, port } = window.location;
-  if (port === "10111") return `${protocol}//${hostname}:10112`;
+  if (port === "10111") return `${protocol}//${hostname}:17000`;
   return `${protocol}//${host}`;
 }
 

@@ -45,7 +45,7 @@ func RunBridge(ctx context.Context, cfg BridgeConfig) {
 		cfg.MaxConcurrent = 8
 	}
 	if cfg.SakerBaseURL == "" {
-		cfg.SakerBaseURL = "http://127.0.0.1:10112"
+		cfg.SakerBaseURL = "http://127.0.0.1:17000"
 	}
 
 	backend := NewHTTPBackend(cfg.SakerBaseURL)

@@ -5,7 +5,7 @@ import { useAgent, UseAgentUpdate } from "@copilotkit/react-core/v2";
 const RUNTIME_URL =
   typeof window !== "undefined"
     ? window.location.port === "10111"
-      ? `${window.location.protocol}//${window.location.hostname}:10112/v1/agents/run`
+      ? `${window.location.protocol}//${window.location.hostname}:17000/v1/agents/run`
       : "/v1/agents/run"
     : "/v1/agents/run";
 

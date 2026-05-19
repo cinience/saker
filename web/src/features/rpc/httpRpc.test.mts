@@ -64,10 +64,10 @@ test("httpRequest distinguishes network failures from RPC failures", () => {
 });
 
 test("resolveHttpBaseUrl mirrors resolveWsUrl dev/embedded split", () => {
-  // Dev: frontend on 10111 → API on 10112. Embedded: same origin. Same
+  // Dev: frontend on 10111 → API on 17000. Embedded: same origin. Same
   // rule as client.ts:resolveWsUrl, otherwise dev mode CORS-fails.
   assert.match(httpSrc, /port === "10111"/);
-  assert.match(httpSrc, /127\.0\.0\.1:10112/);
+  assert.match(httpSrc, /127\.0\.0\.1:17000/);
 });
 
 test("httpRequest behavioural mirror — request shape and error mapping", async () => {

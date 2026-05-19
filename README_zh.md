@@ -59,10 +59,10 @@ git clone https://github.com/saker-ai/saker.git
 cd saker
 
 pnpm install                      # 安装前端依赖
-make run                          # 构建前端、嵌入二进制、启动 :10112 server
+make run                          # 构建前端、嵌入二进制、启动 :17000 server
 ```
 
-打开 `http://localhost:10112` 访问工作台，`http://localhost:10112/editor/` 进入视频剪辑器。
+打开 `http://localhost:17000` 访问工作台，`http://localhost:17000/editor/` 进入视频剪辑器。
 
 ### CLI 用法
 

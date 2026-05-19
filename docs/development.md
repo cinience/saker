@@ -55,11 +55,11 @@ make web-dev
 make web-editor-dev
 ```
 
-The embedded production server listens on `:10112` by default:
+The embedded production server listens on `:17000` by default:
 
 ```bash
 make server
-./bin/saker --server --server-addr :10112
+./bin/saker --server --server-addr :17000
 ```
 
 ## Open Source Hygiene

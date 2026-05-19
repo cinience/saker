@@ -31,7 +31,7 @@ Use `.env.example` as a local template.
 Start the server:
 
 ```bash
-./bin/saker --server --server-addr :10112
+./bin/saker --server --server-addr :17000
 ```
 
 Configure web auth:

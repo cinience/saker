@@ -21,7 +21,7 @@ import (
 
 // Options configures the server.
 type Options struct {
-	Addr      string // listen address, default ":10112"
+	Addr      string // listen address, default ":17000"
 	DataDir   string // persistence directory, default "~/.saker/server"
 	StaticDir string // optional: serve frontend static files from disk
 	StaticFS  fs.FS  // optional: embedded frontend filesystem (takes precedence over StaticDir)
@@ -47,7 +47,7 @@ type Options struct {
 
 func (o *Options) defaults() {
 	if o.Addr == "" {
-		o.Addr = ":10112"
+		o.Addr = ":17000"
 	}
 	if o.Logger == nil {
 		o.Logger = slog.Default()

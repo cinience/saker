@@ -1,14 +1,15 @@
 package tui
 
 import (
+	"bytes"
 	"encoding/base64"
 	"fmt"
 	"image"
+	"image/draw"
 	// Register decoders for dimension detection.
 	_ "image/gif"
-	_ "image/jpeg"
+	"image/jpeg"
 	_ "image/png"
-	"bytes"
 	"os"
 	"path/filepath"
 	"strings"
@@ -77,9 +78,22 @@ func RenderImageData(data []byte, name string, maxCellWidth int) string {
 	return renderImageData(data, name, maxCellWidth)
 }
 
+// maxImageBytes is the threshold above which images are downscaled before rendering.
+const maxImageBytes = 2 * 1024 * 1024 // 2MB
+
+// maxRenderWidth is the max pixel width for terminal rendering (terminals display ~8px/col).
+const maxRenderWidth = 640
+
 func renderImageData(data []byte, name string, maxCellWidth int) string {
 	if maxCellWidth <= 0 {
 		maxCellWidth = defaultMaxCellWidth
+	}
+
+	// Downscale large images to reduce terminal transfer size.
+	if len(data) > maxImageBytes {
+		if resized := downsampleImage(data); resized != nil {
+			data = resized
+		}
 	}
 
 	proto := DetectImageProtocol()
@@ -92,6 +106,52 @@ func renderImageData(data []byte, name string, maxCellWidth int) string {
 		return fmt.Sprintf("[Image: %s]", name)
 	}
 }
+
+// downsampleImage decodes an image, scales it down to maxRenderWidth,
+// and re-encodes as JPEG for compact terminal transmission.
+func downsampleImage(data []byte) []byte {
+	src, _, err := image.Decode(bytes.NewReader(data))
+	if err != nil {
+		return nil
+	}
+
+	bounds := src.Bounds()
+	srcW := bounds.Dx()
+	srcH := bounds.Dy()
+
+	if srcW <= maxRenderWidth {
+		// Already small enough, just re-encode as JPEG for size reduction.
+		var buf bytes.Buffer
+		if err := jpeg.Encode(&buf, src, &jpeg.Options{Quality: 75}); err != nil {
+			return nil
+		}
+		return buf.Bytes()
+	}
+
+	// Calculate new dimensions maintaining aspect ratio.
+	newW := maxRenderWidth
+	newH := srcH * newW / srcW
+
+	// Create downscaled image using nearest-neighbor (fast, fine for terminal).
+	dst := image.NewRGBA(image.Rect(0, 0, newW, newH))
+	for y := 0; y < newH; y++ {
+		srcY := y * srcH / newH
+		for x := 0; x < newW; x++ {
+			srcX := x * srcW / newW
+			dst.Set(x, y, src.At(bounds.Min.X+srcX, bounds.Min.Y+srcY))
+		}
+	}
+
+	// Encode as JPEG (much smaller than PNG for photos).
+	var buf bytes.Buffer
+	if err := jpeg.Encode(&buf, dst, &jpeg.Options{Quality: 80}); err != nil {
+		return nil
+	}
+	return buf.Bytes()
+}
+
+// Ensure draw package is available for potential future use.
+var _ draw.Image = (*image.RGBA)(nil)
 
 // renderKitty encodes image data using the Kitty Graphics Protocol.
 // Large payloads are split into chunks for reliable transmission.

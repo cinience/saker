@@ -53,6 +53,9 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.Output != "" {
 			a.chat.UpdateLastToolOutput(msg.Output)
 		}
+		if msg.Detail != "" {
+			a.chat.UpdateLastToolDetail(msg.Detail)
+		}
 		if msg.IsError {
 			a.chat.UpdateLastToolStatus("error")
 		} else {
@@ -66,6 +69,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case StreamTokenUsageMsg:
 		a.status.AddTokens(msg.Input, msg.Output)
+		a.checkContextNotification()
 
 	case StreamErrorTextMsg:
 		a.chat.AddError(a.friendlyError(msg.Text))
@@ -212,6 +216,10 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.questionPanel = panel
 		a.questionOutcome = outcome
 		a.questionDeliver = msg.Reply
+		a.questionTexts = make([]string, len(msg.Questions))
+		for i, q := range msg.Questions {
+			a.questionTexts[i] = q.Question
+		}
 		a.prevInputEnabled = a.input.enabled
 		a.input.SetEnabled(false)
 		a.status.SetText("Ready")
@@ -266,12 +274,26 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			default:
 			}
 		}
+		// Set Q&A as tool output so it displays inline on the tool line.
+		if !msg.Outcome.Cancelled && msg.Outcome.Answers != nil {
+			var parts []string
+			for _, qText := range a.questionTexts {
+				if ans, ok := msg.Outcome.Answers[qText]; ok {
+					parts = append(parts, qText+" → "+ans)
+				}
+			}
+			if len(parts) > 0 {
+				a.chat.UpdateLastToolOutput(strings.Join(parts, " | "))
+				a.chat.UpdateLastToolStatus("success")
+			}
+		}
 		a.questionPanel = nil
 		a.questionOutcome = nil
 		a.questionDeliver = nil
+		a.questionTexts = nil
 		a.input.SetEnabled(a.prevInputEnabled)
 		a.status.SetText("Ready")
-		return a, nil
+		return a, a.flushChat()
 	}
 
 	// Forward to input (always — allows type-ahead while model runs).
@@ -374,20 +396,56 @@ func (a *App) dismissSidePanel() tea.Cmd {
 	return a.flushChat()
 }
 
+// checkContextNotification pushes a notification when token usage is high.
+func (a *App) checkContextNotification() {
+	total := a.status.inputTokens + a.status.outputTokens
+	if total == 0 {
+		return
+	}
+	// Assume 200k context window; warn at 80% and 95%.
+	const maxContext = 200_000
+	pct := float64(total) / maxContext
+	if pct >= 0.95 {
+		a.notifications.Push(Notification{
+			Key:      "context",
+			Text:     "Context nearly full — consider /new",
+			Color:    a.styles.Theme.Error,
+			Priority: PriorityHigh,
+		})
+	} else if pct >= 0.80 {
+		a.notifications.Push(Notification{
+			Key:      "context",
+			Text:     fmt.Sprintf("Context %d%% used", int(pct*100)),
+			Color:    a.styles.Theme.Warning,
+			Priority: PriorityMedium,
+		})
+	}
+}
+
 // layout recalculates component sizes based on window dimensions.
 func (a *App) layout() {
 	a.chat.SetWidth(a.width)
 	a.input.SetWidth(a.width)
 	a.status.SetWidth(a.width)
+	// Viewport gets resized dynamically in viewNormal() based on bottom height,
+	// but set a reasonable default here for overlays.
+	vpH := a.height - 6
+	if vpH < 3 {
+		vpH = 3
+	}
+	a.viewport.SetSize(a.width, vpH)
 	if a.sidePanel != nil {
 		a.sidePanel.SetSize(a.width, a.height)
 	}
 	if a.questionPanel != nil {
 		a.questionPanel.SetSize(a.width, a.height)
 	}
+	if a.permPanel != nil {
+		a.permPanel.SetSize(a.width, a.height)
+	}
 }
 
-// flushChat flushes completed chat messages to terminal scrollback via tea.Println.
+// flushChat renders completed chat messages into terminal scrollback via tea.Println.
 func (a *App) flushChat() tea.Cmd {
 	flushed, ok := a.chat.FlushMessages()
 	if !ok {
@@ -410,6 +468,9 @@ func (a *App) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if a.sidePanel != nil {
 		return a.handleSidePanelKey(msg)
 	}
+
+	// Scroll/search modes are only available in alt-screen (viewport) mode.
+	// In inline mode these are no-ops, but keep the handlers for future use.
 
 	switch msg.String() {
 	case "ctrl+d":
@@ -451,12 +512,109 @@ func (a *App) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		a.input.SaveHistory(text)
 		a.input.Reset()
 		return a.handleSubmit(text)
+
+	case "esc":
+		// No-op in inline mode (scroll mode requires alt-screen viewport).
+		return a, nil
 	}
 
 	// Forward to input textarea.
 	var cmd tea.Cmd
 	a.input, cmd = a.input.Update(msg)
 	return a, cmd
+}
+
+// handleScrollKey processes keys in scroll (vim-navigation) mode.
+func (a *App) handleScrollKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "i", "enter":
+		a.scrollMode = false
+		a.viewport.GotoBottom()
+		a.status.SetText("Ready")
+		return a, nil
+	case "esc":
+		a.scrollMode = false
+		a.status.SetText("Ready")
+		return a, nil
+	case "j", "down":
+		a.viewport.ScrollDown(1)
+	case "k", "up":
+		a.viewport.ScrollUp(1)
+	case "ctrl+d":
+		a.viewport.ScrollHalfPageDown()
+	case "ctrl+u":
+		a.viewport.ScrollHalfPageUp()
+	case "pgdown", " ":
+		a.viewport.ScrollDown(a.viewport.height)
+	case "pgup":
+		a.viewport.ScrollUp(a.viewport.height)
+	case "g":
+		a.viewport.GotoTop()
+	case "G":
+		a.viewport.GotoBottom()
+	case "n":
+		if a.search.MatchCount() > 0 {
+			a.search.NextMatch()
+			if line := a.search.CurrentLine(); line >= 0 {
+				a.viewport.ScrollToLine(line)
+			}
+		}
+	case "N":
+		if a.search.MatchCount() > 0 {
+			a.search.PrevMatch()
+			if line := a.search.CurrentLine(); line >= 0 {
+				a.viewport.ScrollToLine(line)
+			}
+		}
+	case "/":
+		a.searchMode = true
+		a.search.Activate()
+		a.status.SetText("SEARCH (Enter confirm · Esc cancel)")
+		return a, nil
+	case "ctrl+c":
+		a.scrollMode = false
+		a.status.SetText("Ready")
+		return a, nil
+	}
+	return a, nil
+}
+
+// handleSearchKey processes keys during search input mode.
+func (a *App) handleSearchKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	key := msg.String()
+	switch key {
+	case "enter":
+		a.searchMode = false
+		if a.search.MatchCount() > 0 {
+			if line := a.search.CurrentLine(); line >= 0 {
+				a.viewport.ScrollToLine(line)
+			}
+		}
+		a.status.SetText("SCROLL (n/N next/prev · / search · i exit)")
+		return a, nil
+	case "esc":
+		a.searchMode = false
+		a.search.Deactivate()
+		a.status.SetText("SCROLL (j/k scroll · g/G top/bottom · / search · i exit)")
+		return a, nil
+	case "backspace":
+		a.search.DeleteChar(a.viewport.lines)
+		return a, nil
+	case "ctrl+c":
+		a.searchMode = false
+		a.scrollMode = false
+		a.search.Deactivate()
+		a.status.SetText("Ready")
+		return a, nil
+	default:
+		if len(key) == 1 {
+			a.search.AddChar(rune(key[0]), a.viewport.lines)
+			if line := a.search.CurrentLine(); line >= 0 {
+				a.viewport.ScrollToLine(line)
+			}
+		}
+	}
+	return a, nil
 }
 
 // handleSubmit processes submitted text (user prompt or slash command).
@@ -499,6 +657,12 @@ func (a *App) handleSubmit(text string) (tea.Model, tea.Cmd) {
 				} else {
 					a.header.SetModel(newModel)
 					a.status.SetModel(newModel)
+					a.notifications.Push(Notification{
+						Key:      "model",
+						Text:     "Switched to " + newModel,
+						Color:    a.styles.Theme.Success,
+						Priority: PriorityMedium,
+					})
 					a.chat.AddError(fmt.Sprintf("Model switched to: %s", newModel))
 				}
 			}
@@ -564,7 +728,7 @@ func (a *App) handleSubmit(text string) (tea.Model, tea.Cmd) {
 
 	// Regular prompt.
 	a.chat.AddUserMessage(text)
-	flush := a.flushChat()
+	a.flushChat()
 	a.chat.StartStreaming()
 	a.spinning = true
 	a.input.SetEnabled(false)
@@ -573,7 +737,7 @@ func (a *App) handleSubmit(text string) (tea.Model, tea.Cmd) {
 	runCtx, runCancel := context.WithCancel(a.ctx)
 	a.runCancel = runCancel
 	a.smartSpinner.Start()
-	return a, tea.Batch(a.smartSpinner.Tick(), a.runStream(runCtx, text), flush)
+	return a, tea.Batch(a.smartSpinner.Tick(), a.runStream(runCtx, text))
 }
 
 // displaySandbox renders the sandbox backend name for /status, defaulting to "host".

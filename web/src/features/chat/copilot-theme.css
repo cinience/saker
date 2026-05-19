@@ -1,9 +1,45 @@
 /*
- * copilot-theme.css — Deep overrides for CopilotKit to match Saker's native
- * dark theme. Targets the .saker-copilot-chat wrapper class set on <CopilotChat>.
+ * copilot-theme.css — Deep overrides for CopilotKit v2 (AG-UI) to match
+ * Saker's native dark theme. Targets [data-copilotkit] for v2 semantic
+ * variables and .saker-copilot-chat for layout overrides.
  */
 
-/* ── Container: fill parent, transparent bg ── */
+/* ── CopilotKit wrapper: flex layout inside .main ── */
+.main > [data-copilotkit] {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* ── v2 semantic token overrides (dark theme) ── */
+[data-copilotkit] {
+  color: var(--text, #e2e8f0);
+  --background: transparent;
+  --foreground: var(--text, #e2e8f0);
+  --primary: var(--user-bubble, #2563eb);
+  --primary-foreground: var(--text, #e2e8f0);
+  --secondary: var(--bg-tertiary, #2a2a3e);
+  --secondary-foreground: var(--text, #e2e8f0);
+  --muted: var(--bg-tertiary, #2a2a3e);
+  --muted-foreground: var(--text-tertiary, #64748b);
+  --accent: var(--accent, #6366f1);
+  --accent-foreground: var(--text, #e2e8f0);
+  --destructive: var(--danger, #ef4444);
+  --destructive-foreground: #fff;
+  --border: var(--border, #2a2a3e);
+  --input: var(--bg-secondary, #1a1a2e);
+  --ring: var(--accent, #6366f1);
+  --card: var(--bg-secondary, #1a1a2e);
+  --card-foreground: var(--text, #e2e8f0);
+  --popover: var(--bg-secondary, #1a1a2e);
+  --popover-foreground: var(--text, #e2e8f0);
+  --radius: 14px;
+  color-scheme: dark;
+}
+
+/* ── v1 variable fallbacks (kept for any remaining v1 class references) ── */
 .saker-copilot-chat {
   --copilot-kit-primary-color: var(--user-bubble, #2563eb);
   --copilot-kit-contrast-color: var(--text, #e2e8f0);
@@ -283,7 +319,8 @@ cpk-web-inspector {
   .saker-copilot-chat .copilotKitInput { width: calc(100% - 24px); }
 }
 
-/* ── Block Google Fonts (CSP) ── */
-.saker-copilot-chat * {
+/* ── Block Google Fonts & v2 Tailwind font overrides (CSP) ── */
+.saker-copilot-chat *,
+[data-copilotkit] * {
   font-family: inherit !important;
 }

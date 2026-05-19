@@ -5,7 +5,7 @@
 #   ./scripts/pprof-snapshot.sh [--url URL] [--cpu SECONDS] [--out DIR] [--auth USER:PASS]
 #
 # Defaults:
-#   URL=http://localhost:10112    (override with --url or PPROF_URL)
+#   URL=http://localhost:17000    (override with --url or PPROF_URL)
 #   CPU=30                        (CPU profile sampling window in seconds)
 #   OUT=./pprof-<timestamp>       (output directory; created if missing)
 #
@@ -18,7 +18,7 @@
 #   go tool pprof -top <profile>
 set -euo pipefail
 
-URL="${PPROF_URL:-http://localhost:10112}"
+URL="${PPROF_URL:-http://localhost:17000}"
 CPU_SECONDS=30
 OUT=""
 AUTH=""

@@ -14,9 +14,9 @@ interface AuthState {
 }
 
 function resolveApiBase(): string {
-  if (typeof window === "undefined") return "http://127.0.0.1:10112";
+  if (typeof window === "undefined") return "http://127.0.0.1:17000";
   const { protocol, hostname, port } = window.location;
-  if (port === "10111") return `${protocol}//${hostname}:10112`;
+  if (port === "10111") return `${protocol}//${hostname}:17000`;
   return "";
 }
 

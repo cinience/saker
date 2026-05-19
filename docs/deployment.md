@@ -6,9 +6,9 @@
 docker compose up -d
 ```
 
-The container listens on port `10112` by default (matches `Dockerfile`'s
-`EXPOSE 10112`, the `docker-compose.yml` port mapping, and the
-`--server-addr :10112` default in `cmd/saker/main.go`). Set
+The container listens on port `17000` by default (matches `Dockerfile`'s
+`EXPOSE 17000`, the `docker-compose.yml` port mapping, and the
+`--server-addr :17000` default in `cmd/saker/main.go`). Set
 `ANTHROPIC_API_KEY` in `.env` or via the `environment` section in
 `docker-compose.yml`.
 
@@ -26,7 +26,7 @@ Type=simple
 User=saker
 Group=saker
 WorkingDirectory=/opt/saker
-ExecStart=/usr/local/bin/saker --server --server-addr :10112 --auth-user admin --auth-pass ${SAKER_AUTH_PASS}
+ExecStart=/usr/local/bin/saker --server --server-addr :17000 --auth-user admin --auth-pass ${SAKER_AUTH_PASS}
 Environment=ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
 Environment=SAKER_MODEL=claude-sonnet-4-5-20250929
 Restart=on-failure
@@ -71,7 +71,7 @@ server {
     ssl_certificate_key /etc/ssl/private/saker.key;
 
     location / {
-        proxy_pass http://127.0.0.1:10112;
+        proxy_pass http://127.0.0.1:17000;
         proxy_http_version 1.1;
 
         # WebSocket support (required for /ws endpoint)
@@ -103,11 +103,11 @@ saker --server --debug
 
 Quick captures:
 
-- CPU profile: `go tool pprof http://localhost:10112/debug/pprof/profile?seconds=30`
-- Heap: `go tool pprof http://localhost:10112/debug/pprof/heap`
-- Goroutines: `curl http://localhost:10112/debug/pprof/goroutine?debug=2 > stacks.txt`
+- CPU profile: `go tool pprof http://localhost:17000/debug/pprof/profile?seconds=30`
+- Heap: `go tool pprof http://localhost:17000/debug/pprof/heap`
+- Goroutines: `curl http://localhost:17000/debug/pprof/goroutine?debug=2 > stacks.txt`
 - Allocs / block / mutex / threadcreate: same pattern under `/debug/pprof/<name>`
-- Trace: `curl http://localhost:10112/debug/pprof/trace?seconds=5 > trace.out && go tool trace trace.out`
+- Trace: `curl http://localhost:17000/debug/pprof/trace?seconds=5 > trace.out && go tool trace trace.out`
 
 For a full bundle (cpu + heap + goroutine + allocs + block + mutex +
 threadcreate + full stack dump in one timestamped directory) use

@@ -62,12 +62,12 @@ func (h *Header) SetUpdateNotice(notice string) { h.updateNotice = notice }
 // Layout:
 //
 //	▗▄███▄▖   Saker v0.1.0
-//	▐◈ ▼ ◈▌   model-name
+//	▐◈ ▼ ◈▌   model-name · session:abc123
 //	 ▀▄█▄▀    ~/path/to/cwd
+//	           Esc scroll · / search · Ctrl+C interrupt
 func (h *Header) View() string {
 	mascotColor := h.styles.LogoColor
 
-	// Build info lines for the right side
 	titleLine := fmt.Sprintf("%s %s",
 		lipgloss.NewStyle().Bold(true).Foreground(h.styles.Theme.Fg).Render("Saker"),
 		h.styles.HeaderDim.Render("v"+h.version),
@@ -76,11 +76,14 @@ func (h *Header) View() string {
 	var modelLine string
 	if h.modelName != "" {
 		modelLine = h.styles.HeaderDim.Render(h.modelName)
+		if h.sessionID != "" {
+			modelLine += h.styles.HeaderDim.Render(" · ") +
+				lipgloss.NewStyle().Foreground(h.styles.Theme.Muted).Render(h.sessionID)
+		}
 	}
 
 	cwdLine := h.styles.HeaderDim.Render(h.cwd)
 
-	// Compose 3 rows: mascot left, info right
 	infoLines := [3]string{titleLine, modelLine, cwdLine}
 	var b strings.Builder
 	for i := 0; i < 3; i++ {
@@ -88,6 +91,11 @@ func (h *Header) View() string {
 		info := infoLines[i]
 		b.WriteString(fmt.Sprintf(" %s %s\n", mascot, info))
 	}
+
+	// Keybinding hints
+	hintStyle := lipgloss.NewStyle().Foreground(h.styles.Theme.Muted)
+	hints := hintStyle.Render("           Esc scroll · / search · Ctrl+C interrupt")
+	b.WriteString(hints + "\n")
 
 	if h.updateNotice != "" {
 		updateStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#FFAA00"))

@@ -17,6 +17,20 @@ import (
 	"github.com/saker-ai/saker/pkg/conversation"
 )
 
+// handleConnectRoute is the REST-transport entry point for /agent/:agentId/connect.
+// It reads the raw body and delegates to handleConnect.
+func (g *Gateway) handleConnectRoute(c *gin.Context) {
+	body, err := readBody(c)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": gin.H{
+			"message": "failed to read request body: " + err.Error(),
+			"type":    "invalid_request_error",
+		}})
+		return
+	}
+	g.handleConnect(c, body)
+}
+
 // handleConnect implements the AG-UI /agent/connect endpoint. CopilotKit
 // calls this when a threadId is set (or changes) to load existing messages.
 // Response is an SSE stream: RUN_STARTED → MESSAGES_SNAPSHOT → RUN_FINISHED.

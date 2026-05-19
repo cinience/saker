@@ -57,7 +57,7 @@ func main() {
 
 	// Start the WebSocket server on a background port.
 	srv, err := server.New(runtime, server.Options{
-		Addr:    "127.0.0.1:10112",
+		Addr:    "127.0.0.1:17000",
 		DataDir: *dataDir,
 	})
 	if err != nil {

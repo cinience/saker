@@ -175,7 +175,7 @@ func runOpenAIKeyCreate(stdout, stderr io.Writer, args []string) error {
 	}
 	fmt.Fprintf(stdout, "  prefix      : ak_%s…\n", res.APIKey.Prefix)
 	fmt.Fprintln(stdout)
-	fmt.Fprintln(stdout, "Use with: curl -H 'Authorization: Bearer "+res.Plaintext+"' http://127.0.0.1:10112/v1/models")
+	fmt.Fprintln(stdout, "Use with: curl -H 'Authorization: Bearer "+res.Plaintext+"' http://127.0.0.1:17000/v1/models")
 	return nil
 }
 

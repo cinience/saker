@@ -40,6 +40,15 @@ type App struct {
 	smartSpinner *SmartSpinner
 	spinning     bool
 
+	// Fullscreen viewport for scrollable message history.
+	viewport   *MessageViewport
+	scrollMode bool // true = vim-style scroll navigation active
+	searchMode bool // true = search input active within scroll mode
+
+	// Notifications and search
+	notifications *NotificationManager
+	search        *TranscriptSearch
+
 	sessionID string
 	width     int
 	height    int
@@ -56,6 +65,7 @@ type App struct {
 	questionPanel    *QuestionPanel
 	questionOutcome  <-chan QuestionPanelOutcome
 	questionDeliver  chan<- QuestionPanelOutcome // bridge channel back to askFn caller
+	questionTexts    []string                    // original question texts for display after submit
 	prevInputEnabled bool                        // saved input state to restore after panel closes
 
 	// permission panel overlay (for tool permission confirmation)
@@ -80,16 +90,19 @@ func New(ctx context.Context, cfg AppConfig) *App {
 	appCtx, appCancel := context.WithCancel(ctx) //nolint:govet // Cancel is retained on App.cancel and invoked from App.Stop.
 
 	a := &App{
-		cfg:       cfg,
-		ctx:       appCtx,
-		cancel:    appCancel,
-		styles:    styles,
-		header:       NewHeader(styles),
-		chat:         NewChat(styles),
-		input:        NewInput(styles),
-		status:       NewStatusBar(styles),
-		smartSpinner: NewSmartSpinner(theme, styles),
-		sessionID:    sessionID,
+		cfg:           cfg,
+		ctx:           appCtx,
+		cancel:        appCancel,
+		styles:        styles,
+		header:        NewHeader(styles),
+		chat:          NewChat(styles),
+		input:         NewInput(styles),
+		status:        NewStatusBar(styles),
+		smartSpinner:  NewSmartSpinner(theme, styles),
+		viewport:      NewMessageViewport(80, 24),
+		notifications: NewNotificationManager(styles),
+		search:        NewTranscriptSearch(styles),
+		sessionID:     sessionID,
 	}
 
 	// Populate header and status bar.
