@@ -61,8 +61,15 @@ func (g *Gateway) handleConnect(c *gin.Context, body []byte) {
 		runID = "run_" + uuid.New().String()
 	}
 
+	// If there's an active run on this thread, skip loading messages to avoid
+	// sending a MESSAGES_SNAPSHOT that would reset the in-flight streaming state.
+	g.mu.Lock()
+	activeRunID := g.threadRuns[threadID]
+	g.mu.Unlock()
+	hasActiveRun := activeRunID != ""
+
 	var aguiMessages []aguitypes.Message
-	if g.deps.ConversationStore != nil {
+	if !hasActiveRun && g.deps.ConversationStore != nil {
 		msgs, err := g.deps.ConversationStore.GetMessages(
 			c.Request.Context(), threadID, conversation.GetMessagesOpts{},
 		)
@@ -92,9 +99,13 @@ func (g *Gateway) handleConnect(c *gin.Context, body []byte) {
 		g.deps.Logger.Warn("agui connect: failed to write run start", "thread_id", threadID, "run_id", runID, "error", err)
 		return
 	}
-	if err := writeSSE(c.Request.Context(), w, sseW, aguievents.NewMessagesSnapshotEvent(aguiMessages)); err != nil {
-		g.deps.Logger.Warn("agui connect: failed to write snapshot", "thread_id", threadID, "run_id", runID, "error", err)
-		return
+	// Skip MESSAGES_SNAPSHOT when a run is actively streaming to avoid resetting
+	// the in-flight streaming state in the client.
+	if !hasActiveRun {
+		if err := writeSSE(c.Request.Context(), w, sseW, aguievents.NewMessagesSnapshotEvent(aguiMessages)); err != nil {
+			g.deps.Logger.Warn("agui connect: failed to write snapshot", "thread_id", threadID, "run_id", runID, "error", err)
+			return
+		}
 	}
 	// Emit state snapshot with cached artifacts from previous runs.
 	var artifactState []any
@@ -137,6 +148,9 @@ func convertMessages(msgs []conversation.Message) []aguitypes.Message {
 			Content:    m.Content,
 			ToolCallID: m.ToolCallID,
 		}
+		if m.Role == "assistant" && len(m.ToolCalls) > 0 {
+			am.ToolCalls = convertToolCalls(m.ToolCalls)
+		}
 		out = append(out, am)
 	}
 	return out
@@ -147,10 +161,7 @@ func shouldSkipHistoryMessage(m *conversation.Message, out []aguitypes.Message) 
 		return true
 	}
 	content := strings.TrimSpace(m.Content)
-	if m.Role == "tool" {
-		return true
-	}
-	if m.Role == "assistant" && content == "" && len(m.ToolCalls) > 0 {
+	if m.Role == "assistant" && content == "" && len(m.ToolCalls) == 0 {
 		return true
 	}
 	if m.Role == "user" && strings.HasPrefix(content, "[System] You asked questions in plain text.") {

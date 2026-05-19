@@ -294,6 +294,37 @@ func (r *Registry) findMCPSessionLocked(serverID, sessionID string) *mcpSessionI
 	return nil
 }
 
+// MCPServerInstructions returns a map of server name → instructions for all
+// connected MCP servers that provided instructions in their InitializeResult.
+func (r *Registry) MCPServerInstructions() map[string]string {
+	if r == nil {
+		return nil
+	}
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	result := make(map[string]string)
+	for _, info := range r.mcpSessions {
+		if info == nil || info.session == nil {
+			continue
+		}
+		initResult := info.session.InitializeResult()
+		if initResult == nil {
+			continue
+		}
+		instr := strings.TrimSpace(initResult.Instructions)
+		if instr == "" {
+			continue
+		}
+		name := info.serverName
+		if name == "" {
+			name = info.serverID
+		}
+		result[name] = instr
+	}
+	return result
+}
+
 func nonNilContext(ctx context.Context) context.Context {
 	if ctx != nil {
 		return ctx

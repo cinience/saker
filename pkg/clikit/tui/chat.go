@@ -50,6 +50,7 @@ type Chat struct {
 	messages []ChatMsg
 	flushed  int // index of first unflushed message
 	width    int
+	height   int // terminal height for dynamic flush threshold
 
 	// streaming accumulator for the current assistant response
 	streaming       bool
@@ -65,6 +66,20 @@ func NewChat(s Styles) *Chat {
 // SetWidth updates the chat rendering width.
 func (c *Chat) SetWidth(w int) {
 	c.width = w
+}
+
+// SetHeight updates the terminal height for dynamic flush threshold.
+func (c *Chat) SetHeight(h int) {
+	c.height = h
+}
+
+// FlushThreshold returns the max streaming lines before flushing.
+func (c *Chat) FlushThreshold() int {
+	h := c.height - 6 // reserve space for input, status, spinner
+	if h < 8 {
+		h = 8
+	}
+	return h
 }
 
 // Clear resets the chat state (e.g., on /new).
@@ -313,7 +328,7 @@ func (c *Chat) renderMessages(b *strings.Builder, from, to int) {
 
 // contentWidth returns the capped width for message content.
 func (c *Chat) contentWidth() int {
-	w := c.width - 8 // room for prefix "  ⎿  " + padding
+	w := c.width - 2 // room for "● " prefix
 	if w < 20 {
 		w = 20
 	}
@@ -410,48 +425,45 @@ func (c *Chat) renderTool(b *strings.Builder, msg ChatMsg) {
 	}
 }
 
-// renderError renders an error/info message with indentation.
+// renderError renders an error message left-aligned.
 func (c *Chat) renderError(b *strings.Builder, msg ChatMsg, width int) {
 	text := c.styles.ErrorText.Width(width).Render(msg.Content)
-	fmt.Fprintf(b, "    %s\n", text)
+	fmt.Fprintf(b, "%s\n", text)
 }
 
-// renderSystem renders a system info message.
+// renderSystem renders a system info message left-aligned.
 func (c *Chat) renderSystem(b *strings.Builder, msg ChatMsg, width int) {
 	text := c.styles.SystemText.Width(width).Render(msg.Content)
-	fmt.Fprintf(b, "    %s\n", text)
+	fmt.Fprintf(b, "%s\n", text)
 }
 
-// renderImage renders an inline image with indentation.
+// renderImage renders an inline image left-aligned.
 func (c *Chat) renderImage(b *strings.Builder, msg ChatMsg, width int) {
-	// Always show the file path clearly.
 	pathStyle := lipgloss.NewStyle().Foreground(c.styles.Theme.Secondary)
 	labelStyle := lipgloss.NewStyle().Foreground(c.styles.Theme.FgDim)
-	fmt.Fprintf(b, "    %s %s\n", labelStyle.Render("Image:"), pathStyle.Render(msg.ImagePath))
+	fmt.Fprintf(b, "%s %s\n", labelStyle.Render("Image:"), pathStyle.Render(msg.ImagePath))
 
-	// Render inline image if terminal supports it.
 	proto := DetectImageProtocol()
 	if proto != ProtocolNone {
 		img := RenderImage(msg.ImagePath, width/2)
 		if img != "" && !strings.HasPrefix(img, "[Image:") {
-			fmt.Fprintf(b, "    %s\n", img)
+			fmt.Fprintf(b, "%s\n", img)
 		}
 	}
 }
 
-// renderBtw renders a /btw side question header in Claude Code style:
-// yellow bold "/btw" + dim question text.
+// renderBtw renders a /btw side question header left-aligned.
 func (c *Chat) renderBtw(b *strings.Builder, msg ChatMsg, width int) {
 	btwLabel := lipgloss.NewStyle().Foreground(c.styles.Theme.Warning).Bold(true).Render("/btw ")
 	question := lipgloss.NewStyle().Foreground(c.styles.Theme.FgDim).Width(width).Render(msg.Content)
-	fmt.Fprintf(b, "  %s%s\n", btwLabel, question)
+	fmt.Fprintf(b, "%s%s\n", btwLabel, question)
 }
 
-// renderIM renders an /im side question header in cyan bold "/im" + dim text.
+// renderIM renders an /im side question header left-aligned.
 func (c *Chat) renderIM(b *strings.Builder, msg ChatMsg, width int) {
 	imLabel := lipgloss.NewStyle().Foreground(c.styles.Theme.Accent).Bold(true).Render("/im ")
 	question := lipgloss.NewStyle().Foreground(c.styles.Theme.FgDim).Width(width).Render(msg.Content)
-	fmt.Fprintf(b, "  %s%s\n", imLabel, question)
+	fmt.Fprintf(b, "%s%s\n", imLabel, question)
 }
 
 func (c *Chat) toolIcon(status string) string {

@@ -414,9 +414,6 @@ func writeSSEWithID(ctx context.Context, w io.Writer, sseW sseWriter, event agui
 	}
 	aguiEventsTotal.WithLabelValues(string(event.Type())).Inc()
 	state.eventSeq++
-	if _, err := fmt.Fprintf(w, "id: %d\n", state.eventSeq); err != nil {
-		return err
-	}
 	if err := sseW.WriteEventWithType(ctx, w, event, string(event.Type())); err != nil {
 		return err
 	}

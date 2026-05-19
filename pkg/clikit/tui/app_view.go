@@ -47,7 +47,7 @@ func (a *App) viewNormal() tea.View {
 
 	// Notification bar (above input)
 	if notif := a.notifications.View(); notif != "" {
-		parts = append(parts, " "+notif)
+		parts = append(parts, notif)
 	}
 
 	// Search bar (in scroll/search mode — only useful if scrollback is in viewport)

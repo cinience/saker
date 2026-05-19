@@ -1,5 +1,9 @@
 package api
 
+// CompactSummaryPrefix is the contextual framing injected before the summary
+// when it replaces compacted messages. Provides continuity cues to the model.
+const CompactSummaryPrefix = `This session is being continued from a previous conversation that ran out of context. The summary below covers the earlier portion of the conversation. Use it to maintain continuity but do not repeat what was already done.`
+
 const summarySystemPrompt = `Your task is to create a detailed summary of the conversation so far, paying close attention to the user's explicit requests and your previous actions.
 This summary should be thorough in capturing technical details, code patterns, and architectural decisions that would be essential for continuing development work without losing context.
 

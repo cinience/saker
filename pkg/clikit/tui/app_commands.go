@@ -14,6 +14,7 @@ import (
 	"github.com/saker-ai/saker/pkg/api"
 	"github.com/saker-ai/saker/pkg/artifact"
 	"github.com/saker-ai/saker/pkg/clikit"
+	"github.com/saker-ai/saker/pkg/logging"
 	"github.com/saker-ai/saker/pkg/textutil"
 )
 
@@ -23,9 +24,14 @@ import (
 func (a *App) runStream(ctx context.Context, prompt string) tea.Cmd {
 	return func() tea.Msg {
 		streamCtx := ctx
+		if a.sessionLogMgr != nil {
+			if sessCtx, err := logging.SessionLogger(streamCtx, a.sessionLogMgr, a.sessionID); err == nil {
+				streamCtx = sessCtx
+			}
+		}
 		if a.cfg.TimeoutMs > 0 {
 			var cancel context.CancelFunc
-			streamCtx, cancel = context.WithTimeout(ctx, time.Duration(a.cfg.TimeoutMs)*time.Millisecond)
+			streamCtx, cancel = context.WithTimeout(streamCtx, time.Duration(a.cfg.TimeoutMs)*time.Millisecond)
 			defer cancel()
 		}
 

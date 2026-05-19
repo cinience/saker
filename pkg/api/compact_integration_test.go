@@ -47,7 +47,7 @@ func TestRuntimeRun_LongConversationCompactsAndPersists(t *testing.T) {
 		if msg.Role == "system" && msg.Content == "INIT_SYSTEM" {
 			foundInit = true
 		}
-		if msg.Role == "system" && strings.Contains(msg.Content, "对话摘要") {
+		if msg.Role == "system" && strings.Contains(msg.Content, "continued from a previous conversation") {
 			foundSummary = true
 		}
 	}

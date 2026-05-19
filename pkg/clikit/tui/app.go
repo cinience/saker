@@ -4,12 +4,14 @@ package tui
 import (
 	"context"
 	"io"
+	"log/slog"
 	"strings"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
-	"github.com/saker-ai/saker/pkg/clikit"
 	"github.com/google/uuid"
+	"github.com/saker-ai/saker/pkg/clikit"
+	"github.com/saker-ai/saker/pkg/logging"
 )
 
 // AppConfig holds configuration for the TUI application.
@@ -24,6 +26,8 @@ type AppConfig struct {
 	CustomCommands func(input string, out io.Writer) (handled, quit bool)
 	// UpdateNotice is an optional version update notification to display in the header.
 	UpdateNotice string
+	// SessionLogManager manages per-session log files (nil = disabled).
+	SessionLogManager *logging.SessionLogManager
 }
 
 // App is the top-level bubbletea Model.
@@ -56,6 +60,9 @@ type App struct {
 	// streaming state
 	runCancel     context.CancelFunc
 	lastInterrupt time.Time
+
+	// per-session logging
+	sessionLogMgr *logging.SessionLogManager
 
 	// side panel overlay (for /btw and /im)
 	sidePanel       *SidePanel
@@ -105,6 +112,13 @@ func New(ctx context.Context, cfg AppConfig) *App {
 		notifications: NewNotificationManager(styles),
 		search:        NewTranscriptSearch(styles),
 		sessionID:     sessionID,
+		sessionLogMgr: cfg.SessionLogManager,
+	}
+
+	if a.sessionLogMgr != nil {
+		if _, err := a.sessionLogMgr.Open(sessionID); err != nil {
+			slog.Warn("session log open failed", "session_id", sessionID, "error", err)
+		}
 	}
 
 	// Populate header and status bar.
@@ -140,5 +154,8 @@ func Run(ctx context.Context, cfg AppConfig) error {
 		defer r.SetAskQuestionFunc(nil)
 	}
 	_, err := p.Run()
+	if app.sessionLogMgr != nil {
+		app.sessionLogMgr.Close(app.sessionID)
+	}
 	return err
 }

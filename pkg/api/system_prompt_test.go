@@ -128,8 +128,11 @@ func TestSectionToneAndStyle(t *testing.T) {
 
 func TestSectionOutputEfficiency(t *testing.T) {
 	s := sectionOutputEfficiency()
-	if !strings.Contains(s, "straight to the point") {
-		t.Error("should emphasize directness")
+	if !strings.Contains(s, "Before your first tool call") {
+		t.Error("should instruct to state intent before first tool call")
+	}
+	if !strings.Contains(s, "End-of-turn summary") {
+		t.Error("should instruct end-of-turn summary")
 	}
 }
 
@@ -201,7 +204,7 @@ func TestSectionLanguage(t *testing.T) {
 func TestSectionSessionGuidance(t *testing.T) {
 	t.Run("CLI with skills", func(t *testing.T) {
 		s := sectionSessionGuidance([]string{"skill", "bash"}, EntryPointCLI)
-		if !strings.Contains(s, "/skill-name") {
+		if !strings.Contains(s, "/<skill-name>") {
 			t.Error("should mention skill syntax")
 		}
 		if !strings.Contains(s, "! <command>") {
@@ -272,16 +275,16 @@ func TestBuildDefaultSystemPrompt(t *testing.T) {
 	prompt := buildDefaultSystemPrompt(opts, env, tools)
 
 	sections := []string{
-		"interactive agent",     // intro
-		"permission mode",       // system
-		"software engineering",  // doing tasks
-		"reversibility",         // actions
-		"dedicated tool",        // using tools
-		"emojis",                // tone
-		"straight to the point", // output efficiency
-		"/test",                 // environment
-		"darwin",                // platform
-		"Default to",            // language
+		"interactive agent",            // intro
+		"permission mode",              // system
+		"software engineering",         // doing tasks
+		"reversibility",                // actions
+		"dedicated tool",               // using tools
+		"emojis",                       // tone
+		"Before your first tool call",  // output efficiency
+		"/test",                        // environment
+		"darwin",                       // platform
+		"Default to",                   // language
 	}
 
 	for _, expected := range sections {
@@ -319,8 +322,8 @@ func TestBuildSystemPromptBlocks(t *testing.T) {
 
 	blocks := buildSystemPromptBlocks(opts, env, tools)
 
-	if len(blocks) != 2 {
-		t.Fatalf("expected 2 blocks (static + dynamic), got %d", len(blocks))
+	if len(blocks) != 3 {
+		t.Fatalf("expected 3 blocks (static + boundary + dynamic), got %d", len(blocks))
 	}
 
 	// Static block should contain core sections
@@ -331,11 +334,16 @@ func TestBuildSystemPromptBlocks(t *testing.T) {
 		t.Error("static block should contain tool guidance")
 	}
 
+	// Boundary marker
+	if blocks[1] != SystemPromptDynamicBoundary {
+		t.Errorf("block[1] should be boundary marker, got %q", blocks[1])
+	}
+
 	// Dynamic block should contain environment and language
-	if !strings.Contains(blocks[1], "/project") {
+	if !strings.Contains(blocks[2], "/project") {
 		t.Error("dynamic block should contain CWD")
 	}
-	if !strings.Contains(blocks[1], "Chinese") {
+	if !strings.Contains(blocks[2], "Chinese") {
 		t.Error("dynamic block should contain language")
 	}
 }
@@ -364,6 +372,62 @@ func TestSystemPromptBuilder(t *testing.T) {
 	}
 	if dynamic != "CWD: /test" {
 		t.Errorf("dynamic block = %q, want %q", dynamic, "CWD: /test")
+	}
+}
+
+func TestCollectGitContext(t *testing.T) {
+	t.Run("non-git directory returns empty", func(t *testing.T) {
+		s := CollectGitContext(t.TempDir())
+		if s != "" {
+			t.Errorf("expected empty for non-git dir, got %q", s)
+		}
+	})
+}
+
+func TestBuildMCPInstructionsSection(t *testing.T) {
+	t.Run("no servers returns empty", func(t *testing.T) {
+		s := BuildMCPInstructionsSection(nil)
+		if s != "" {
+			t.Errorf("expected empty, got %q", s)
+		}
+	})
+
+	t.Run("servers without instructions returns empty", func(t *testing.T) {
+		servers := []MCPServerInfo{{Name: "test", Instructions: ""}}
+		s := BuildMCPInstructionsSection(servers)
+		if s != "" {
+			t.Errorf("expected empty, got %q", s)
+		}
+	})
+
+	t.Run("formats server instructions", func(t *testing.T) {
+		servers := []MCPServerInfo{
+			{Name: "github", Instructions: "Use for repo management"},
+			{Name: "empty", Instructions: ""},
+			{Name: "slack", Instructions: "Use for messaging"},
+		}
+		s := BuildMCPInstructionsSection(servers)
+		if !strings.Contains(s, "# MCP Server Instructions") {
+			t.Error("should have section header")
+		}
+		if !strings.Contains(s, "## github") {
+			t.Error("should include github server")
+		}
+		if !strings.Contains(s, "Use for repo management") {
+			t.Error("should include github instructions")
+		}
+		if !strings.Contains(s, "## slack") {
+			t.Error("should include slack server")
+		}
+		if strings.Contains(s, "## empty") {
+			t.Error("should exclude server with empty instructions")
+		}
+	})
+}
+
+func TestSystemPromptDynamicBoundary(t *testing.T) {
+	if SystemPromptDynamicBoundary == "" {
+		t.Fatal("SystemPromptDynamicBoundary should not be empty")
 	}
 }
 

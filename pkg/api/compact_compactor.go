@@ -315,7 +315,7 @@ func (c *compactor) compact(ctx context.Context, hist *message.History, snapshot
 	newMsgs = append(newMsgs, message.CloneMessages(initial)...)
 	newMsgs = append(newMsgs, message.Message{
 		Role:    "system",
-		Content: fmt.Sprintf("对话摘要：\n%s", summary),
+		Content: fmt.Sprintf("%s\n\n%s", CompactSummaryPrefix, summary),
 	})
 	newMsgs = append(newMsgs, message.CloneMessages(userText)...)
 	newMsgs = append(newMsgs, message.CloneMessages(kept)...)

@@ -116,7 +116,7 @@ func (h *Header) View() string {
 
 	// Inner content width (minus 2 for left/right border chars + 2 for padding)
 	innerWidth := totalWidth - 4
-	leftWidth := innerWidth * 45 / 100
+	leftWidth := innerWidth / 3
 	if leftWidth < 34 {
 		leftWidth = 34
 	}
@@ -137,25 +137,26 @@ func (h *Header) View() string {
 		primaryStyle.Render(title) +
 		borderStyle.Render(strings.Repeat("─", topRightDash) + "╮")
 
-	// === Left column content ===
-	var leftLines []string
-
-	// Mascot
+	// === Left column content (mascot + info, built separately for centering) ===
 	mascotColor := h.styles.LogoColor
+	var mascotLines []string
 	for _, row := range mascotRows {
-		leftLines = append(leftLines, mascotColor.Render(row))
+		rendered := mascotColor.Render(row)
+		pad := (leftWidth - visibleLen(rendered)) / 2
+		if pad > 0 {
+			rendered = strings.Repeat(" ", pad) + rendered
+		}
+		mascotLines = append(mascotLines, rendered)
 	}
 
-	// Model + session info
+	var infoLines []string
 	if h.modelName != "" {
 		modelInfo := dimStyle.Render(h.modelName)
 		if h.skillCount > 0 {
 			modelInfo += dimStyle.Render(fmt.Sprintf(" · %d skills", h.skillCount))
 		}
-		leftLines = append(leftLines, "  "+modelInfo)
+		infoLines = append(infoLines, "  "+modelInfo)
 	}
-
-	// Provider info (base URL + API key)
 	if h.baseURL != "" || h.apiKey != "" {
 		var parts []string
 		if h.baseURL != "" {
@@ -164,11 +165,9 @@ func (h *Header) View() string {
 		if h.apiKey != "" {
 			parts = append(parts, h.apiKey)
 		}
-		leftLines = append(leftLines, "  "+dimStyle.Render(strings.Join(parts, " · ")))
+		infoLines = append(infoLines, "  "+dimStyle.Render(strings.Join(parts, " · ")))
 	}
-
-	// Working directory
-	leftLines = append(leftLines, "  "+dimStyle.Render(h.cwd))
+	infoLines = append(infoLines, "  "+dimStyle.Render(h.cwd))
 
 	// === Right column content ===
 	var rightLines []string
@@ -193,11 +192,22 @@ func (h *Header) View() string {
 		rightLines = append(rightLines, updateStyle.Render(h.updateNotice))
 	}
 
-	// === Compose rows ===
-	maxRows := len(leftLines)
+	// === Build left column: logo centered above, info bottom-aligned ===
+	maxRows := len(mascotLines) + len(infoLines)
 	if len(rightLines) > maxRows {
 		maxRows = len(rightLines)
 	}
+	upperRows := maxRows - len(infoLines)
+	mascotPad := (upperRows - len(mascotLines)) / 2
+	var leftLines []string
+	for i := 0; i < mascotPad; i++ {
+		leftLines = append(leftLines, "")
+	}
+	leftLines = append(leftLines, mascotLines...)
+	for len(leftLines) < upperRows {
+		leftLines = append(leftLines, "")
+	}
+	leftLines = append(leftLines, infoLines...)
 
 	var bodyLines []string
 	vSep := borderStyle.Render("│")

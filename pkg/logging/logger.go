@@ -61,6 +61,11 @@ const (
 	defaultMaxSize  int64 = 50 * 1024 * 1024 // 50 MB per file
 	defaultMaxFiles       = 7                 // keep at most 7 log files
 	logPrefix             = "saker"
+
+	sessionSubdir                  = "sessions"
+	defaultSessionMaxSize  int64   = 10 * 1024 * 1024 // 10 MB per session log
+	defaultSessionMaxFiles         = 50
+	defaultSessionMaxAge           = 7 * 24 * time.Hour
 )
 
 func setupLogger(dir string, stderr bool) (*slog.Logger, func(), error) {
@@ -222,5 +227,214 @@ func (rw *rotatingWriter) prune() {
 	toRemove := len(logFiles) - rw.maxFiles
 	for i := 0; i < toRemove; i++ {
 		os.Remove(filepath.Join(rw.dir, logFiles[i].Name()))
+	}
+}
+
+// ─── Per-Session Log Manager ────────────────────────────────────────────────
+
+// SessionLogManager manages per-session log files under <log-dir>/sessions/.
+// It controls total file count, individual file size, and age-based cleanup.
+type SessionLogManager struct {
+	dir      string
+	maxSize  int64
+	maxFiles int
+	maxAge   time.Duration
+
+	mu      sync.Mutex
+	writers map[string]*sessionWriter
+}
+
+type sessionWriter struct {
+	file   *os.File
+	logger *slog.Logger
+}
+
+// SessionLogOption configures SessionLogManager limits.
+type SessionLogOption func(*SessionLogManager)
+
+func WithSessionMaxSize(n int64) SessionLogOption {
+	return func(m *SessionLogManager) { m.maxSize = n }
+}
+
+func WithSessionMaxFiles(n int) SessionLogOption {
+	return func(m *SessionLogManager) { m.maxFiles = n }
+}
+
+func WithSessionMaxAge(d time.Duration) SessionLogOption {
+	return func(m *SessionLogManager) { m.maxAge = d }
+}
+
+// NewSessionLogManager creates a session log manager. It runs cleanup
+// synchronously on construction to prune old session logs.
+func NewSessionLogManager(logDir string, opts ...SessionLogOption) (*SessionLogManager, error) {
+	dir := filepath.Join(logDir, sessionSubdir)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return nil, fmt.Errorf("session logging: mkdir %s: %w", dir, err)
+	}
+	m := &SessionLogManager{
+		dir:      dir,
+		maxSize:  defaultSessionMaxSize,
+		maxFiles: defaultSessionMaxFiles,
+		maxAge:   defaultSessionMaxAge,
+		writers:  make(map[string]*sessionWriter),
+	}
+	for _, o := range opts {
+		o(m)
+	}
+	m.cleanup()
+	return m, nil
+}
+
+// Open opens (or returns an existing) per-session log file and logger.
+// The returned logger fans out to both the session file and the global default.
+func (m *SessionLogManager) Open(sessionID string) (*slog.Logger, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if sw, ok := m.writers[sessionID]; ok {
+		return sw.logger, nil
+	}
+
+	path := filepath.Join(m.dir, sessionID+".log")
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	if err != nil {
+		return nil, fmt.Errorf("session logging: open %s: %w", path, err)
+	}
+
+	sessionHandler := slog.NewJSONHandler(f, &slog.HandlerOptions{
+		Level:     slog.LevelDebug,
+		AddSource: true,
+		ReplaceAttr: func(groups []string, a slog.Attr) slog.Attr {
+			switch a.Key {
+			case slog.TimeKey:
+				a.Key = "ts"
+			case slog.SourceKey:
+				if src, ok := a.Value.Any().(*slog.Source); ok {
+					a = slog.String("caller", src.File+":"+strconv.Itoa(src.Line))
+				}
+			}
+			return a
+		},
+	})
+
+	handler := &fanoutHandler{
+		session: sessionHandler,
+		global:  slog.Default().Handler(),
+	}
+	logger := slog.New(handler).With("session_id", sessionID)
+
+	m.writers[sessionID] = &sessionWriter{file: f, logger: logger}
+	return logger, nil
+}
+
+// Close closes a specific session's log file.
+func (m *SessionLogManager) Close(sessionID string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if sw, ok := m.writers[sessionID]; ok {
+		sw.file.Close()
+		delete(m.writers, sessionID)
+	}
+}
+
+// CloseAll closes all open session log files.
+func (m *SessionLogManager) CloseAll() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for id, sw := range m.writers {
+		sw.file.Close()
+		delete(m.writers, id)
+	}
+}
+
+// cleanup prunes session log files by age, count, and size.
+func (m *SessionLogManager) cleanup() {
+	entries, err := os.ReadDir(m.dir)
+	if err != nil {
+		return
+	}
+
+	type fileInfo struct {
+		name  string
+		info  os.FileInfo
+	}
+	var files []fileInfo
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".log") {
+			continue
+		}
+		info, err := e.Info()
+		if err != nil {
+			continue
+		}
+		files = append(files, fileInfo{name: e.Name(), info: info})
+	}
+
+	now := time.Now()
+	remaining := files[:0]
+	for _, f := range files {
+		if now.Sub(f.info.ModTime()) > m.maxAge {
+			os.Remove(filepath.Join(m.dir, f.name))
+		} else {
+			remaining = append(remaining, f)
+		}
+	}
+
+	// Sort by mtime, oldest first.
+	sort.Slice(remaining, func(i, j int) bool {
+		return remaining[i].info.ModTime().Before(remaining[j].info.ModTime())
+	})
+
+	for len(remaining) > m.maxFiles {
+		os.Remove(filepath.Join(m.dir, remaining[0].name))
+		remaining = remaining[1:]
+	}
+
+	for _, f := range remaining {
+		if f.info.Size() > m.maxSize {
+			os.Remove(filepath.Join(m.dir, f.name))
+		}
+	}
+}
+
+// SessionLogger opens a session log and injects the logger into the context.
+func SessionLogger(ctx context.Context, mgr *SessionLogManager, sessionID string) (context.Context, error) {
+	logger, err := mgr.Open(sessionID)
+	if err != nil {
+		return ctx, err
+	}
+	return WithLogger(ctx, logger), nil
+}
+
+// fanoutHandler implements slog.Handler by writing to both a session
+// file handler and the global default handler.
+type fanoutHandler struct {
+	session slog.Handler
+	global  slog.Handler
+	attrs   []slog.Attr
+	groups  []string
+}
+
+func (h *fanoutHandler) Enabled(_ context.Context, level slog.Level) bool {
+	return h.session.Enabled(context.Background(), level) || h.global.Enabled(context.Background(), level)
+}
+
+func (h *fanoutHandler) Handle(ctx context.Context, r slog.Record) error {
+	_ = h.session.Handle(ctx, r.Clone())
+	_ = h.global.Handle(ctx, r.Clone())
+	return nil
+}
+
+func (h *fanoutHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
+	return &fanoutHandler{
+		session: h.session.WithAttrs(attrs),
+		global:  h.global.WithAttrs(attrs),
+	}
+}
+
+func (h *fanoutHandler) WithGroup(name string) slog.Handler {
+	return &fanoutHandler{
+		session: h.session.WithGroup(name),
+		global:  h.global.WithGroup(name),
 	}
 }

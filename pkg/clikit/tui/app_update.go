@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"log/slog"
 	"sort"
 	"strings"
 	"time"
@@ -44,7 +45,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.smartSpinner.AddTokens(len(msg.Text))
 		// Flush streaming buffer periodically to prevent the live area from
 		// growing taller than the terminal and leaking into scrollback.
-		if a.chat.StreamingLineCount() > 10 {
+		if a.chat.StreamingLineCount() > a.chat.FlushThreshold() {
 			a.chat.FinishStreaming()
 			cmds = append(cmds, a.flushChat())
 			a.chat.StartStreaming()
@@ -443,6 +444,7 @@ func (a *App) checkContextNotification() {
 func (a *App) layout() {
 	a.header.SetWidth(a.width)
 	a.chat.SetWidth(a.width)
+	a.chat.SetHeight(a.height)
 	a.input.SetWidth(a.width)
 	a.status.SetWidth(a.width)
 	// Viewport gets resized dynamically in viewNormal() based on bottom height,
@@ -658,7 +660,15 @@ func (a *App) handleSubmit(text string) (tea.Model, tea.Cmd) {
 		case "/quit", "/exit", "/q":
 			return a, tea.Quit
 		case "/new":
+			if a.sessionLogMgr != nil {
+				a.sessionLogMgr.Close(a.sessionID)
+			}
 			a.sessionID = uuid.NewString()
+			if a.sessionLogMgr != nil {
+				if _, err := a.sessionLogMgr.Open(a.sessionID); err != nil {
+					slog.Warn("session log open failed", "session_id", a.sessionID, "error", err)
+				}
+			}
 			a.header.SetSession(a.sessionID)
 			a.status.ResetTokens()
 			a.chat.Clear()

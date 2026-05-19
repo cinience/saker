@@ -1,5 +1,5 @@
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useAgent, UseAgentUpdate, CopilotChat, useDefaultRenderTool } from "@copilotkit/react-core/v2";
 import "@copilotkit/react-core/v2/styles.css";
 import { ThreadPanel } from "./ThreadPanel";
@@ -63,11 +63,14 @@ function CopilotChatArea({
   const { agent } = useAgent({ updates: [UseAgentUpdate.OnRunStatusChanged] });
   const effectiveTurnStatus: TurnStatus = agent?.isRunning ? "running" : turnStatus;
 
-  // v2 CopilotChat overwrites onSubmitMessage internally, so the Saker
-  // auto-create-thread callback never fires.  Detect when the agent starts
-  // a run without an active Saker thread and sync it to the store.
-  // The Go handler already persists the thread via ensureThread().
+  // Track the threadId to pass to CopilotChat. We defer passing a newly-created
+  // thread's ID until after the first run completes to prevent a race: setting
+  // threadId while the run is active triggers connectAgent() which fires
+  // MESSAGES_SNAPSHOT and wipes the in-flight streaming response.
+  const [chatThreadId, setChatThreadId] = useState(activeThreadId);
+  const pendingThreadRef = useRef<{ id: string; title: string } | null>(null);
   const prevRunningRef = useRef(false);
+
   useEffect(() => {
     if (agent?.isRunning && !prevRunningRef.current && !activeThreadId) {
       const agentAny = agent as Record<string, unknown>;
@@ -79,11 +82,22 @@ function CopilotChatArea({
         const title = typeof content === "string" && content
           ? generateTitle(content)
           : "New Chat";
+        pendingThreadRef.current = { id: threadId, title };
         onThreadStarted(threadId, title);
       }
     }
+    if (!agent?.isRunning && prevRunningRef.current && pendingThreadRef.current) {
+      setChatThreadId(pendingThreadRef.current.id);
+      pendingThreadRef.current = null;
+    }
     prevRunningRef.current = agent?.isRunning ?? false;
   }, [agent?.isRunning, activeThreadId, onThreadStarted]);
+
+  useEffect(() => {
+    if (!pendingThreadRef.current) {
+      setChatThreadId(activeThreadId);
+    }
+  }, [activeThreadId]);
 
   const isActive = !!activeThreadId || !!agent?.isRunning;
 
@@ -94,7 +108,7 @@ function CopilotChatArea({
       </div>
       <CopilotChat
         agentId="default"
-        threadId={activeThreadId || undefined}
+        threadId={chatThreadId || undefined}
         className={`saker-copilot-chat${isActive ? " saker-copilot-chat--active" : ""}`}
         labels={{
           title: "",

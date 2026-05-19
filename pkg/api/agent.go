@@ -138,6 +138,14 @@ func New(ctx context.Context, opts Options) (*Runtime, error) {
 		opts.SystemPrompt = strings.Join(promptBlocks, "\n\n")
 	}
 
+	// Inject git context into the dynamic block (session-specific snapshot).
+	if gitCtx := CollectGitContext(opts.ProjectRoot); gitCtx != "" {
+		opts.SystemPrompt = fmt.Sprintf("%s\n\n%s", opts.SystemPrompt, gitCtx)
+		if len(promptBlocks) > 0 {
+			promptBlocks[len(promptBlocks)-1] += "\n\n" + gitCtx
+		}
+	}
+
 	if memory, err := config.LoadClaudeMD(opts.ProjectRoot, fsLayer); err != nil {
 		logging.From(ctx).Warn("claude.md loader warning", "error", err)
 	} else if strings.TrimSpace(memory) != "" {
@@ -195,6 +203,21 @@ func New(ctx context.Context, opts Options) (*Runtime, error) {
 	if err := registerMCPServers(ctx, registry, sbox, mcpServers); err != nil {
 		return nil, err
 	}
+
+	// Inject MCP server instructions into the system prompt dynamic block.
+	if mcpInstrs := registry.MCPServerInstructions(); len(mcpInstrs) > 0 {
+		var servers []MCPServerInfo
+		for name, instr := range mcpInstrs {
+			servers = append(servers, MCPServerInfo{Name: name, Instructions: instr})
+		}
+		if section := BuildMCPInstructionsSection(servers); section != "" {
+			opts.SystemPrompt = fmt.Sprintf("%s\n\n%s", opts.SystemPrompt, section)
+			if len(promptBlocks) > 0 {
+				promptBlocks[len(promptBlocks)-1] += "\n\n" + section
+			}
+		}
+	}
+
 	executor := tool.NewExecutor(registry, sbox).WithOutputPersister(newOutputPersister(settings))
 
 	recorder := defaultHookRecorder()

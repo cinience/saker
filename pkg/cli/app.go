@@ -233,6 +233,14 @@ Options:
 		defer cliLogCleanup()
 	}
 
+	sessionLogMgr, sessionLogErr := logging.NewSessionLogManager(cliLogDir)
+	if sessionLogErr != nil {
+		fmt.Fprintf(stderr, "Warning: failed to setup session logging: %v\n", sessionLogErr)
+	}
+	if sessionLogMgr != nil {
+		defer sessionLogMgr.CloseAll()
+	}
+
 	if *showVersion || *showVersionShort {
 		fmt.Fprintln(stdout, a.Version)
 		return nil
@@ -514,12 +522,13 @@ Options:
 		}
 		if useTUI {
 			return tui.Run(context.Background(), tui.AppConfig{
-				Engine:           adapter,
-				InitialSessionID: resolvedSessionID,
-				TimeoutMs:        *timeoutMs,
-				Verbose:          *verbose,
-				WaterfallMode:    *waterfall,
-				UpdateNotice:     updateNotice,
+				Engine:            adapter,
+				InitialSessionID:  resolvedSessionID,
+				TimeoutMs:         *timeoutMs,
+				Verbose:           *verbose,
+				WaterfallMode:     *waterfall,
+				UpdateNotice:      updateNotice,
+				SessionLogManager: sessionLogMgr,
 			})
 		}
 		clikit.PrintBanner(stdout, adapter.ModelName(), adapter.Skills())
@@ -533,6 +542,7 @@ Options:
 			Verbose:           *verbose,
 			WaterfallMode:     *waterfall,
 			ShowStatusPerTurn: true,
+			SessionLogManager: sessionLogMgr,
 		})
 	}
 

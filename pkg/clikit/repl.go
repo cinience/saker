@@ -13,6 +13,7 @@ import (
 
 	"github.com/chzyer/readline"
 	"github.com/google/uuid"
+	"github.com/saker-ai/saker/pkg/logging"
 )
 
 // CommandHandler is called before built-in command dispatch. If it returns
@@ -30,6 +31,8 @@ type InteractiveShellConfig struct {
 	CustomCommands CommandHandler
 	// BannerExtra is printed after the standard banner (e.g. background task info).
 	BannerExtra string
+	// SessionLogManager manages per-session log files (nil = disabled).
+	SessionLogManager *logging.SessionLogManager
 }
 
 type InteractiveShell struct {
@@ -102,6 +105,12 @@ func (s *InteractiveShell) Run(ctx context.Context, in io.ReadCloser, out, errOu
 		sessionID = uuid.NewString()
 	}
 
+	if s.cfg.SessionLogManager != nil {
+		if _, err := s.cfg.SessionLogManager.Open(sessionID); err != nil {
+			fmt.Fprintf(errOut, "Warning: session log: %v\n", err)
+		}
+	}
+
 	if s.cfg.BannerExtra != "" {
 		fmt.Fprintln(out, s.cfg.BannerExtra)
 	}
@@ -161,7 +170,7 @@ func (s *InteractiveShell) Run(ctx context.Context, in io.ReadCloser, out, errOu
 			continue
 		}
 
-		if handled, quit := handleCommand(input, s.cfg.Engine, &sessionID, out); handled {
+		if handled, quit := handleCommand(input, s.cfg.Engine, &sessionID, out, s.cfg.SessionLogManager); handled {
 			if quit {
 				return nil
 			}
@@ -171,6 +180,11 @@ func (s *InteractiveShell) Run(ctx context.Context, in io.ReadCloser, out, errOu
 		// Use a cancellable context so Ctrl+C (SIGINT) can interrupt the
 		// current model execution without killing the entire REPL.
 		runCtx, runCancel := context.WithCancel(ctx)
+		if s.cfg.SessionLogManager != nil {
+			if sessCtx, err := logging.SessionLogger(runCtx, s.cfg.SessionLogManager, sessionID); err == nil {
+				runCtx = sessCtx
+			}
+		}
 		done := make(chan error, 1)
 		go func() {
 			done <- RunStream(runCtx, out, errOut, s.cfg.Engine, sessionID, input, s.cfg.TimeoutMs, s.cfg.Verbose, s.cfg.WaterfallMode)
@@ -195,6 +209,9 @@ func (s *InteractiveShell) Run(ctx context.Context, in io.ReadCloser, out, errOu
 		}
 		runCancel() // ensure cleanup
 	}
+	if s.cfg.SessionLogManager != nil {
+		s.cfg.SessionLogManager.Close(sessionID)
+	}
 	fmt.Fprintln(out, "bye")
 	return nil
 }
@@ -212,7 +229,7 @@ func isReadTermination(err error) bool {
 	return errors.Is(err, io.EOF)
 }
 
-func handleCommand(input string, eng ReplEngine, sessionID *string, out io.Writer) (handled, quit bool) {
+func handleCommand(input string, eng ReplEngine, sessionID *string, out io.Writer, slm *logging.SessionLogManager) (handled, quit bool) {
 	if out == nil {
 		out = io.Discard
 	}
@@ -222,7 +239,15 @@ func handleCommand(input string, eng ReplEngine, sessionID *string, out io.Write
 		fmt.Fprintln(out, "bye")
 		return true, true
 	case "/new":
+		if slm != nil {
+			slm.Close(*sessionID)
+		}
 		*sessionID = uuid.NewString()
+		if slm != nil {
+			if _, err := slm.Open(*sessionID); err != nil {
+				fmt.Fprintf(out, "Warning: session log: %v\n", err)
+			}
+		}
 		fmt.Fprintln(out, "new conversation")
 		return true, false
 	case "/model":

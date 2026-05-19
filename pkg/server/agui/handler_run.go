@@ -290,6 +290,21 @@ func (g *Gateway) streamSSE(c *gin.Context, ctx context.Context, eventCh <-chan 
 		select {
 		case evt, ok := <-eventCh:
 			if !ok {
+				// Persist assistant message BEFORE finalizing (which sends RUN_FINISHED)
+				// so that any connect triggered by the client after RUN_FINISHED will
+				// find the complete message history in the store.
+				if len(state.artifacts) > 0 {
+					g.storeArtifacts(threadID, state.artifacts)
+				}
+				g.persistAssistantMessage(context.Background(), threadID, turnID, projectID, accumulated.String())
+				if g.deps.ConversationStore != nil {
+					_ = g.deps.ConversationStore.CloseTurn(context.Background(), turnID, "completed")
+				}
+				// Clear thread→run mapping BEFORE finalize sends RUN_FINISHED.
+				// This ensures that when the client receives RUN_FINISHED and
+				// immediately fires agent/connect, the server no longer considers
+				// this run active — so MESSAGES_SNAPSHOT is sent with full history.
+				g.clearThreadRun(threadID, runID)
 				if err := state.finalize(ctx, w, sseW, filter); err != nil {
 					g.deps.Logger.Warn("agui sse finalize failed",
 						"thread_id", threadID,
@@ -299,13 +314,6 @@ func (g *Gateway) streamSSE(c *gin.Context, ctx context.Context, eventCh <-chan 
 					)
 				} else {
 					flushSSE()
-				}
-				if len(state.artifacts) > 0 {
-					g.storeArtifacts(threadID, state.artifacts)
-				}
-				g.persistAssistantMessage(context.Background(), threadID, turnID, projectID, accumulated.String())
-				if g.deps.ConversationStore != nil {
-					_ = g.deps.ConversationStore.CloseTurn(context.Background(), turnID, "completed")
 				}
 				g.deps.Logger.Info("agui runtime stream completed",
 					"thread_id", threadID,
