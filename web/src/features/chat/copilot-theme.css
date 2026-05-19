@@ -74,11 +74,21 @@ cpk-web-inspector {
 }
 
 /* ── Messages area ── */
-.saker-copilot-chat .copilotKitMessages {
+.saker-copilot-chat .copilotKitMessages,
+.saker-copilot-chat [class*="cpk:overflow-y-auto"],
+.saker-copilot-chat [class*="cpk:overflow-auto"] {
   flex: 1;
-  overflow-y: auto;
+  overflow-y: scroll !important;  /* scroll (not auto) prevents layout-shift flash */
+  overflow-x: hidden !important;
   background: transparent;
   padding: 0;
+  scrollbar-width: none;          /* Firefox: hide completely */
+}
+.saker-copilot-chat .copilotKitMessages::-webkit-scrollbar,
+.saker-copilot-chat [class*="cpk:overflow-y-auto"]::-webkit-scrollbar,
+.saker-copilot-chat [class*="cpk:overflow-auto"]::-webkit-scrollbar {
+  width: 0;
+  display: none;                  /* Chrome/Safari: hide completely */
 }
 
 .saker-copilot-chat .copilotKitMessagesContainer {
@@ -244,17 +254,6 @@ cpk-web-inspector {
   border-top-color: var(--accent, #6366f1);
 }
 
-/* ── Scrollbar ── */
-.saker-copilot-chat .copilotKitMessages::-webkit-scrollbar {
-  width: 6px;
-}
-.saker-copilot-chat .copilotKitMessages::-webkit-scrollbar-thumb {
-  background-color: color-mix(in srgb, var(--text-muted, #64748b) 30%, transparent);
-  border-radius: 10rem;
-}
-.saker-copilot-chat .copilotKitMessages::-webkit-scrollbar-track {
-  background: transparent;
-}
 
 /* ── Attachment queue ── */
 .saker-copilot-chat .copilotKitAttachmentQueue {
