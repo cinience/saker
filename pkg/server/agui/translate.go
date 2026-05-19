@@ -258,6 +258,11 @@ func (s *streamState) translateEvent(ctx context.Context, w io.Writer, sseW sseW
 				}
 			}
 		}
+		errorLabel := code
+		if errorLabel == "" {
+			errorLabel = "unknown"
+		}
+		aguiErrorsTotal.WithLabelValues(errorLabel).Inc()
 		opts := []aguievents.RunErrorOption{aguievents.WithRunID(s.runID)}
 		if code != "" {
 			opts = append(opts, aguievents.WithErrorCode(code))
@@ -345,6 +350,7 @@ func writeSSE(ctx context.Context, w io.Writer, sseW sseWriter, event aguievents
 	if err := event.Validate(); err != nil {
 		return fmt.Errorf("agui event validation: %w", err)
 	}
+	aguiEventsTotal.WithLabelValues(string(event.Type())).Inc()
 	return sseW.WriteEventWithType(ctx, w, event, string(event.Type()))
 }
 

@@ -273,3 +273,55 @@ Artifacts extracted from tool results are cached per-thread in memory. On reconn
 - `code` (optional): Machine-readable error code extracted from structured error output
 
 Context cancellation (client disconnect) is checked before every SSE write via `ctx.Err()`.
+
+On context cancellation (shutdown, timeout, client disconnect), a `RUN_ERROR` with code `"cancelled"` is emitted so clients know the stream ended abnormally.
+
+## Observability (Prometheus Metrics)
+
+Defined in `metrics.go`, registered via `init()`:
+
+| Metric | Type | Labels | Description |
+|---|---|---|---|
+| `saker_agui_events_total` | Counter | `event_type` | Total SSE events emitted, by AG-UI event type |
+| `saker_agui_errors_total` | Counter | `code` | Total errors emitted (labels: error code or "cancelled"/"unknown") |
+| `saker_agui_active_streams` | Gauge | — | Currently active SSE streams |
+| `saker_agui_run_duration_seconds` | Histogram | — | Run duration (buckets: 0.5s–300s) |
+
+Every `writeSSE` call increments `events_total`. Error events increment `errors_total`.
+
+## Input Validation
+
+`validateRunInput()` in `validate.go` checks before execution:
+
+- **Thread ID format**: 1-128 alphanumeric/dash/underscore characters (if provided)
+- **Run ID format**: Same constraints as Thread ID
+- **Message roles**: Must be one of: `user`, `assistant`, `system`, `tool`, `developer`, `activity`, `reasoning`
+- **Content length**: Per-message limit of 128KB
+
+Returns structured error response with `type: "invalid_request_error"`.
+
+## SSE Resilience
+
+- **Retry directive**: `retry: 3000\n\n` sent after headers — instructs client to reconnect after 3s on disconnect
+- **Keepalive**: `: keepalive\n\n` comment frame every 15s to prevent proxy/LB idle timeout
+- **Event validation**: All events pass `event.Validate()` before emission
+- **Event IDs**: `writeSSEWithID()` supports incremental `id:` field for `Last-Event-ID` resumability
+
+## Concurrent Run Mutual Exclusion
+
+Only one run per thread is active at a time:
+
+1. `cancelThreadRun(threadID, newRunID)` — cancels any existing run on the same thread
+2. `clearThreadRun(threadID, runID)` — removes mapping when a run finishes
+3. `threadRuns` map tracks the active `runID` per `threadID`
+
+A second run on the same thread immediately cancels the first, which emits `RUN_ERROR` (cancelled) and exits.
+
+## Artifact Cache
+
+In-memory cache in `artifact_cache.go`:
+
+- **TTL**: 30 minutes — expired entries return nil on load
+- **Capacity**: 1000 threads max — evicts stale entries first, then oldest
+- **Thread-scoped**: Artifacts append per thread across multiple runs
+- **Replay**: On connect, cached artifacts are included in `STATE_SNAPSHOT`

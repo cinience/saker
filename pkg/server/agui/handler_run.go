@@ -68,6 +68,14 @@ func (g *Gateway) handleRun(c *gin.Context) {
 		return
 	}
 
+	if err := validateRunInput(input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": gin.H{
+			"message": err.Error(),
+			"type":    "invalid_request_error",
+		}})
+		return
+	}
+
 	threadID := input.ThreadID
 	if threadID == "" {
 		threadID = "thread_" + uuid.New().String()
@@ -185,6 +193,12 @@ func (g *Gateway) streamSSE(c *gin.Context, ctx context.Context, eventCh <-chan 
 	filter := server.NewStreamArtifactFilter()
 	var accumulated strings.Builder
 	eventCounts := make(map[string]int)
+	streamStart := time.Now()
+	aguiActiveStreams.Inc()
+	defer func() {
+		aguiActiveStreams.Dec()
+		aguiRunDuration.Observe(time.Since(streamStart).Seconds())
+	}()
 
 	g.deps.Logger.Info("agui sse stream opened",
 		"thread_id", threadID,
@@ -341,6 +355,7 @@ func (g *Gateway) streamSSE(c *gin.Context, ctx context.Context, eventCh <-chan 
 
 		case <-ctx.Done():
 			// Emit RUN_ERROR on graceful shutdown so clients know the stream ended abnormally.
+			aguiErrorsTotal.WithLabelValues("cancelled").Inc()
 			errCtx := context.Background()
 			_ = writeSSE(errCtx, w, sseW, aguievents.NewRunErrorEvent("stream cancelled",
 				aguievents.WithRunID(runID), aguievents.WithErrorCode("cancelled")))
