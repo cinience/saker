@@ -188,6 +188,27 @@ func TestMessagesToRequest_FrontendTools(t *testing.T) {
 	if req.ExtraTools[1].Description != "Go to URL" {
 		t.Errorf("ExtraTools[1].Description = %q", req.ExtraTools[1].Description)
 	}
+	// Frontend tools must be passthrough.
+	if len(req.PassthroughTools) != 2 {
+		t.Fatalf("PassthroughTools = %d, want 2", len(req.PassthroughTools))
+	}
+	if req.PassthroughTools[0] != "searchWeb" || req.PassthroughTools[1] != "navigate" {
+		t.Errorf("PassthroughTools = %v", req.PassthroughTools)
+	}
+}
+
+func TestMessagesToRequest_ParentRunID(t *testing.T) {
+	t.Parallel()
+	parentID := "run_parent_123"
+	input := aguitypes.RunAgentInput{
+		ThreadID:    "t1",
+		ParentRunID: &parentID,
+		Messages:    []aguitypes.Message{{Role: aguitypes.RoleUser, Content: "hi"}},
+	}
+	req := messagesToRequest(input, Identity{})
+	if req.ParentSessionID != "run_parent_123" {
+		t.Errorf("ParentSessionID = %q, want run_parent_123", req.ParentSessionID)
+	}
 }
 
 func TestMessagesToRequest_StateForwarding(t *testing.T) {

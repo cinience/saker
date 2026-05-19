@@ -59,9 +59,20 @@ func messagesToRequest(input aguitypes.RunAgentInput, identity Identity) api.Req
 		req.User = identity.Username
 	}
 
-	// Forward frontend tools as ExtraTools for model awareness.
+	// Forward frontend tools as ExtraTools for model awareness and mark them
+	// as passthrough so the agent loop exits instead of trying to execute them.
 	if len(input.Tools) > 0 {
 		req.ExtraTools = convertFrontendTools(input.Tools)
+		names := make([]string, len(input.Tools))
+		for i, t := range input.Tools {
+			names[i] = t.Name
+		}
+		req.PassthroughTools = names
+	}
+
+	// Forward ParentRunID for subagent tracing.
+	if input.ParentRunID != nil && *input.ParentRunID != "" {
+		req.ParentSessionID = *input.ParentRunID
 	}
 
 	// Forward state and props to metadata for downstream access.
