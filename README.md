@@ -188,6 +188,29 @@ Saker can bridge to ten chat platforms so users interact with the agent through 
 
 Channels can also be configured from the TUI (`im_config` tool) or the workspace settings panel.
 
+### AG-UI Protocol
+
+Saker implements the [AG-UI Protocol](https://docs.ag-ui.com) — an open standard for agent-user interaction via event-driven SSE streaming. The implementation **MUST** remain compliant with the official specification.
+
+| Capability | Status |
+|---|---|
+| Lifecycle events (RUN_STARTED / RUN_FINISHED / RUN_ERROR) | Supported |
+| Text message streaming (START / CONTENT / END) | Supported |
+| Tool call lifecycle (START / ARGS / END / RESULT) | Supported |
+| State management (STATE_SNAPSHOT / STATE_DELTA via JSON Patch) | Supported |
+| Activity events (ACTIVITY_SNAPSHOT / ACTIVITY_DELTA) | Supported |
+| Reasoning events (REASONING_START / MESSAGE / END) | Supported |
+| Step lifecycle (STEP_STARTED / STEP_FINISHED) | Supported |
+| Messages snapshot (history replay on connect) | Supported |
+| Custom events (timeline, skill_activation) | Supported |
+| Capabilities discovery (`/run/capabilities`) | Supported |
+| Multimodal input (image, document via InputContent) | Supported |
+| Human-in-the-loop (tool-call based interrupts) | Supported |
+| Thread management (list, create, update, delete, archive) | Supported |
+| CopilotKit v2 envelope transport | Supported |
+
+Protocol compliance is enforced by the test suite (`pkg/server/agui/*_test.go`). See [.docs/agui-protocol-api.md](.docs/agui-protocol-api.md) for implementation details.
+
 ## Architecture
 
 <div align="center">

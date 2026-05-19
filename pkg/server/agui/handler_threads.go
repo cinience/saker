@@ -101,5 +101,5 @@ func (g *Gateway) handleThreadDelete(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "delete failed"})
 		return
 	}
-	c.Status(http.StatusOK)
+	c.JSON(http.StatusOK, gin.H{"id": threadID, "status": "deleted"})
 }

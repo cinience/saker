@@ -77,6 +77,8 @@ func aguiUnwrapEnvelope(c *gin.Context, body []byte) ([]byte, string) {
 	switch envelope.Method {
 	case "info":
 		return nil, "info"
+	case "capabilities":
+		return nil, "capabilities"
 	case "threads":
 		return nil, "threads"
 	case "agent/stop":

@@ -37,6 +37,9 @@ func (g *Gateway) handleRun(c *gin.Context) {
 	case "info":
 		g.handleInfo(c)
 		return
+	case "capabilities":
+		g.handleCapabilities(c)
+		return
 	case "threads":
 		g.handleThreads(c)
 		return

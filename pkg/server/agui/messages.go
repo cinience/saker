@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/saker-ai/saker/pkg/api"
+	"github.com/saker-ai/saker/pkg/model"
 
 	aguitypes "github.com/ag-ui-protocol/ag-ui/sdks/community/go/pkg/core/types"
 )
@@ -13,11 +14,14 @@ import (
 // messagesToRequest converts AG-UI RunAgentInput into a saker api.Request.
 // Uses the ThreadID as SessionID so saker's runtime manages conversation
 // history across turns. The latest user message becomes the Prompt.
+// Multimodal content (images, documents) is converted to ContentBlocks.
 func messagesToRequest(input aguitypes.RunAgentInput, identity Identity) api.Request {
 	var prompt string
+	var contentBlocks []model.ContentBlock
+
 	for i := len(input.Messages) - 1; i >= 0; i-- {
 		if input.Messages[i].Role == aguitypes.RoleUser {
-			prompt = extractTextContent(input.Messages[i].Content)
+			prompt, contentBlocks = extractMultimodalContent(input.Messages[i])
 			break
 		}
 	}
@@ -31,19 +35,86 @@ func messagesToRequest(input aguitypes.RunAgentInput, identity Identity) api.Req
 	}
 
 	req := api.Request{
-		Prompt:    prompt,
-		SessionID: input.ThreadID,
-		// AG-UI owns persistence for this HTTP stream. Leaving runtime-level
-		// history persistence enabled records the same turn a second time from
-		// the internal model history, including tool repair prompts that were
-		// never shown in the web chat.
-		Ephemeral: true,
+		Prompt:        prompt,
+		ContentBlocks: contentBlocks,
+		SessionID:     input.ThreadID,
+		Ephemeral:     true,
 	}
 	if identity.Username != "" {
 		req.User = identity.Username
 	}
 
+	// Forward props to metadata for downstream access.
+	if input.ForwardedProps != nil {
+		req.Metadata = map[string]any{
+			"_agui_forwarded_props": input.ForwardedProps,
+		}
+	}
+
 	return req
+}
+
+// extractMultimodalContent extracts text prompt and multimodal content blocks
+// from an AG-UI message. Uses the SDK's ContentInputContents() helper for
+// proper type handling of multimodal arrays.
+func extractMultimodalContent(msg aguitypes.Message) (string, []model.ContentBlock) {
+	// Try multimodal array first ([]InputContent).
+	if parts, ok := msg.ContentInputContents(); ok {
+		var texts []string
+		var blocks []model.ContentBlock
+		for _, part := range parts {
+			switch part.Type {
+			case aguitypes.InputContentTypeText:
+				if part.Text != "" {
+					texts = append(texts, part.Text)
+				}
+			case aguitypes.InputContentTypeBinary:
+				block := inputContentToBlock(part)
+				if block.Type != "" {
+					blocks = append(blocks, block)
+				}
+			default:
+				// Unknown types with text fallback.
+				if part.Text != "" {
+					texts = append(texts, part.Text)
+				}
+			}
+		}
+		return strings.Join(texts, "\n"), blocks
+	}
+
+	// Fall back to string content.
+	text := extractTextContent(msg.Content)
+	return text, nil
+}
+
+// inputContentToBlock converts an AG-UI InputContent (binary type) into a
+// saker model.ContentBlock for multimodal processing.
+func inputContentToBlock(ic aguitypes.InputContent) model.ContentBlock {
+	blockType := mimeToBlockType(ic.MimeType)
+	if blockType == "" {
+		return model.ContentBlock{}
+	}
+	return model.ContentBlock{
+		Type:      blockType,
+		MediaType: ic.MimeType,
+		Data:      ic.Data,
+		URL:       ic.URL,
+	}
+}
+
+// mimeToBlockType maps MIME types to saker ContentBlockType.
+func mimeToBlockType(mimeType string) model.ContentBlockType {
+	switch {
+	case strings.HasPrefix(mimeType, "image/"):
+		return model.ContentBlockImage
+	case mimeType == "application/pdf":
+		return model.ContentBlockDocument
+	case strings.HasPrefix(mimeType, "application/"):
+		return model.ContentBlockDocument
+	default:
+		return ""
+	}
 }
 
 // extractTextContent coerces AG-UI message content (typed as any) into a

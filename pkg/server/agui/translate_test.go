@@ -114,14 +114,17 @@ func TestTranslateEvent_ToolExecutionStart(t *testing.T) {
 	_, _ = state.translateEvent(context.Background(), &bytes.Buffer{}, w, evt, nopFilter{})
 
 	types := w.types()
-	if len(types) != 2 {
-		t.Fatalf("expected 2 events (start+args), got %d: %v", len(types), types)
+	if len(types) != 3 {
+		t.Fatalf("expected 3 events (activity+start+args), got %d: %v", len(types), types)
 	}
-	if types[0] != "TOOL_CALL_START" {
-		t.Errorf("first = %q, want TOOL_CALL_START", types[0])
+	if types[0] != "ACTIVITY_SNAPSHOT" {
+		t.Errorf("first = %q, want ACTIVITY_SNAPSHOT", types[0])
 	}
-	if types[1] != "TOOL_CALL_ARGS" {
-		t.Errorf("second = %q, want TOOL_CALL_ARGS", types[1])
+	if types[1] != "TOOL_CALL_START" {
+		t.Errorf("second = %q, want TOOL_CALL_START", types[1])
+	}
+	if types[2] != "TOOL_CALL_ARGS" {
+		t.Errorf("third = %q, want TOOL_CALL_ARGS", types[2])
 	}
 	if !state.toolCalls["tc_1"] {
 		t.Error("tool call should be tracked")
@@ -143,11 +146,14 @@ func TestTranslateEvent_ToolExecutionStart_NoInput(t *testing.T) {
 	_, _ = state.translateEvent(context.Background(), &bytes.Buffer{}, w, evt, nopFilter{})
 
 	types := w.types()
-	if len(types) != 1 {
-		t.Fatalf("expected 1 event (start only, no args), got %d: %v", len(types), types)
+	if len(types) != 2 {
+		t.Fatalf("expected 2 events (activity+start, no args), got %d: %v", len(types), types)
 	}
-	if types[0] != "TOOL_CALL_START" {
-		t.Errorf("event = %q, want TOOL_CALL_START", types[0])
+	if types[0] != "ACTIVITY_SNAPSHOT" {
+		t.Errorf("first = %q, want ACTIVITY_SNAPSHOT", types[0])
+	}
+	if types[1] != "TOOL_CALL_START" {
+		t.Errorf("second = %q, want TOOL_CALL_START", types[1])
 	}
 }
 
@@ -214,14 +220,17 @@ func TestTranslateEvent_ToolExecutionStart_ClosesOpenTool(t *testing.T) {
 	}, nopFilter{})
 
 	types := w.types()
-	if len(types) < 2 {
-		t.Fatalf("expected >=2 events, got %d: %v", len(types), types)
+	if len(types) < 3 {
+		t.Fatalf("expected >=3 events, got %d: %v", len(types), types)
 	}
 	if types[0] != "TOOL_CALL_END" {
 		t.Errorf("should close previous tool first, got %q", types[0])
 	}
-	if types[1] != "TOOL_CALL_START" {
-		t.Errorf("then start new tool, got %q", types[1])
+	if types[1] != "ACTIVITY_SNAPSHOT" {
+		t.Errorf("then activity snapshot, got %q", types[1])
+	}
+	if types[2] != "TOOL_CALL_START" {
+		t.Errorf("then start new tool, got %q", types[2])
 	}
 }
 
@@ -258,8 +267,8 @@ func TestTranslateEvent_IterationStartStop(t *testing.T) {
 
 	_, _ = state.translateEvent(context.Background(), &bytes.Buffer{}, w, api.StreamEvent{Type: api.EventIterationStart}, nopFilter{})
 	types := w.types()
-	if len(types) != 1 || types[0] != "STEP_STARTED" {
-		t.Fatalf("iteration_start: got %v, want [STEP_STARTED]", types)
+	if len(types) != 2 || types[0] != "ACTIVITY_SNAPSHOT" || types[1] != "STEP_STARTED" {
+		t.Fatalf("iteration_start: got %v, want [ACTIVITY_SNAPSHOT STEP_STARTED]", types)
 	}
 	if state.iterCount != 1 {
 		t.Errorf("iterCount = %d, want 1", state.iterCount)
@@ -286,14 +295,17 @@ func TestTranslateEvent_IterationStart_ClosesOpenStep(t *testing.T) {
 
 	_, _ = state.translateEvent(context.Background(), &bytes.Buffer{}, w, api.StreamEvent{Type: api.EventIterationStart}, nopFilter{})
 	types := w.types()
-	if len(types) != 2 {
-		t.Fatalf("expected 2 events, got %d: %v", len(types), types)
+	if len(types) != 3 {
+		t.Fatalf("expected 3 events, got %d: %v", len(types), types)
 	}
 	if types[0] != "STEP_FINISHED" {
 		t.Errorf("should close previous step first, got %q", types[0])
 	}
-	if types[1] != "STEP_STARTED" {
-		t.Errorf("then start new step, got %q", types[1])
+	if types[1] != "ACTIVITY_SNAPSHOT" {
+		t.Errorf("then activity snapshot, got %q", types[1])
+	}
+	if types[2] != "STEP_STARTED" {
+		t.Errorf("then start new step, got %q", types[2])
 	}
 	if state.iterCount != 2 {
 		t.Errorf("iterCount = %d, want 2", state.iterCount)

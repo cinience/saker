@@ -114,7 +114,8 @@ func (g *Gateway) handleConnect(c *gin.Context, body []byte) {
 }
 
 // convertMessages translates conversation.Message rows into AG-UI typed
-// messages suitable for a MESSAGES_SNAPSHOT event.
+// messages suitable for a MESSAGES_SNAPSHOT event. Supports all AG-UI roles:
+// user, assistant, system, tool, developer, reasoning, activity.
 func convertMessages(msgs []conversation.Message) []aguitypes.Message {
 	out := make([]aguitypes.Message, 0, len(msgs))
 	for i := range msgs {
@@ -192,6 +193,7 @@ func formatThreadResponse(t *conversation.Thread) gin.H {
 	return gin.H{
 		"id":        t.ID,
 		"name":      t.Title,
+		"title":     t.Title,
 		"createdAt": t.CreatedAt.Format(time.RFC3339),
 		"updatedAt": t.UpdatedAt.Format(time.RFC3339),
 	}
