@@ -2,7 +2,6 @@
 
 import { useCallback } from "react";
 import { useAgent, UseAgentUpdate } from "@copilotkit/react-core/v2";
-import type { Thread, SkillInfo } from "@/features/rpc/types";
 import { ThreadPanel } from "./ThreadPanel";
 import { EmptyState } from "./EmptyState";
 import { useT } from "@/features/i18n";
@@ -10,22 +9,14 @@ import { CopilotChat } from "@copilotkit/react-ui";
 import "@copilotkit/react-ui/styles.css";
 import "./copilot-theme.css";
 import { StatusBar } from "./StatusBar";
-import type { TurnStatus } from "./chatUtils";
+import { useChatStore } from "./useChatStore";
+import { useIsMobile, type TurnStatus } from "./chatUtils";
 
 export interface ChatMainViewProps {
-  isMobile: boolean;
-  mobileDrawerOpen: boolean;
-  setMobileDrawerOpen: (open: boolean) => void;
-  sortedThreads: Thread[];
-  activeThreadId: string;
   switchThread: (id: string) => Promise<void>;
   createThread: () => Promise<void>;
   deleteThread: (id: string) => void;
-  panelCollapsed: boolean;
-  wsHealthy: boolean;
-  turnStatus: TurnStatus;
   onAutoCreateThread: (title: string) => Promise<void>;
-  skills: SkillInfo[];
 }
 
 function generateTitle(text: string): string {
@@ -40,21 +31,24 @@ function generateTitle(text: string): string {
 }
 
 export function ChatMainView({
-  isMobile,
-  mobileDrawerOpen,
-  setMobileDrawerOpen,
-  sortedThreads,
-  activeThreadId,
   switchThread,
   createThread,
   deleteThread,
-  panelCollapsed,
-  wsHealthy,
-  turnStatus,
   onAutoCreateThread,
-  skills,
 }: ChatMainViewProps) {
   const { t } = useT();
+  const isMobile = useIsMobile();
+  const activeThreadId = useChatStore((s) => s.activeThreadId);
+  const setMobileDrawerOpen = useChatStore((s) => s.setMobileDrawerOpen);
+  const mobileDrawerOpen = useChatStore((s) => s.mobileDrawerOpen);
+  const panelCollapsed = useChatStore((s) => s.panelCollapsed);
+  const wsConnected = useChatStore((s) => s.wsConnected);
+  const wsHasBeenConnected = useChatStore((s) => s.wsHasBeenConnected);
+  const turnStatus = useChatStore((s) => s.turnStatus);
+  const skills = useChatStore((s) => s.skills);
+
+  const wsHealthy = wsConnected || !wsHasBeenConnected;
+
   const { agent } = useAgent({ updates: [UseAgentUpdate.OnRunStatusChanged] });
   const effectiveTurnStatus: TurnStatus = agent?.isRunning ? "running" : turnStatus;
 
@@ -76,8 +70,6 @@ export function ChatMainView({
         />
       )}
       <ThreadPanel
-        threads={sortedThreads}
-        activeThreadId={activeThreadId}
         onSelectThread={(id) => {
           switchThread(id);
           if (isMobile) setMobileDrawerOpen(false);
@@ -87,10 +79,6 @@ export function ChatMainView({
           if (isMobile) setMobileDrawerOpen(false);
         }}
         onDeleteThread={deleteThread}
-        collapsed={isMobile ? !mobileDrawerOpen : panelCollapsed}
-        connected={wsHealthy}
-        mobileDrawer={isMobile}
-        mobileOpen={mobileDrawerOpen}
       />
       <div className={`main${!activeThreadId ? " main--empty" : ""}`} id="main-content">
         {!wsHealthy && (

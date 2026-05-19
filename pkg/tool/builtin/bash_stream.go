@@ -50,9 +50,12 @@ func (b *BashTool) StreamExecute(ctx context.Context, params map[string]interfac
 		if err != nil {
 			return nil, err
 		}
+		streamCtx, cancel := context.WithCancel(ctx)
+		defer cancel()
 		start := time.Now()
 		spool := newBashOutputSpool(ctx, b.effectiveOutputThresholdBytes())
-		res, err := streamEnv.RunCommandStream(ctx, ps, sandboxenv.CommandRequest{
+		spool.SetLimitExceededHook(cancel)
+		res, err := streamEnv.RunCommandStream(streamCtx, ps, sandboxenv.CommandRequest{
 			Command: command,
 			Workdir: workdir,
 			Timeout: timeout,
@@ -113,12 +116,14 @@ func (b *BashTool) StreamExecute(ctx context.Context, params map[string]interfac
 		return nil, err
 	}
 
-	execCtx := ctx
+	var execCtx context.Context
 	var cancel context.CancelFunc
 	if timeout > 0 {
 		execCtx, cancel = context.WithTimeout(ctx, timeout)
-		defer cancel()
+	} else {
+		execCtx, cancel = context.WithCancel(ctx)
 	}
+	defer cancel()
 
 	cmd := exec.CommandContext(execCtx, "bash", "-c", command)
 	cmd.Env = os.Environ()
@@ -134,6 +139,7 @@ func (b *BashTool) StreamExecute(ctx context.Context, params map[string]interfac
 	}
 
 	spool := newBashOutputSpool(ctx, b.effectiveOutputThresholdBytes())
+	spool.SetLimitExceededHook(cancel)
 	start := time.Now()
 	if err := cmd.Start(); err != nil {
 		return nil, fmt.Errorf("start command: %w", err)

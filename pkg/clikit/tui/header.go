@@ -8,12 +8,12 @@ import (
 	"charm.land/lipgloss/v2"
 )
 
-// mascotRows is a static Sichuan opera face mask (川剧脸谱),
-// symbolising the soul/persona behind Saker.
+// mascotRows is a static saker falcon (猎鹰) face,
+// symbolising the keen vision and swift precision of Saker.
 var mascotRows = [3]string{
-	" ▄███▄  ",
-	" ◉▀▼▀◉  ",
-	"  ╰─╯   ",
+	"   ╱‾‾‾╲   ",
+	"  ( ◉ ◉ )  ",
+	"   ╲_▲_╱   ",
 }
 
 // Header renders the top section of the TUI with mascot and project info.

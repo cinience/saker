@@ -24,18 +24,9 @@ import { SkillhubSection } from "./SkillhubSection";
 import { StorageSection } from "./StorageSection";
 import type { RPCClient } from "@/features/rpc/client";
 
-interface EmbedBackend {
-  name: string;
-  env_key: string;
-  available: boolean;
-}
+import { useChatStore } from "../useChatStore";
 
 interface Props {
-  settings: ServerSettings | null;
-  connected: boolean;
-  registeredTools?: { name: string; description: string; category: string }[];
-  embedBackends?: EmbedBackend[];
-  isAdmin?: boolean;
   onUpdateAigo?: (aigo: AigoConfig) => Promise<void>;
   onUpdateFailover?: (failover: FailoverConfig) => Promise<void>;
   onUpdateSandbox?: (sandbox: SandboxConfig) => Promise<void>;
@@ -144,10 +135,20 @@ function TabBar({ activeTab, onChange, isAdmin }: { activeTab: TabId; onChange: 
 
 // --- Main Panel ---
 
-export function SettingsPanel({ settings, connected, registeredTools, embedBackends, isAdmin = true, onUpdateAigo, onUpdateFailover, onUpdateSandbox, onUpdateStorage, onUpdateAuth, onDeleteAuth, onCreateUser, onDeleteUser, rpc }: Props) {
+export function SettingsPanel({ onUpdateAigo, onUpdateFailover, onUpdateSandbox, onUpdateStorage, onUpdateAuth, onDeleteAuth, onCreateUser, onDeleteUser, rpc }: Props) {
   const { theme, setTheme } = useTheme();
   const { locale, setLocale, t } = useT();
   const { toast, showToast } = useToast();
+  
+  const settings = useChatStore((s) => s.settings);
+  const registeredTools = useChatStore((s) => s.registeredTools);
+  const embedBackends = useChatStore((s) => s.embedBackends);
+  const currentUser = useChatStore((s) => s.currentUser);
+  const wsConnected = useChatStore((s) => s.wsConnected);
+  const wsHasBeenConnected = useChatStore((s) => s.wsHasBeenConnected);
+  const connected = wsConnected || !wsHasBeenConnected;
+  const isAdmin = currentUser.role === "admin";
+
   const [activeTab, setActiveTab] = useState<TabId>(() => {
     const saved = typeof window !== "undefined" ? localStorage.getItem("settings-tab") : null;
     if (saved && TABS.some(t => t.id === saved && (!t.adminOnly || isAdmin))) {
@@ -507,7 +508,7 @@ function EnginesTab({
   t,
 }: {
   settings: ServerSettings;
-  embedBackends?: EmbedBackend[];
+  embedBackends?: { name: string; env_key: string; available: boolean }[];
   isAdmin: boolean;
   onUpdateAigo?: (aigo: AigoConfig) => Promise<void>;
   onUpdateFailover?: (failover: FailoverConfig) => Promise<void>;

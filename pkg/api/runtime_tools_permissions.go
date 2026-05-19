@@ -27,6 +27,9 @@ func (t *runtimeToolExecutor) isAllowed(ctx context.Context, name string) bool {
 		_, reqAllowed = t.allow[canon]
 	}
 	subCtx, ok := subagents.FromContext(ctx)
+	if ok && !subCtx.Allows(canon) {
+		return false
+	}
 	if !ok || len(subCtx.ToolWhitelist) == 0 {
 		return reqAllowed
 	}

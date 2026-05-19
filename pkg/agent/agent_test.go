@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"reflect"
 	"strings"
 	"testing"
@@ -48,6 +49,7 @@ type stubTools struct {
 	calls []ToolCall
 	err   error
 	delay time.Duration
+	out   string
 }
 
 func (t *stubTools) Execute(ctx context.Context, call ToolCall, _ *Context) (ToolResult, error) {
@@ -62,7 +64,20 @@ func (t *stubTools) Execute(ctx context.Context, call ToolCall, _ *Context) (Too
 	if t.err != nil {
 		return ToolResult{Name: call.Name}, t.err
 	}
+	if t.out != "" {
+		return ToolResult{Name: call.Name, Output: t.out}, nil
+	}
 	return ToolResult{Name: call.Name, Output: "ok"}, nil
+}
+
+type incrementingToolModel struct {
+	name string
+	n    int
+}
+
+func (m *incrementingToolModel) Generate(context.Context, *Context) (*ModelOutput, error) {
+	m.n++
+	return &ModelOutput{ToolCalls: []ToolCall{{Name: m.name, Input: map[string]any{"path": fmt.Sprintf("file-%d", m.n)}}}}, nil
 }
 
 type errorAwareModel struct {
@@ -467,6 +482,85 @@ func TestAgent_RepeatLoopThresholdAbortsAtConfiguredCount(t *testing.T) {
 	// 4 identical calls before abort means model.Generate ran 4 times.
 	if len(tools.calls) != 4 {
 		t.Fatalf("expected 4 tool calls before abort, got %d", len(tools.calls))
+	}
+}
+
+func TestAgent_SameToolDifferentInputAbortsAtHardThreshold(t *testing.T) {
+	model := &incrementingToolModel{name: "read"}
+	tools := &stubTools{}
+	ag, err := New(model, tools, Options{SameToolHardThreshold: 4, MaxIterations: 20})
+	if err != nil {
+		t.Fatalf("new: %v", err)
+	}
+	_, err = ag.Run(context.Background(), NewContext())
+	if err == nil || !strings.Contains(err.Error(), "same tool called 4+ times") {
+		t.Fatalf("expected same-tool loop error, got %v", err)
+	}
+	if len(tools.calls) != 4 {
+		t.Fatalf("expected 4 tool calls before abort, got %d", len(tools.calls))
+	}
+}
+
+func TestAgent_TruncatesLargeToolResultToFile(t *testing.T) {
+	model := &scriptedModel{outputs: []*ModelOutput{
+		{ToolCalls: []ToolCall{{Name: "big"}}},
+		{Done: true},
+	}}
+	dir := t.TempDir()
+	tools := &stubTools{out: strings.Repeat("x", 20)}
+	ag, err := New(model, tools, Options{
+		MaxIterations:       3,
+		ToolResultMaxChars:  8,
+		ToolResultOutputDir: dir,
+	})
+	if err != nil {
+		t.Fatalf("new: %v", err)
+	}
+	ctx := NewContext()
+	if _, err := ag.Run(context.Background(), ctx); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if len(ctx.ToolResults) != 1 {
+		t.Fatalf("expected one result, got %d", len(ctx.ToolResults))
+	}
+	got := ctx.ToolResults[0]
+	if !strings.HasPrefix(got.Output, strings.Repeat("x", 8)) || strings.HasPrefix(got.Output, strings.Repeat("x", 9)) || !strings.Contains(got.Output, "Output truncated") {
+		t.Fatalf("expected truncated output marker, got %q", got.Output)
+	}
+	path, _ := got.Metadata["output_file"].(string)
+	if path == "" {
+		t.Fatalf("expected output_file metadata: %+v", got.Metadata)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read persisted output: %v", err)
+	}
+	if string(data) != strings.Repeat("x", 20) {
+		t.Fatalf("persisted output mismatch")
+	}
+}
+
+func TestAgentRejectsDuplicateToolCallIDs(t *testing.T) {
+	model := &scriptedModel{outputs: []*ModelOutput{{
+		ToolCalls: []ToolCall{
+			{ID: "dup", Name: "first"},
+			{ID: "dup", Name: "second"},
+		},
+	}}}
+	tools := &stubTools{}
+	ag, err := New(model, tools, Options{MaxIterations: 3})
+	if err != nil {
+		t.Fatalf("new: %v", err)
+	}
+	out, err := ag.Run(context.Background(), NewContext())
+	if err == nil || !strings.Contains(err.Error(), `duplicate tool call id "dup"`) {
+		t.Fatalf("expected duplicate tool id error, got %v", err)
+	}
+	if out == nil || out.StopReason != StopReasonModelError {
+		t.Fatalf("expected model_error stop reason, got %+v", out)
+	}
+	if len(tools.calls) != 0 {
+		t.Fatalf("duplicate tool calls should not execute, got %d calls", len(tools.calls))
 	}
 }
 

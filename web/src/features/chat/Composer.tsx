@@ -1,29 +1,17 @@
 "use client";
 
 import { useState, useRef, useCallback, useMemo, useEffect } from "react";
-import { toast } from "sonner";
 import { useT } from "@/features/i18n";
 import { usePermissions } from "@/features/project/usePermissions";
-import { Send, Square, Plus, X, FileText, Film, Volume2, HelpCircle, Clock } from "lucide-react";
+import { Send, Square, Plus } from "lucide-react";
 import type { SkillInfo } from "@/features/rpc/types";
+import { useFileUpload, type Attachment } from "./useFileUpload";
+import { AttachmentList } from "./AttachmentList";
+import { SlashCommandPicker, HELP_SKILL } from "./SlashCommandPicker";
 
-const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50 MB
 const SLASH_PICKER_MAX = 8;
 const RECENT_SKILLS_KEY = "saker.composer.recentSkills";
 const RECENT_SKILLS_MAX = 3;
-
-/**
- * Synthetic "skill" representing the /help shortcut. It is identified by
- * reference (not Name) so users can still register a real "help" skill if
- * they want — selection routes to skills view instead of inserting text.
- */
-const HELP_SKILL: SkillInfo = {
-  Name: "help",
-  Description: "Open the skills catalog",
-  Scope: "user",
-  RelatedSkills: [],
-  Keywords: ["help", "skills", "list", "catalog"],
-};
 
 function readRecentSkillNames(): string[] {
   if (typeof window === "undefined") return [];
@@ -46,70 +34,12 @@ function writeRecentSkillNames(names: string[]) {
   }
 }
 
-export interface Attachment {
-  id: string;
-  file: File;
-  name: string;
-  media_type: string;
-  preview?: string;    // object URL for image thumbnails
-  uploading: boolean;
-  progress: number;    // 0-100
-  path?: string;       // server path after upload
-  error?: string;
-}
-
 interface Props {
   onSend: (text: string, attachments?: Attachment[]) => void;
   onStop?: () => void;
   disabled: boolean;
   running?: boolean;
   skills?: SkillInfo[];
-}
-
-/** Resolve the upload endpoint URL based on current page. */
-function resolveUploadUrl(): string {
-  if (typeof window === "undefined") return "http://127.0.0.1:10112/api/upload";
-  const { protocol, hostname, port } = window.location;
-  if (port === "10111") return `${protocol}//${hostname}:10112/api/upload`;
-  return `${protocol}//${window.location.host}/api/upload`;
-}
-
-/** Upload a file with progress tracking via XMLHttpRequest. */
-function uploadFileWithProgress(
-  file: File,
-  onProgress: (pct: number) => void,
-): Promise<Partial<Attachment>> {
-  return new Promise((resolve) => {
-    const xhr = new XMLHttpRequest();
-    xhr.open("POST", resolveUploadUrl());
-
-    xhr.upload.onprogress = (e) => {
-      if (e.lengthComputable) {
-        onProgress(Math.round((e.loaded / e.total) * 100));
-      }
-    };
-
-    xhr.onload = () => {
-      if (xhr.status >= 200 && xhr.status < 300) {
-        try {
-          const data = JSON.parse(xhr.responseText);
-          resolve({ path: data.path, media_type: data.media_type, uploading: false, progress: 100 });
-        } catch {
-          resolve({ error: "Invalid server response", uploading: false, progress: 0 });
-        }
-      } else {
-        resolve({ error: xhr.responseText || `Upload failed (${xhr.status})`, uploading: false, progress: 0 });
-      }
-    };
-
-    xhr.onerror = () => {
-      resolve({ error: "Network error", uploading: false, progress: 0 });
-    };
-
-    const form = new FormData();
-    form.append("file", file);
-    xhr.send(form);
-  });
 }
 
 /**
@@ -142,10 +72,15 @@ export function Composer({ onSend, onStop, disabled, running, skills }: Props) {
   const readOnly = !perms.canEdit;
   const inputDisabled = disabled || readOnly;
   const [text, setText] = useState("");
-  const [attachments, setAttachments] = useState<Attachment[]>([]);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const nextAttachIdRef = useRef(0);
+
+  const {
+    attachments,
+    handleFileUpload,
+    removeAttachment,
+    clearAttachments,
+  } = useFileUpload();
 
   // Slash picker state
   const [slashOpen, setSlashOpen] = useState(false);
@@ -245,11 +180,11 @@ export function Composer({ onSend, onStop, disabled, running, skills }: Props) {
 
   /**
    * Routes a slash-picker selection. The synthetic /help item is identified by
-   * reference (HELP_SKILL) so a real "help" skill, if registered, still
+   * Name comparison so a real "help" skill, if registered, still
    * inserts as text. /help instead navigates to the skills catalog view.
    */
   const handleSelectSkill = useCallback((skill: SkillInfo) => {
-    if (skill === HELP_SKILL) {
+    if (skill.Name === HELP_SKILL.Name) {
       closeSlash();
       if (typeof window !== "undefined") {
         window.location.hash = "skills";
@@ -275,70 +210,18 @@ export function Composer({ onSend, onStop, disabled, running, skills }: Props) {
     }
   }, [skills, slashOpen, closeSlash]);
 
-  const addFiles = useCallback((files: FileList | File[]) => {
-    const newAttachments: Attachment[] = [];
-    for (const file of Array.from(files)) {
-      // Size pre-check
-      if (file.size > MAX_FILE_SIZE) {
-        toast.error(`${file.name}: ${t("composer.fileTooLarge")}`);
-        continue;
-      }
-
-      const id = `att-${++nextAttachIdRef.current}`;
-      const att: Attachment = {
-        id,
-        file,
-        name: file.name,
-        media_type: file.type || "application/octet-stream",
-        uploading: true,
-        progress: 0,
-      };
-      // Generate preview for images
-      if (file.type.startsWith("image/")) {
-        att.preview = URL.createObjectURL(file);
-      }
-      newAttachments.push(att);
-    }
-    if (newAttachments.length === 0) return;
-    setAttachments(prev => [...prev, ...newAttachments]);
-
-    // Upload each file with progress
-    for (const att of newAttachments) {
-      uploadFileWithProgress(att.file, (pct) => {
-        setAttachments(prev =>
-          prev.map(a => a.id === att.id ? { ...a, progress: pct } : a)
-        );
-      }).then(result => {
-        if (result.error) {
-          toast.error(`${att.name}: ${t("composer.uploadFailed")}`);
-        }
-        setAttachments(prev =>
-          prev.map(a => a.id === att.id ? { ...a, ...result } : a)
-        );
-      });
-    }
-  }, [t]);
-
-  const removeAttachment = useCallback((id: string) => {
-    setAttachments(prev => {
-      const att = prev.find(a => a.id === id);
-      if (att?.preview) URL.revokeObjectURL(att.preview);
-      return prev.filter(a => a.id !== id);
-    });
-  }, []);
-
   const handleSend = useCallback(() => {
     const trimmed = text.trim();
     const readyAttachments = attachments.filter(a => a.path && !a.uploading && !a.error);
     if ((!trimmed && readyAttachments.length === 0) || inputDisabled) return;
     onSend(trimmed || " ", readyAttachments.length > 0 ? readyAttachments : undefined);
     setText("");
-    setAttachments([]);
+    clearAttachments();
     closeSlash();
     if (textareaRef.current) {
       textareaRef.current.style.height = "auto";
     }
-  }, [text, attachments, inputDisabled, onSend, closeSlash]);
+  }, [text, attachments, inputDisabled, onSend, clearAttachments, closeSlash]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -401,18 +284,18 @@ export function Composer({ onSend, onStop, disabled, running, skills }: Props) {
 
   const handleFileChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
-      addFiles(e.target.files);
+      handleFileUpload(e.target.files);
       e.target.value = "";
     }
-  }, [addFiles]);
+  }, [handleFileUpload]);
 
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
     if (e.dataTransfer.files.length > 0) {
-      addFiles(e.dataTransfer.files);
+      handleFileUpload(e.dataTransfer.files);
     }
-  }, [addFiles]);
+  }, [handleFileUpload]);
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -437,17 +320,11 @@ export function Composer({ onSend, onStop, disabled, running, skills }: Props) {
     }
     if (imageFiles.length > 0) {
       e.preventDefault();
-      addFiles(imageFiles);
+      handleFileUpload(imageFiles);
     }
-  }, [addFiles]);
+  }, [handleFileUpload]);
 
   const anyUploading = attachments.some(a => a.uploading);
-
-  const renderAttachmentIcon = (att: Attachment) => {
-    if (att.media_type.startsWith("video/")) return <Film size={16} />;
-    if (att.media_type.startsWith("audio/")) return <Volume2 size={16} />;
-    return <FileText size={16} />;
-  };
 
   return (
     <div className="gemini-composer-container">
@@ -456,37 +333,10 @@ export function Composer({ onSend, onStop, disabled, running, skills }: Props) {
         onDrop={handleDrop}
         onDragOver={handleDragOver}
       >
-        {/* Attachment previews */}
-        {attachments.length > 0 && (
-          <div className="composer-attachments">
-            {attachments.map(att => (
-              <div key={att.id} className={`attachment-chip ${att.error ? "attachment-error" : ""} ${att.uploading ? "attachment-uploading" : ""}`}>
-                {att.preview ? (
-                  <img src={att.preview} alt={att.name} className="attachment-thumb" />
-                ) : (
-                  <span className="attachment-icon">{renderAttachmentIcon(att)}</span>
-                )}
-                <span className="attachment-name">{att.name}</span>
-                {att.uploading && (
-                  <span className="attachment-progress">{att.progress}%</span>
-                )}
-                <button
-                  className="attachment-remove"
-                  onClick={() => removeAttachment(att.id)}
-                  aria-label={t("composer.removeFile")}
-                >
-                  <X size={14} />
-                </button>
-                {/* Upload progress bar */}
-                {att.uploading && (
-                  <div className="attachment-progress-bar">
-                    <div className="attachment-progress-fill" style={{ width: `${att.progress}%` }} />
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
+        <AttachmentList
+          attachments={attachments}
+          onRemove={removeAttachment}
+        />
 
         <div className="gemini-input-row">
           {/* "+" button */}
@@ -544,42 +394,14 @@ export function Composer({ onSend, onStop, disabled, running, skills }: Props) {
           </div>
         </div>
 
-        {/* Slash command picker */}
-        {slashOpen && filteredSkills.length > 0 && (
-          <div className="slash-picker" role="listbox" aria-label={t("composer.slashHint")}>
-            <div className="slash-picker__header">{t("composer.slashHint")}</div>
-            <ul className="slash-picker__list">
-              {filteredSkills.map((s, i) => {
-                const isHelp = s === HELP_SKILL;
-                const isRecent = !isHelp && !slashQuery && recentSkillNames.includes(s.Name);
-                return (
-                  <li
-                    key={s.Name}
-                    className={`slash-item${i === slashIndex ? " slash-item--active" : ""}`}
-                    role="option"
-                    aria-selected={i === slashIndex}
-                    onMouseDown={(e) => { e.preventDefault(); handleSelectSkill(s); }}
-                    onMouseEnter={() => setSlashIndex(i)}
-                  >
-                    <span className="slash-item__name">
-                      {isHelp ? <HelpCircle size={12} aria-hidden="true" /> :
-                        isRecent ? <Clock size={12} aria-hidden="true" /> : null}
-                      /{s.Name}
-                    </span>
-                    {s.Description && (
-                      <span className="slash-item__desc">{s.Description}</span>
-                    )}
-                    {isHelp ? (
-                      <span className="slash-item__scope slash-item__scope--help">help</span>
-                    ) : s.Scope ? (
-                      <span className={`slash-item__scope slash-item__scope--${s.Scope}`}>{s.Scope}</span>
-                    ) : null}
-                  </li>
-                );
-              })}
-            </ul>
-          </div>
-        )}
+        <SlashCommandPicker
+                  filteredSkills={filteredSkills}
+                  slashIndex={slashIndex}
+                  onSelect={insertSlashSelection}
+                  onHover={setSlashIndex}
+                  recentSkillNames={recentSkillNames}
+                  slashQuery={slashQuery}
+                />
       </div>
       <div className="gemini-disclaimer">
         {t("composer.disclaimer")}

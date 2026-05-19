@@ -18,6 +18,8 @@ import (
 	toolbuiltin "github.com/saker-ai/saker/pkg/tool/builtin"
 )
 
+const subagentNoSpawnDirective = "Do NOT spawn sub-agents. Execute tasks directly."
+
 // subagentMaxIterations chooses the iteration cap for a single subagent run.
 // We always honor an explicit unlimited (-1) coming from the runtime — a
 // platform deployment that opted out of caps shouldn't have a 50 silently
@@ -154,6 +156,9 @@ func (r runtimeSubagentRunner) runTraditional(ctx context.Context, req subagents
 		Metadata:       cloneArguments(req.Metadata),
 		Mode:           r.rt.mode,
 	}
+	subCtx := req.ParentContext.Clone()
+	subCtx.ToolDenylist = mergeToolLists(subCtx.ToolDenylist, defaultSubagentToolDenylist())
+	ctx = subagents.WithContext(ctx, subCtx)
 
 	// Extract model tier from metadata (set by runTaskInvocation).
 	if m, ok := req.Metadata["task.model"]; ok {
@@ -194,7 +199,7 @@ func (r runtimeSubagentRunner) runTraditional(ctx context.Context, req subagents
 	whitelist := combineToolWhitelists(normalized.ToolWhitelist, nil)
 	prep := preparedRun{
 		ctx:           ctx,
-		prompt:        strings.TrimSpace(req.Instruction),
+		prompt:        subagentNoSpawnDirective + "\n\n" + strings.TrimSpace(req.Instruction),
 		history:       history,
 		normalized:    normalized,
 		recorder:      recorder,
@@ -271,6 +276,8 @@ func (r runtimeSubagentRunner) runFork(ctx context.Context, req subagents.RunReq
 		Mode:      r.rt.mode,
 		Metadata:  cloneArguments(req.Metadata),
 	}
+	childCtx := subagents.Context{SessionID: childSessionID, ToolDenylist: defaultSubagentToolDenylist()}
+	ctx = subagents.WithContext(ctx, childCtx)
 	// Extract model tier
 	if m, ok := req.Metadata["task.model"]; ok {
 		if tier, ok := m.(string); ok && tier != "" {

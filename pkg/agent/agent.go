@@ -5,9 +5,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+	"time"
 
 	"github.com/saker-ai/saker/pkg/middleware"
 	"github.com/saker-ai/saker/pkg/model"
+	"github.com/saker-ai/saker/pkg/textutil"
 )
 
 var (
@@ -173,7 +178,7 @@ func (a *Agent) Run(ctx context.Context, c *Context) (*ModelOutput, error) {
 	var recentCalls []toolCallSig
 	warned := map[toolCallSig]bool{}
 	threshold := a.opts.RepeatLoopThreshold
-
+	sameToolWarned := map[string]bool{}
 
 	for {
 		if err := ctx.Err(); err != nil {
@@ -187,6 +192,12 @@ func (a *Agent) Run(ctx context.Context, c *Context) (*ModelOutput, error) {
 
 		c.Iteration = iteration
 		state.Iteration = iteration
+		if msg := budgetStatusMessage(c, a.opts); msg != "" {
+			if c.Values == nil {
+				c.Values = map[string]any{}
+			}
+			c.Values["agent.budget_status"] = msg
+		}
 
 		if err := a.mw.Execute(ctx, middleware.StageBeforeModel, state); err != nil {
 			annotate(last, classifyError(err))
@@ -246,6 +257,10 @@ func (a *Agent) Run(ctx context.Context, c *Context) (*ModelOutput, error) {
 			_ = a.mw.Execute(ctx, middleware.StageAfterAgent, state)
 			return out, nil
 		}
+		if duplicateID := duplicateToolCallID(out.ToolCalls); duplicateID != "" {
+			annotate(last, StopReasonModelError)
+			return last, fmt.Errorf("agent: duplicate tool call id %q", duplicateID)
+		}
 
 		var firstMiddlewareErr error
 
@@ -275,6 +290,7 @@ func (a *Agent) Run(ctx context.Context, c *Context) (*ModelOutput, error) {
 				}
 			}
 
+			res = a.prepareToolResult(call, res)
 			c.ToolResults = append(c.ToolResults, res)
 			state.ToolResult = res
 
@@ -309,10 +325,83 @@ func (a *Agent) Run(ctx context.Context, c *Context) (*ModelOutput, error) {
 				}
 			}
 		}
-
+		if a.opts.SameToolHardThreshold > 0 {
+			count := sameToolRepeatCount(recentCalls)
+			if count >= a.opts.SameToolHardThreshold {
+				annotate(last, StopReasonRepeatLoop)
+				return last, fmt.Errorf("agent: detected repeated tool call loop (same tool called %d+ times with varying parameters)", a.opts.SameToolHardThreshold)
+			}
+			if a.opts.SameToolSoftThreshold > 0 && count >= a.opts.SameToolSoftThreshold && a.opts.OnRepeatWarning != nil {
+				sig := recentCalls[len(recentCalls)-1]
+				if !sameToolWarned[sig.name] {
+					sameToolWarned[sig.name] = true
+					a.opts.OnRepeatWarning(ctx, ToolCall{Name: sig.name}, count)
+				}
+			}
+		}
 
 		iteration++
 	}
+}
+
+func (a *Agent) prepareToolResult(call ToolCall, res ToolResult) ToolResult {
+	maxChars := a.opts.ToolResultMaxChars
+	if maxChars <= 0 || len([]rune(res.Output)) <= maxChars {
+		return res
+	}
+	full := res.Output
+	path, err := persistAgentToolOutput(a.opts.ToolResultOutputDir, call.Name, full)
+	if res.Metadata == nil {
+		res.Metadata = map[string]any{}
+	}
+	if err != nil {
+		res.Metadata["truncate_error"] = err.Error()
+		res.Output = textutil.TruncateRunes(full, maxChars) + fmt.Sprintf("\n\n[Output truncated: %d chars total. Full result could not be stored: %v]", len([]rune(full)), err)
+		return res
+	}
+	res.Metadata["output_file"] = path
+	res.Metadata["output_chars"] = len([]rune(full))
+	res.Metadata["truncated"] = true
+	res.Output = textutil.TruncateRunes(full, maxChars) + fmt.Sprintf("\n\n[Output truncated: %d chars total. Full result stored at: %s]", len([]rune(full)), path)
+	return res
+}
+
+func persistAgentToolOutput(baseDir, toolName, output string) (string, error) {
+	base := strings.TrimSpace(baseDir)
+	if base == "" {
+		base = filepath.Join(os.TempDir(), "saker", "agent-tool-output")
+	}
+	toolDir := sanitizeOutputPathComponent(toolName)
+	dir := filepath.Join(base, toolDir)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return "", err
+	}
+	path := filepath.Join(dir, fmt.Sprintf("%d.output", time.Now().UnixNano()))
+	if err := os.WriteFile(path, []byte(output), 0o600); err != nil {
+		return "", err
+	}
+	return path, nil
+}
+
+func sanitizeOutputPathComponent(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "tool"
+	}
+	var b strings.Builder
+	for _, r := range value {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '-', r == '_':
+			b.WriteRune(r)
+		default:
+			b.WriteByte('-')
+		}
+	}
+	out := strings.Trim(b.String(), "-")
+	if out == "" {
+		return "tool"
+	}
+	return out
 }
 
 // annotate sets the StopReason on out when it is non-nil and the field is
@@ -410,4 +499,56 @@ func tailRepeatCount(calls []toolCallSig) int {
 		}
 	}
 	return count
+}
+
+func sameToolRepeatCount(calls []toolCallSig) int {
+	n := len(calls)
+	if n == 0 {
+		return 0
+	}
+	lastTool := calls[n-1].name
+	count := 0
+	for i := n - 1; i >= 0; i-- {
+		if calls[i].name != lastTool {
+			break
+		}
+		count++
+	}
+	return count
+}
+
+func duplicateToolCallID(calls []ToolCall) string {
+	seen := map[string]struct{}{}
+	for _, call := range calls {
+		id := strings.TrimSpace(call.ID)
+		if id == "" {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			return id
+		}
+		seen[id] = struct{}{}
+	}
+	return ""
+}
+
+func budgetStatusMessage(c *Context, opts Options) string {
+	if c == nil {
+		return ""
+	}
+	if opts.MaxTokens > 0 {
+		pct := totalTokens(c.CumulativeUsage) * 100 / opts.MaxTokens
+		if pct > 100 {
+			pct = 100
+		}
+		return fmt.Sprintf("[Budget: ~%d%% tokens used]", pct)
+	}
+	if opts.MaxBudgetUSD > 0 {
+		pct := int(c.CumulativeCostUSD * 100 / opts.MaxBudgetUSD)
+		if pct > 100 {
+			pct = 100
+		}
+		return fmt.Sprintf("[Budget: ~%d%% cost used]", pct)
+	}
+	return ""
 }

@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/saker-ai/saker/pkg/agent"
@@ -64,6 +65,28 @@ func TestConversationModelGenerateTracksStateAndToolCalls(t *testing.T) {
 	}
 	if state.ModelInput == nil || state.ModelOutput == nil {
 		t.Fatalf("middleware state not populated: %+v", state)
+	}
+}
+
+func TestConversationModelAppendsBudgetStatusToSystem(t *testing.T) {
+	hist := message.NewHistory()
+	stub := &stubModel{responses: []*model.Response{{
+		Message:    model.Message{Role: "assistant", Content: "ok"},
+		StopReason: "stop",
+	}}}
+	conv := &conversationModel{
+		base:         stub,
+		history:      hist,
+		prompt:       "test",
+		systemPrompt: "sys",
+		hooks:        &runtimeHookAdapter{},
+	}
+	_, err := conv.Generate(context.Background(), &agent.Context{Values: map[string]any{"agent.budget_status": "[Budget: ~80% tokens used]"}})
+	if err != nil {
+		t.Fatalf("generate: %v", err)
+	}
+	if len(stub.requests) == 0 || !strings.Contains(stub.requests[0].System, "[Budget: ~80% tokens used]") {
+		t.Fatalf("budget status missing from system prompt: %+v", stub.requests)
 	}
 }
 

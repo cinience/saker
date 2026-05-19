@@ -7,6 +7,7 @@ import (
 	"io"
 
 	"github.com/saker-ai/saker/pkg/api"
+	"github.com/saker-ai/saker/pkg/server"
 
 	aguievents "github.com/ag-ui-protocol/ag-ui/sdks/community/go/pkg/core/events"
 )
@@ -21,6 +22,8 @@ type streamState struct {
 	textStarted bool
 	// toolCalls tracks which tool call IDs have been started.
 	toolCalls map[string]bool
+	// toolNames maps tool call IDs to their tool names for artifact extraction.
+	toolNames map[string]string
 	// suppressedToolCalls tracks runtime tool call IDs that are represented by
 	// side-channel AG-UI action events instead of raw tool lifecycle events.
 	suppressedToolCalls map[string]bool
@@ -30,6 +33,10 @@ type streamState struct {
 	lastStep string
 	// iterCount tracks how many iterations have started.
 	iterCount int
+	// artifacts accumulates media artifacts extracted from tool results.
+	artifacts []server.Artifact
+	// seenArtifactURLs deduplicates artifact URLs within a single stream.
+	seenArtifactURLs map[string]bool
 }
 
 func newStreamState(threadID, runID string) *streamState {
@@ -38,41 +45,45 @@ func newStreamState(threadID, runID string) *streamState {
 		runID:               runID,
 		msgID:               fmt.Sprintf("msg_%s", runID),
 		toolCalls:           make(map[string]bool),
+		toolNames:           make(map[string]string),
 		suppressedToolCalls: make(map[string]bool),
+		seenArtifactURLs:    make(map[string]bool),
 	}
 }
 
 // translateEvent converts a single saker StreamEvent into zero or more AG-UI
 // events written directly to the SSE writer. The text filter strips XML
 // function-call artifacts from text deltas.
-func (s *streamState) translateEvent(ctx context.Context, w io.Writer, sseW sseWriter, evt api.StreamEvent, filter textFilter) error {
+// Returns extracted artifacts from tool results for the caller to cache and
+// emit as StateDeltaEvents.
+func (s *streamState) translateEvent(ctx context.Context, w io.Writer, sseW sseWriter, evt api.StreamEvent, filter textFilter) ([]server.Artifact, error) {
 	switch evt.Type {
 	case api.EventContentBlockDelta:
 		if evt.Delta == nil || evt.Delta.Text == "" {
-			return nil
+			return nil, nil
 		}
 		safe := filter.Push(evt.Delta.Text)
 		if safe == "" {
-			return nil
+			return nil, nil
 		}
 		if !s.textStarted {
 			s.textStarted = true
 			if err := writeSSE(ctx, w, sseW, aguievents.NewTextMessageStartEvent(s.msgID, aguievents.WithRole("assistant"))); err != nil {
-				return err
+				return nil, err
 			}
 		}
-		return writeSSE(ctx, w, sseW, aguievents.NewTextMessageContentEvent(s.msgID, safe))
+		return nil, writeSSE(ctx, w, sseW, aguievents.NewTextMessageContentEvent(s.msgID, safe))
 
 	case api.EventToolExecutionStart:
 		if evt.Name == "ask_user_question" {
 			if evt.ToolUseID != "" {
 				s.suppressedToolCalls[evt.ToolUseID] = true
 			}
-			return nil
+			return nil, nil
 		}
 		if s.lastToolID != "" {
 			if err := writeSSE(ctx, w, sseW, aguievents.NewToolCallEndEvent(s.lastToolID)); err != nil {
-				return err
+				return nil, err
 			}
 		}
 		toolID := evt.ToolUseID
@@ -80,14 +91,16 @@ func (s *streamState) translateEvent(ctx context.Context, w io.Writer, sseW sseW
 			toolID = fmt.Sprintf("tc_%s_%s", s.runID, evt.Name)
 		}
 		s.toolCalls[toolID] = true
+		s.toolNames[toolID] = evt.Name
 		s.lastToolID = toolID
 		if err := writeSSE(ctx, w, sseW, aguievents.NewToolCallStartEvent(toolID, evt.Name, aguievents.WithParentMessageID(s.msgID))); err != nil {
-			return err
+			return nil, err
 		}
 		args := inputToJSON(evt.Input)
 		if args != "" && args != "{}" {
-			return writeSSE(ctx, w, sseW, aguievents.NewToolCallArgsEvent(toolID, args))
+			return nil, writeSSE(ctx, w, sseW, aguievents.NewToolCallArgsEvent(toolID, args))
 		}
+		return nil, nil
 
 	case api.EventToolExecutionResult:
 		toolID := evt.ToolUseID
@@ -96,36 +109,66 @@ func (s *streamState) translateEvent(ctx context.Context, w io.Writer, sseW sseW
 		}
 		if toolID != "" && s.suppressedToolCalls[toolID] {
 			delete(s.suppressedToolCalls, toolID)
-			return nil
+			return nil, nil
 		}
+		// Resolve tool name for artifact extraction.
+		toolName := ""
+		if toolID != "" {
+			toolName = s.toolNames[toolID]
+		}
+		if toolName == "" {
+			toolName = evt.Name
+		}
+		// Extract artifacts from tool result (non-error only).
+		var newArtifacts []server.Artifact
+		if evt.IsError == nil || !*evt.IsError {
+			for _, a := range server.ExtractArtifacts(toolName, evt.Output) {
+				if !s.seenArtifactURLs[a.URL] {
+					s.seenArtifactURLs[a.URL] = true
+					newArtifacts = append(newArtifacts, a)
+				}
+			}
+		}
+		s.artifacts = append(s.artifacts, newArtifacts...)
+		// Emit TOOL_CALL_END.
 		if toolID != "" {
 			if err := writeSSE(ctx, w, sseW, aguievents.NewToolCallEndEvent(toolID)); err != nil {
-				return err
+				return newArtifacts, err
 			}
 			if s.lastToolID == toolID {
 				s.lastToolID = ""
 			}
 			delete(s.toolCalls, toolID)
+			delete(s.toolNames, toolID)
 		}
+		// Emit TOOL_CALL_RESULT with formatted content.
+		content := server.FormatToolResult(toolName, evt.Output)
+		if content != "" && toolID != "" {
+			if err := writeSSE(ctx, w, sseW, aguievents.NewToolCallResultEvent(s.msgID, toolID, content)); err != nil {
+				return newArtifacts, err
+			}
+		}
+		return newArtifacts, nil
 
 	case api.EventIterationStart:
 		s.iterCount++
 		stepName := fmt.Sprintf("iteration_%d", s.iterCount)
 		if s.lastStep != "" {
 			if err := writeSSE(ctx, w, sseW, aguievents.NewStepFinishedEvent(s.lastStep)); err != nil {
-				return err
+				return nil, err
 			}
 		}
 		s.lastStep = stepName
-		return writeSSE(ctx, w, sseW, aguievents.NewStepStartedEvent(stepName))
+		return nil, writeSSE(ctx, w, sseW, aguievents.NewStepStartedEvent(stepName))
 
 	case api.EventIterationStop:
 		if s.lastStep != "" {
 			if err := writeSSE(ctx, w, sseW, aguievents.NewStepFinishedEvent(s.lastStep)); err != nil {
-				return err
+				return nil, err
 			}
 			s.lastStep = ""
 		}
+		return nil, nil
 
 	case api.EventError:
 		msg := "runtime error"
@@ -134,9 +177,9 @@ func (s *streamState) translateEvent(ctx context.Context, w io.Writer, sseW sseW
 				msg = s
 			}
 		}
-		return writeSSE(ctx, w, sseW, aguievents.NewRunErrorEvent(msg, aguievents.WithRunID(s.runID)))
+		return nil, writeSSE(ctx, w, sseW, aguievents.NewRunErrorEvent(msg, aguievents.WithRunID(s.runID)))
 	}
-	return nil
+	return nil, nil
 }
 
 // finalize emits closing events for any open tool calls, text message,
@@ -146,6 +189,7 @@ func (s *streamState) finalize(ctx context.Context, w io.Writer, sseW sseWriter,
 		if err := writeSSE(ctx, w, sseW, aguievents.NewToolCallEndEvent(s.lastToolID)); err != nil {
 			return err
 		}
+		delete(s.toolNames, s.lastToolID)
 		s.lastToolID = ""
 	}
 	if tail := filter.Flush(); tail != "" && s.textStarted {

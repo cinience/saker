@@ -14,6 +14,7 @@ type Context struct {
 	SessionID     string
 	Metadata      map[string]any
 	ToolWhitelist []string
+	ToolDenylist  []string
 	Model         string
 
 	// Fork-specific fields: when set, the subagent inherits the parent's
@@ -30,6 +31,9 @@ func (c Context) Clone() Context {
 	}
 	if len(c.ToolWhitelist) > 0 {
 		cloned.ToolWhitelist = append([]string(nil), c.ToolWhitelist...)
+	}
+	if len(c.ToolDenylist) > 0 {
+		cloned.ToolDenylist = append([]string(nil), c.ToolDenylist...)
 	}
 	return cloned
 }
@@ -82,6 +86,9 @@ func (c Context) RestrictTools(tools ...string) Context {
 // Allows reports whether the tool may be used under this context. Empty
 // whitelists imply full access for backward compatibility with legacy agents.
 func (c Context) Allows(tool string) bool {
+	if _, denied := toToolSet(c.ToolDenylist)[normalizeTool(tool)]; denied {
+		return false
+	}
 	if len(c.ToolWhitelist) == 0 {
 		return true
 	}

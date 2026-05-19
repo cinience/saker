@@ -263,8 +263,8 @@ func TestCopilotKitAPI_ConnectEmptyThread(t *testing.T) {
 	}
 
 	events := parseSSEEvents(t, resp)
-	if len(events) < 3 {
-		t.Fatalf("expected >= 3 SSE events, got %d: %v", len(events), events)
+	if len(events) < 4 {
+		t.Fatalf("expected >= 4 SSE events, got %d: %v", len(events), events)
 	}
 
 	if events[0].Type != "RUN_STARTED" {
@@ -273,8 +273,11 @@ func TestCopilotKitAPI_ConnectEmptyThread(t *testing.T) {
 	if events[1].Type != "MESSAGES_SNAPSHOT" {
 		t.Errorf("event[1] = %q, want MESSAGES_SNAPSHOT", events[1].Type)
 	}
-	if events[2].Type != "RUN_FINISHED" {
-		t.Errorf("event[2] = %q, want RUN_FINISHED", events[2].Type)
+	if events[2].Type != "STATE_SNAPSHOT" {
+		t.Errorf("event[2] = %q, want STATE_SNAPSHOT", events[2].Type)
+	}
+	if events[3].Type != "RUN_FINISHED" {
+		t.Errorf("event[3] = %q, want RUN_FINISHED", events[3].Type)
 	}
 
 	// Parse MESSAGES_SNAPSHOT — should have empty messages array.
@@ -320,8 +323,8 @@ func TestCopilotKitAPI_ConnectWithHistory(t *testing.T) {
 	})
 
 	events := parseSSEEvents(t, resp)
-	if len(events) < 3 {
-		t.Fatalf("expected >= 3 events, got %d", len(events))
+	if len(events) < 4 {
+		t.Fatalf("expected >= 4 events, got %d", len(events))
 	}
 
 	var snapshot struct {

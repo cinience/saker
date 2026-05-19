@@ -94,6 +94,11 @@ type Server struct {
 // was started without one (legacy single-project mode).
 func (s *Server) ProjectStore() *project.Store { return s.projects }
 
+// Handler returns the WebSocket JSON-RPC handler. Used by gateway wiring
+// (AG-UI, OpenAI) that needs access to Handler capabilities like media
+// caching without importing Handler directly.
+func (s *Server) Handler() *Handler { return s.handler }
+
 // New creates a Server wrapping the given Runtime.
 func New(runtime *api.Runtime, opts Options) (*Server, error) {
 	opts.defaults()

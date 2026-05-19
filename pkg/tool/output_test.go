@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 type stubWriteCloser struct {
@@ -229,6 +230,75 @@ func TestSpoolWriterWritesToOpenFile(t *testing.T) {
 	}
 	if string(data) != "abc" {
 		t.Fatalf("unexpected file contents %q", string(data))
+	}
+}
+
+func TestSpoolWriterMaxBytesCapsBufferedOutput(t *testing.T) {
+	hookFired := make(chan struct{}, 1)
+	w := NewSpoolWriter(10, nil).SetMaxBytes(3)
+	w.SetLimitExceededHook(func() {
+		hookFired <- struct{}{}
+	})
+	n, err := w.Write([]byte("abcdef"))
+	if err != nil || n != 6 {
+		t.Fatalf("unexpected write result n=%d err=%v", n, err)
+	}
+	if got := w.String(); got != "abc" {
+		t.Fatalf("expected capped buffered output, got %q", got)
+	}
+	if !w.Truncated() {
+		t.Fatalf("expected max byte cap to mark writer truncated")
+	}
+	if !w.MaxBytesExceeded() {
+		t.Fatalf("expected max byte cap to be reported")
+	}
+	if err := w.Close(); err == nil || !strings.Contains(err.Error(), "max output bytes") {
+		t.Fatalf("expected max output bytes error, got %v", err)
+	}
+	select {
+	case <-hookFired:
+	case <-time.After(time.Second):
+		t.Fatalf("expected limit exceeded hook to fire")
+	}
+	_, _ = w.Write([]byte("more"))
+	select {
+	case <-hookFired:
+		t.Fatalf("limit exceeded hook should fire only once")
+	default:
+	}
+}
+
+func TestSpoolWriterMaxBytesCapsSpilledOutput(t *testing.T) {
+	dir := t.TempDir()
+	w := NewSpoolWriter(1, func() (io.WriteCloser, string, error) {
+		f, err := os.CreateTemp(dir, "spool-*.tmp")
+		if err != nil {
+			return nil, "", err
+		}
+		return f, f.Name(), nil
+	}).SetMaxBytes(3)
+
+	_, _ = w.Write([]byte("ab"))
+	path := w.Path()
+	if path == "" {
+		t.Fatalf("expected writer to spill")
+	}
+	_, _ = w.Write([]byte("cdef"))
+	if !w.Truncated() {
+		t.Fatalf("expected max byte cap to mark writer truncated")
+	}
+	if got := w.Path(); got != path {
+		t.Fatalf("expected capped spilled output path to remain %q, got %q", path, got)
+	}
+	if err := w.Close(); err == nil || !strings.Contains(err.Error(), "max output bytes") {
+		t.Fatalf("expected max output bytes error, got %v", err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read capped output: %v", err)
+	}
+	if string(data) != "abc" {
+		t.Fatalf("expected capped file output, got %q", string(data))
 	}
 }
 

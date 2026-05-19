@@ -28,3 +28,14 @@ func TestRuntimeToolExecutorIsAllowedRespectsWhitelists(t *testing.T) {
 		t.Fatal("blank tool name should be rejected")
 	}
 }
+
+func TestRuntimeToolExecutorIsAllowedRespectsSubagentDenylist(t *testing.T) {
+	exec := runtimeToolExecutor{}
+	ctxDenied := subagents.WithContext(context.Background(), subagents.Context{ToolDenylist: []string{"task"}})
+	if exec.isAllowed(ctxDenied, "task") {
+		t.Fatal("expected subagent denylist to block task")
+	}
+	if !exec.isAllowed(ctxDenied, "bash") {
+		t.Fatal("expected unrelated tool to remain allowed")
+	}
+}

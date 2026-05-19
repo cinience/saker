@@ -54,7 +54,7 @@ func TestTranslateEvent_TextDelta_FirstEmitsStart(t *testing.T) {
 	state := newStreamState("t1", "r1")
 	w := &capturingSSEWriter{}
 	evt := api.StreamEvent{Type: api.EventContentBlockDelta, Delta: &api.Delta{Text: "hello"}}
-	_ = state.translateEvent(context.Background(), &bytes.Buffer{}, w, evt, nopFilter{})
+	_, _ = state.translateEvent(context.Background(), &bytes.Buffer{}, w, evt, nopFilter{})
 
 	types := w.types()
 	if len(types) != 2 {
@@ -73,10 +73,10 @@ func TestTranslateEvent_TextDelta_SubsequentSkipsStart(t *testing.T) {
 	state := newStreamState("t1", "r1")
 	w := &capturingSSEWriter{}
 	evt := api.StreamEvent{Type: api.EventContentBlockDelta, Delta: &api.Delta{Text: "a"}}
-	_ = state.translateEvent(context.Background(), &bytes.Buffer{}, w, evt, nopFilter{})
+	_, _ = state.translateEvent(context.Background(), &bytes.Buffer{}, w, evt, nopFilter{})
 	w.events = nil
 
-	_ = state.translateEvent(context.Background(), &bytes.Buffer{}, w, evt, nopFilter{})
+	_, _ = state.translateEvent(context.Background(), &bytes.Buffer{}, w, evt, nopFilter{})
 	types := w.types()
 	if len(types) != 1 {
 		t.Fatalf("expected 1 event, got %d: %v", len(types), types)
@@ -90,12 +90,12 @@ func TestTranslateEvent_TextDelta_EmptySkipped(t *testing.T) {
 	t.Parallel()
 	state := newStreamState("t1", "r1")
 	w := &capturingSSEWriter{}
-	_ = state.translateEvent(context.Background(), &bytes.Buffer{}, w, api.StreamEvent{Type: api.EventContentBlockDelta, Delta: &api.Delta{Text: ""}}, nopFilter{})
+	_, _ = state.translateEvent(context.Background(), &bytes.Buffer{}, w, api.StreamEvent{Type: api.EventContentBlockDelta, Delta: &api.Delta{Text: ""}}, nopFilter{})
 	if len(w.events) != 0 {
 		t.Errorf("empty text should emit nothing, got %d events", len(w.events))
 	}
 
-	_ = state.translateEvent(context.Background(), &bytes.Buffer{}, w, api.StreamEvent{Type: api.EventContentBlockDelta, Delta: nil}, nopFilter{})
+	_, _ = state.translateEvent(context.Background(), &bytes.Buffer{}, w, api.StreamEvent{Type: api.EventContentBlockDelta, Delta: nil}, nopFilter{})
 	if len(w.events) != 0 {
 		t.Errorf("nil delta should emit nothing, got %d events", len(w.events))
 	}
@@ -111,7 +111,7 @@ func TestTranslateEvent_ToolExecutionStart(t *testing.T) {
 		Name:      "bash",
 		Input:     map[string]string{"cmd": "ls"},
 	}
-	_ = state.translateEvent(context.Background(), &bytes.Buffer{}, w, evt, nopFilter{})
+	_, _ = state.translateEvent(context.Background(), &bytes.Buffer{}, w, evt, nopFilter{})
 
 	types := w.types()
 	if len(types) != 2 {
@@ -140,7 +140,7 @@ func TestTranslateEvent_ToolExecutionStart_NoInput(t *testing.T) {
 		ToolUseID: "tc_2",
 		Name:      "read",
 	}
-	_ = state.translateEvent(context.Background(), &bytes.Buffer{}, w, evt, nopFilter{})
+	_, _ = state.translateEvent(context.Background(), &bytes.Buffer{}, w, evt, nopFilter{})
 
 	types := w.types()
 	if len(types) != 1 {
@@ -156,7 +156,7 @@ func TestTranslateEvent_AskUserQuestionToolExecutionStartSkipped(t *testing.T) {
 	state := newStreamState("t1", "r1")
 	w := &capturingSSEWriter{}
 
-	_ = state.translateEvent(context.Background(), &bytes.Buffer{}, w, api.StreamEvent{
+	_, _ = state.translateEvent(context.Background(), &bytes.Buffer{}, w, api.StreamEvent{
 		Type:      api.EventToolExecutionStart,
 		ToolUseID: "toolu_ask",
 		Name:      "ask_user_question",
@@ -178,7 +178,7 @@ func TestTranslateEvent_AskUserQuestionToolExecutionResultSkipped(t *testing.T) 
 	state := newStreamState("t1", "r1")
 	w := &capturingSSEWriter{}
 
-	_ = state.translateEvent(context.Background(), &bytes.Buffer{}, w, api.StreamEvent{
+	_, _ = state.translateEvent(context.Background(), &bytes.Buffer{}, w, api.StreamEvent{
 		Type:      api.EventToolExecutionStart,
 		ToolUseID: "toolu_ask",
 		Name:      "ask_user_question",
@@ -186,7 +186,7 @@ func TestTranslateEvent_AskUserQuestionToolExecutionResultSkipped(t *testing.T) 
 			"questions": []map[string]any{{"question": "Which one?", "options": []string{"A"}}},
 		},
 	}, nopFilter{})
-	_ = state.translateEvent(context.Background(), &bytes.Buffer{}, w, api.StreamEvent{
+	_, _ = state.translateEvent(context.Background(), &bytes.Buffer{}, w, api.StreamEvent{
 		Type:      api.EventToolExecutionResult,
 		ToolUseID: "toolu_ask",
 		Output:    "A",
@@ -204,12 +204,12 @@ func TestTranslateEvent_ToolExecutionStart_ClosesOpenTool(t *testing.T) {
 	t.Parallel()
 	state := newStreamState("t1", "r1")
 	w := &capturingSSEWriter{}
-	_ = state.translateEvent(context.Background(), &bytes.Buffer{}, w, api.StreamEvent{
+	_, _ = state.translateEvent(context.Background(), &bytes.Buffer{}, w, api.StreamEvent{
 		Type: api.EventToolExecutionStart, ToolUseID: "tc_1", Name: "bash",
 	}, nopFilter{})
 	w.events = nil
 
-	_ = state.translateEvent(context.Background(), &bytes.Buffer{}, w, api.StreamEvent{
+	_, _ = state.translateEvent(context.Background(), &bytes.Buffer{}, w, api.StreamEvent{
 		Type: api.EventToolExecutionStart, ToolUseID: "tc_2", Name: "grep",
 	}, nopFilter{})
 
@@ -232,7 +232,7 @@ func TestTranslateEvent_ToolExecutionResult(t *testing.T) {
 	state.lastToolID = "tc_1"
 	state.toolCalls["tc_1"] = true
 
-	_ = state.translateEvent(context.Background(), &bytes.Buffer{}, w, api.StreamEvent{
+	_, _ = state.translateEvent(context.Background(), &bytes.Buffer{}, w, api.StreamEvent{
 		Type: api.EventToolExecutionResult, ToolUseID: "tc_1",
 	}, nopFilter{})
 
@@ -256,7 +256,7 @@ func TestTranslateEvent_IterationStartStop(t *testing.T) {
 	state := newStreamState("t1", "r1")
 	w := &capturingSSEWriter{}
 
-	_ = state.translateEvent(context.Background(), &bytes.Buffer{}, w, api.StreamEvent{Type: api.EventIterationStart}, nopFilter{})
+	_, _ = state.translateEvent(context.Background(), &bytes.Buffer{}, w, api.StreamEvent{Type: api.EventIterationStart}, nopFilter{})
 	types := w.types()
 	if len(types) != 1 || types[0] != "STEP_STARTED" {
 		t.Fatalf("iteration_start: got %v, want [STEP_STARTED]", types)
@@ -266,7 +266,7 @@ func TestTranslateEvent_IterationStartStop(t *testing.T) {
 	}
 	w.events = nil
 
-	_ = state.translateEvent(context.Background(), &bytes.Buffer{}, w, api.StreamEvent{Type: api.EventIterationStop}, nopFilter{})
+	_, _ = state.translateEvent(context.Background(), &bytes.Buffer{}, w, api.StreamEvent{Type: api.EventIterationStop}, nopFilter{})
 	types = w.types()
 	if len(types) != 1 || types[0] != "STEP_FINISHED" {
 		t.Fatalf("iteration_stop: got %v, want [STEP_FINISHED]", types)
@@ -281,10 +281,10 @@ func TestTranslateEvent_IterationStart_ClosesOpenStep(t *testing.T) {
 	state := newStreamState("t1", "r1")
 	w := &capturingSSEWriter{}
 
-	_ = state.translateEvent(context.Background(), &bytes.Buffer{}, w, api.StreamEvent{Type: api.EventIterationStart}, nopFilter{})
+	_, _ = state.translateEvent(context.Background(), &bytes.Buffer{}, w, api.StreamEvent{Type: api.EventIterationStart}, nopFilter{})
 	w.events = nil
 
-	_ = state.translateEvent(context.Background(), &bytes.Buffer{}, w, api.StreamEvent{Type: api.EventIterationStart}, nopFilter{})
+	_, _ = state.translateEvent(context.Background(), &bytes.Buffer{}, w, api.StreamEvent{Type: api.EventIterationStart}, nopFilter{})
 	types := w.types()
 	if len(types) != 2 {
 		t.Fatalf("expected 2 events, got %d: %v", len(types), types)
@@ -305,7 +305,7 @@ func TestTranslateEvent_Error(t *testing.T) {
 	state := newStreamState("t1", "r1")
 	w := &capturingSSEWriter{}
 
-	_ = state.translateEvent(context.Background(), &bytes.Buffer{}, w, api.StreamEvent{
+	_, _ = state.translateEvent(context.Background(), &bytes.Buffer{}, w, api.StreamEvent{
 		Type: api.EventError, Output: "something broke",
 	}, nopFilter{})
 
@@ -320,7 +320,7 @@ func TestTranslateEvent_Error_DefaultMessage(t *testing.T) {
 	state := newStreamState("t1", "r1")
 	w := &capturingSSEWriter{}
 
-	_ = state.translateEvent(context.Background(), &bytes.Buffer{}, w, api.StreamEvent{Type: api.EventError}, nopFilter{})
+	_, _ = state.translateEvent(context.Background(), &bytes.Buffer{}, w, api.StreamEvent{Type: api.EventError}, nopFilter{})
 
 	if len(w.events) != 1 || w.types()[0] != "RUN_ERROR" {
 		t.Fatalf("got %v, want [RUN_ERROR]", w.types())
@@ -438,5 +438,180 @@ func TestNewStreamState(t *testing.T) {
 	}
 	if len(s.toolCalls) != 0 {
 		t.Error("toolCalls should be empty initially")
+	}
+}
+
+func TestTranslateEvent_ToolExecutionResult_ExtractsStructuredMetadata(t *testing.T) {
+	t.Parallel()
+	state := newStreamState("t1", "r1")
+	w := &capturingSSEWriter{}
+	state.toolCalls["tc_img"] = true
+	state.toolNames["tc_img"] = "generate_image"
+
+	noErr := false
+	artifacts, err := state.translateEvent(context.Background(), &bytes.Buffer{}, w, api.StreamEvent{
+		Type:      api.EventToolExecutionResult,
+		ToolUseID: "tc_img",
+		Name:      "generate_image",
+		IsError:   &noErr,
+		Output: map[string]any{
+			"output": "/tmp/saker-media-abc.png",
+			"metadata": map[string]any{
+				"structured": map[string]any{
+					"media_type": "image",
+					"media_url":  "https://cdn.example.com/img.png",
+					"local_path": "/tmp/saker-media-abc.png",
+				},
+			},
+		},
+	}, nopFilter{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(artifacts) != 1 {
+		t.Fatalf("expected 1 artifact, got %d", len(artifacts))
+	}
+	if artifacts[0].Type != "image" {
+		t.Errorf("artifact type = %q, want image", artifacts[0].Type)
+	}
+	if artifacts[0].URL != "https://cdn.example.com/img.png" {
+		t.Errorf("artifact URL = %q, want https://cdn.example.com/img.png", artifacts[0].URL)
+	}
+	if artifacts[0].Name != "generate_image" {
+		t.Errorf("artifact name = %q, want generate_image", artifacts[0].Name)
+	}
+	types := w.types()
+	if len(types) < 2 {
+		t.Fatalf("expected >=2 events (TOOL_CALL_END + TOOL_CALL_RESULT), got %d: %v", len(types), types)
+	}
+	if types[0] != "TOOL_CALL_END" {
+		t.Errorf("first event = %q, want TOOL_CALL_END", types[0])
+	}
+	if types[1] != "TOOL_CALL_RESULT" {
+		t.Errorf("second event = %q, want TOOL_CALL_RESULT", types[1])
+	}
+}
+
+func TestTranslateEvent_ToolExecutionResult_ErrorNoArtifacts(t *testing.T) {
+	t.Parallel()
+	state := newStreamState("t1", "r1")
+	w := &capturingSSEWriter{}
+	state.toolCalls["tc_1"] = true
+	state.toolNames["tc_1"] = "bash"
+
+	isErr := true
+	artifacts, err := state.translateEvent(context.Background(), &bytes.Buffer{}, w, api.StreamEvent{
+		Type:      api.EventToolExecutionResult,
+		ToolUseID: "tc_1",
+		IsError:   &isErr,
+		Output:    "command failed",
+	}, nopFilter{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(artifacts) != 0 {
+		t.Errorf("error result should produce 0 artifacts, got %d", len(artifacts))
+	}
+}
+
+func TestTranslateEvent_ToolExecutionResult_DedupArtifacts(t *testing.T) {
+	t.Parallel()
+	state := newStreamState("t1", "r1")
+	w := &capturingSSEWriter{}
+
+	noErr := false
+	// First tool result with image URL.
+	state.toolCalls["tc_1"] = true
+	state.toolNames["tc_1"] = "generate_image"
+	_, _ = state.translateEvent(context.Background(), &bytes.Buffer{}, w, api.StreamEvent{
+		Type:      api.EventToolExecutionResult,
+		ToolUseID: "tc_1",
+		Name:      "generate_image",
+		IsError:   &noErr,
+		Output: map[string]any{
+			"output": "/tmp/a.png",
+			"metadata": map[string]any{
+				"structured": map[string]any{
+					"media_type": "image",
+					"media_url":  "https://cdn.example.com/img.png",
+				},
+			},
+		},
+	}, nopFilter{})
+	w.events = nil
+
+	// Second tool result with same URL — should be deduped.
+	state.toolCalls["tc_2"] = true
+	state.toolNames["tc_2"] = "edit_image"
+	artifacts, _ := state.translateEvent(context.Background(), &bytes.Buffer{}, w, api.StreamEvent{
+		Type:      api.EventToolExecutionResult,
+		ToolUseID: "tc_2",
+		Name:      "edit_image",
+		IsError:   &noErr,
+		Output: map[string]any{
+			"output": "/tmp/b.png",
+			"metadata": map[string]any{
+				"structured": map[string]any{
+					"media_type": "image",
+					"media_url":  "https://cdn.example.com/img.png",
+				},
+			},
+		},
+	}, nopFilter{})
+	if len(artifacts) != 0 {
+		t.Errorf("duplicate URL should be deduped, got %d artifacts", len(artifacts))
+	}
+}
+
+func TestTranslateEvent_ToolExecutionResult_ToolNameFallback(t *testing.T) {
+	t.Parallel()
+	state := newStreamState("t1", "r1")
+	w := &capturingSSEWriter{}
+
+	noErr := false
+	// Tool name not tracked in toolNames (e.g. result arrives without prior start event),
+	// but evt.Name is provided.
+	artifacts, _ := state.translateEvent(context.Background(), &bytes.Buffer{}, w, api.StreamEvent{
+		Type:      api.EventToolExecutionResult,
+		ToolUseID: "tc_3",
+		Name:      "search_web",
+		IsError:   &noErr,
+		Output: map[string]any{
+			"output": "https://cdn.example.com/result.mp4",
+			"metadata": map[string]any{},
+		},
+	}, nopFilter{})
+	// Path 3 regex detection should pick up the MP4 URL.
+	if len(artifacts) < 1 {
+		t.Fatalf("expected at least 1 artifact from URL regex, got %d", len(artifacts))
+	}
+}
+
+func TestNewStreamState_ArtifactFields(t *testing.T) {
+	t.Parallel()
+	s := newStreamState("thread_abc", "run_xyz")
+	if len(s.toolNames) != 0 {
+		t.Error("toolNames should be empty initially")
+	}
+	if len(s.artifacts) != 0 {
+		t.Error("artifacts should be empty initially")
+	}
+	if len(s.seenArtifactURLs) != 0 {
+		t.Error("seenArtifactURLs should be empty initially")
+	}
+}
+
+func TestFinalize_CleansUpToolNames(t *testing.T) {
+	t.Parallel()
+	state := newStreamState("t1", "r1")
+	state.lastToolID = "tc_open"
+	state.toolCalls["tc_open"] = true
+	state.toolNames["tc_open"] = "bash"
+
+	w := &capturingSSEWriter{}
+	_ = state.finalize(context.Background(), &bytes.Buffer{}, w, nopFilter{})
+
+	if _, exists := state.toolNames["tc_open"]; exists {
+		t.Error("finalize should clean up toolNames for lastToolID")
 	}
 }
