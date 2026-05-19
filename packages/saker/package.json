@@ -1,0 +1,34 @@
+{
+  "name": "@saker-ai/saker",
+  "version": "0.1.0",
+  "description": "Saker AI coding agent — install via npm, run as native binary.",
+  "bin": {
+    "saker": "bin/saker.exe"
+  },
+  "scripts": {
+    "postinstall": "node install.cjs"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "type": "module",
+  "author": "Saker AI <support@saker.ai>",
+  "license": "SKL-1.0",
+  "homepage": "https://github.com/cinience/saker",
+  "bugs": {
+    "url": "https://github.com/cinience/saker/issues"
+  },
+  "optionalDependencies": {
+    "@saker-ai/saker-linux-x64": "0.1.0",
+    "@saker-ai/saker-linux-arm64": "0.1.0",
+    "@saker-ai/saker-darwin-x64": "0.1.0",
+    "@saker-ai/saker-darwin-arm64": "0.1.0",
+    "@saker-ai/saker-win32-x64": "0.1.0",
+    "@saker-ai/saker-win32-arm64": "0.1.0"
+  },
+  "files": [
+    "bin/saker.exe",
+    "install.cjs",
+    "cli-wrapper.cjs"
+  ]
+}

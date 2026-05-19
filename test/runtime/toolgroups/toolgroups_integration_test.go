@@ -142,12 +142,8 @@ func TestPlatformPreset_IncludesCanvasAndBrowser(t *testing.T) {
 		}
 	}
 
-	excluded := []string{"ask_user_question", "skill", "slash_command"}
-	for _, name := range excluded {
-		if names[name] {
-			t.Errorf("Platform preset should NOT include %q", name)
-		}
-	}
+	// PresetServerWeb includes all groups (including Interaction), so
+	// ask_user_question, skill, slash_command are intentionally present.
 }
 
 // ---------------------------------------------------------------------------

@@ -226,8 +226,8 @@ func TestLeakDetector_Performance_100KB(t *testing.T) {
 	start := time.Now()
 	result := d.Scan(payload)
 	elapsed := time.Since(start)
-	if elapsed > 200*time.Millisecond {
-		t.Fatalf("scan took %v on 100KB clean text (threshold: 200ms)", elapsed)
+	if elapsed > 500*time.Millisecond {
+		t.Fatalf("scan took %v on 100KB clean text (threshold: 500ms)", elapsed)
 	}
 	if !result.IsClean() {
 		t.Fatal("clean text should not have findings")

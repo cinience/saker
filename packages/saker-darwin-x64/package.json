@@ -1,0 +1,9 @@
+{
+  "name": "@saker-ai/saker-darwin-x64",
+  "version": "0.1.0",
+  "description": "Saker native binary for darwin-x64",
+  "os": ["darwin"],
+  "cpu": ["x64"],
+  "license": "SKL-1.0",
+  "files": ["saker"]
+}

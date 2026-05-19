@@ -1,6 +1,7 @@
 package server
 
 import (
+	"io/fs"
 	"net/http"
 	"net/http/pprof"
 	"strings"
@@ -148,13 +149,30 @@ func (s *Server) s3GinHandler() gin.HandlerFunc {
 	}
 }
 
+// spaHandler wraps an fs.FS to serve index.html for paths that don't match a
+// real file (SPA fallback). This allows client-side routing to work when the
+// frontend is bundled as a single-file app.
+func spaHandler(fsys fs.FS) http.Handler {
+	fileServer := http.FileServerFS(fsys)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		p := strings.TrimPrefix(r.URL.Path, "/")
+		if p == "" {
+			p = "."
+		}
+		if _, err := fs.Stat(fsys, p); err != nil {
+			r.URL.Path = "/"
+		}
+		fileServer.ServeHTTP(w, r)
+	})
+}
+
 // editorGinHandler returns a Gin handler that serves the web-editor static
 // files, or nil if no editor FS/dir is configured.
 func (s *Server) editorGinHandler() gin.HandlerFunc {
 	var handler http.Handler
 	switch {
 	case s.opts.StaticEditorFS != nil:
-		handler = http.StripPrefix("/editor", gzipStaticHandler(http.FileServerFS(s.opts.StaticEditorFS)))
+		handler = http.StripPrefix("/editor", gzipStaticHandler(spaHandler(s.opts.StaticEditorFS)))
 	case s.opts.StaticEditorDir != "":
 		handler = http.StripPrefix("/editor", gzipStaticHandler(http.FileServer(http.Dir(s.opts.StaticEditorDir))))
 	default:
@@ -164,13 +182,13 @@ func (s *Server) editorGinHandler() gin.HandlerFunc {
 }
 
 // staticCatchAllHandler returns a Gin NoRoute handler that serves frontend
-// static files. Unmatched /api/, /ws, or /media paths return 404 instead of
-// accidentally serving the SPA entry page.
+// static files with SPA fallback. Unmatched /api/, /ws, or /media paths
+// return 404 instead of accidentally serving the SPA entry page.
 func (s *Server) staticCatchAllHandler() gin.HandlerFunc {
 	var staticHandler http.Handler
 	switch {
 	case s.opts.StaticFS != nil:
-		staticHandler = gzipStaticHandler(http.FileServerFS(s.opts.StaticFS))
+		staticHandler = gzipStaticHandler(spaHandler(s.opts.StaticFS))
 	case s.opts.StaticDir != "":
 		staticHandler = gzipStaticHandler(http.FileServer(http.Dir(s.opts.StaticDir)))
 	}

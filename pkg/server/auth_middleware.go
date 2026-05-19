@@ -104,14 +104,15 @@ func isPublicPath(r *http.Request) bool {
 		return true
 	}
 	// Static frontend assets required to render the login page.
-	if strings.HasPrefix(path, "/_next/") ||
-		strings.HasSuffix(path, ".js") ||
+	if strings.HasSuffix(path, ".js") ||
 		strings.HasSuffix(path, ".css") ||
 		strings.HasSuffix(path, ".ico") ||
 		strings.HasSuffix(path, ".svg") ||
 		strings.HasSuffix(path, ".png") ||
 		strings.HasSuffix(path, ".woff") ||
-		strings.HasSuffix(path, ".woff2") {
+		strings.HasSuffix(path, ".woff2") ||
+		strings.HasSuffix(path, ".ttf") ||
+		strings.HasSuffix(path, ".wasm") {
 		return true
 	}
 	// The root page (index.html / SPA entry).

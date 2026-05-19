@@ -1,0 +1,9 @@
+{
+  "name": "@saker-ai/saker-win32-arm64",
+  "version": "0.1.0",
+  "description": "Saker native binary for win32-arm64",
+  "os": ["win32"],
+  "cpu": ["arm64"],
+  "license": "SKL-1.0",
+  "files": ["saker.exe"]
+}

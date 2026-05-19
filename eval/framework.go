@@ -6,6 +6,7 @@ package eval
 import (
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -25,10 +26,13 @@ type EvalResult struct {
 type EvalSuite struct {
 	Name    string       `json:"name"`
 	Results []EvalResult `json:"results"`
+	mu      sync.Mutex
 }
 
-// Add appends a result to the suite.
+// Add appends a result to the suite. It is safe for concurrent use.
 func (s *EvalSuite) Add(r EvalResult) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	if r.Suite == "" {
 		r.Suite = s.Name
 	}
@@ -37,6 +41,8 @@ func (s *EvalSuite) Add(r EvalResult) {
 
 // PassRate returns the fraction of passing cases in [0,1].
 func (s *EvalSuite) PassRate() float64 {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	if len(s.Results) == 0 {
 		return 0
 	}
@@ -51,6 +57,8 @@ func (s *EvalSuite) PassRate() float64 {
 
 // AvgScore returns the mean score across all results.
 func (s *EvalSuite) AvgScore() float64 {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	if len(s.Results) == 0 {
 		return 0
 	}

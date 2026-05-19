@@ -52,13 +52,12 @@ var compressibleExt = map[string]bool{
 	".webmanifest": true,
 }
 
-// immutableCachePrefix is the path segment Next.js uses for content-hashed
-// build artifacts. Anything under it is safe to cache forever because the
-// filename itself changes whenever the file changes (e.g.
-// `/_next/static/chunks/abc123.js`). We set the cache header before invoking
-// the wrapped handler so it lands in the response regardless of whether
-// gzip wrapping kicks in below.
-const immutableCachePrefix = "/_next/static/"
+// immutableCachePrefix is the path segment for content-hashed build artifacts.
+// Anything under it is safe to cache forever because the filename itself
+// changes whenever the file changes (e.g. `/assets/index-abc123.js`). We set
+// the cache header before invoking the wrapped handler so it lands in the
+// response regardless of whether gzip wrapping kicks in below.
+const immutableCachePrefix = "/assets/"
 
 // compressedWriter abstracts over gzip.Writer and brotli.Writer so the
 // response wrapper doesn't have to branch on encoding for every Write.

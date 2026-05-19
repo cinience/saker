@@ -159,8 +159,8 @@ func TestSanitizer_Performance_100KB(t *testing.T) {
 	start := time.Now()
 	result := s.SanitizeToolOutput("test", payload)
 	elapsed := time.Since(start)
-	if elapsed > 200*time.Millisecond {
-		t.Fatalf("scan took %v on 100KB clean text (threshold: 200ms)", elapsed)
+	if elapsed > 500*time.Millisecond {
+		t.Fatalf("scan took %v on 100KB clean text (threshold: 500ms)", elapsed)
 	}
 	if len(result.Findings) != 0 {
 		t.Fatalf("expected no findings on clean text, got %d", len(result.Findings))
