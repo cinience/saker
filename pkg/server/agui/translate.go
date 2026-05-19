@@ -59,6 +59,11 @@ func newStreamState(threadID, runID string) *streamState {
 	}
 }
 
+// writeEvent emits an AG-UI event with a monotonic SSE id for resumability.
+func (s *streamState) writeEvent(ctx context.Context, w io.Writer, sseW sseWriter, event aguievents.Event) error {
+	return writeSSEWithID(ctx, w, sseW, event, s)
+}
+
 // translateEvent converts a single saker StreamEvent into zero or more AG-UI
 // events written directly to the SSE writer. The text filter strips XML
 // function-call artifacts from text deltas.
@@ -73,17 +78,17 @@ func (s *streamState) translateEvent(ctx context.Context, w io.Writer, sseW sseW
 		reasoningMsgID := "reasoning_" + s.msgID
 		if !s.reasoningBlockStarted {
 			s.reasoningBlockStarted = true
-			if err := writeSSE(ctx, w, sseW, aguievents.NewReasoningStartEvent(reasoningMsgID)); err != nil {
+			if err := s.writeEvent(ctx, w, sseW, aguievents.NewReasoningStartEvent(reasoningMsgID)); err != nil {
 				return nil, err
 			}
 		}
 		if !s.reasoningStarted {
 			s.reasoningStarted = true
-			if err := writeSSE(ctx, w, sseW, aguievents.NewReasoningMessageStartEvent(reasoningMsgID, "reasoning")); err != nil {
+			if err := s.writeEvent(ctx, w, sseW, aguievents.NewReasoningMessageStartEvent(reasoningMsgID, "reasoning")); err != nil {
 				return nil, err
 			}
 		}
-		return nil, writeSSE(ctx, w, sseW, aguievents.NewReasoningMessageContentEvent(reasoningMsgID, evt.Delta.Text))
+		return nil, s.writeEvent(ctx, w, sseW, aguievents.NewReasoningMessageContentEvent(reasoningMsgID, evt.Delta.Text))
 
 	case api.EventContentBlockDelta:
 		if evt.Delta == nil || evt.Delta.Text == "" {
@@ -92,11 +97,11 @@ func (s *streamState) translateEvent(ctx context.Context, w io.Writer, sseW sseW
 		// Close reasoning phase when text content starts arriving.
 		if s.reasoningStarted && !s.textStarted {
 			reasoningMsgID := "reasoning_" + s.msgID
-			if err := writeSSE(ctx, w, sseW, aguievents.NewReasoningMessageEndEvent(reasoningMsgID)); err != nil {
+			if err := s.writeEvent(ctx, w, sseW, aguievents.NewReasoningMessageEndEvent(reasoningMsgID)); err != nil {
 				return nil, err
 			}
 			if s.reasoningBlockStarted {
-				if err := writeSSE(ctx, w, sseW, aguievents.NewReasoningEndEvent(reasoningMsgID)); err != nil {
+				if err := s.writeEvent(ctx, w, sseW, aguievents.NewReasoningEndEvent(reasoningMsgID)); err != nil {
 					return nil, err
 				}
 			}
@@ -107,11 +112,11 @@ func (s *streamState) translateEvent(ctx context.Context, w io.Writer, sseW sseW
 		}
 		if !s.textStarted {
 			s.textStarted = true
-			if err := writeSSE(ctx, w, sseW, aguievents.NewTextMessageStartEvent(s.msgID, aguievents.WithRole("assistant"))); err != nil {
+			if err := s.writeEvent(ctx, w, sseW, aguievents.NewTextMessageStartEvent(s.msgID, aguievents.WithRole("assistant"))); err != nil {
 				return nil, err
 			}
 		}
-		return nil, writeSSE(ctx, w, sseW, aguievents.NewTextMessageContentEvent(s.msgID, safe))
+		return nil, s.writeEvent(ctx, w, sseW, aguievents.NewTextMessageContentEvent(s.msgID, safe))
 
 	case api.EventToolExecutionStart:
 		if evt.Name == "ask_user_question" {
@@ -121,7 +126,7 @@ func (s *streamState) translateEvent(ctx context.Context, w io.Writer, sseW sseW
 			return nil, nil
 		}
 		if s.lastToolID != "" {
-			if err := writeSSE(ctx, w, sseW, aguievents.NewToolCallEndEvent(s.lastToolID)); err != nil {
+			if err := s.writeEvent(ctx, w, sseW, aguievents.NewToolCallEndEvent(s.lastToolID)); err != nil {
 				return nil, err
 			}
 		}
@@ -139,16 +144,16 @@ func (s *streamState) translateEvent(ctx context.Context, w io.Writer, sseW sseW
 			"tool":   evt.Name,
 			"status": "running",
 		}
-		if err := writeSSE(ctx, w, sseW, aguievents.NewActivitySnapshotEvent(s.activeActivityID, "TOOL_EXECUTION", activityContent)); err != nil {
+		if err := s.writeEvent(ctx, w, sseW, aguievents.NewActivitySnapshotEvent(s.activeActivityID, "TOOL_EXECUTION", activityContent)); err != nil {
 			return nil, err
 		}
 
-		if err := writeSSE(ctx, w, sseW, aguievents.NewToolCallStartEvent(toolID, evt.Name, aguievents.WithParentMessageID(s.msgID))); err != nil {
+		if err := s.writeEvent(ctx, w, sseW, aguievents.NewToolCallStartEvent(toolID, evt.Name, aguievents.WithParentMessageID(s.msgID))); err != nil {
 			return nil, err
 		}
 		args := inputToJSON(evt.Input)
 		if args != "" && args != "{}" {
-			return nil, writeSSE(ctx, w, sseW, aguievents.NewToolCallArgsEvent(toolID, args))
+			return nil, s.writeEvent(ctx, w, sseW, aguievents.NewToolCallArgsEvent(toolID, args))
 		}
 		return nil, nil
 
@@ -170,7 +175,7 @@ func (s *streamState) translateEvent(ctx context.Context, w io.Writer, sseW sseW
 			patch := []aguievents.JSONPatchOperation{
 				{Op: "replace", Path: "/status", Value: status},
 			}
-			_ = writeSSE(ctx, w, sseW, aguievents.NewActivityDeltaEvent(s.activeActivityID, "TOOL_EXECUTION", patch))
+			_ = s.writeEvent(ctx, w, sseW, aguievents.NewActivityDeltaEvent(s.activeActivityID, "TOOL_EXECUTION", patch))
 			s.activeActivityID = ""
 		}
 		// Resolve tool name for artifact extraction.
@@ -194,7 +199,7 @@ func (s *streamState) translateEvent(ctx context.Context, w io.Writer, sseW sseW
 		s.artifacts = append(s.artifacts, newArtifacts...)
 		// Emit TOOL_CALL_END.
 		if toolID != "" {
-			if err := writeSSE(ctx, w, sseW, aguievents.NewToolCallEndEvent(toolID)); err != nil {
+			if err := s.writeEvent(ctx, w, sseW, aguievents.NewToolCallEndEvent(toolID)); err != nil {
 				return newArtifacts, err
 			}
 			if s.lastToolID == toolID {
@@ -206,7 +211,7 @@ func (s *streamState) translateEvent(ctx context.Context, w io.Writer, sseW sseW
 		// Emit TOOL_CALL_RESULT with formatted content.
 		content := server.FormatToolResult(toolName, evt.Output)
 		if content != "" && toolID != "" {
-			if err := writeSSE(ctx, w, sseW, aguievents.NewToolCallResultEvent(s.msgID, toolID, content)); err != nil {
+			if err := s.writeEvent(ctx, w, sseW, aguievents.NewToolCallResultEvent(s.msgID, toolID, content)); err != nil {
 				return newArtifacts, err
 			}
 		}
@@ -216,7 +221,7 @@ func (s *streamState) translateEvent(ctx context.Context, w io.Writer, sseW sseW
 		s.iterCount++
 		stepName := fmt.Sprintf("iteration_%d", s.iterCount)
 		if s.lastStep != "" {
-			if err := writeSSE(ctx, w, sseW, aguievents.NewStepFinishedEvent(s.lastStep)); err != nil {
+			if err := s.writeEvent(ctx, w, sseW, aguievents.NewStepFinishedEvent(s.lastStep)); err != nil {
 				return nil, err
 			}
 		}
@@ -228,12 +233,12 @@ func (s *streamState) translateEvent(ctx context.Context, w io.Writer, sseW sseW
 			"iteration": s.iterCount,
 			"status":    "running",
 		}
-		_ = writeSSE(ctx, w, sseW, aguievents.NewActivitySnapshotEvent(iterActivityID, "ITERATION", iterContent))
-		return nil, writeSSE(ctx, w, sseW, aguievents.NewStepStartedEvent(stepName))
+		_ = s.writeEvent(ctx, w, sseW, aguievents.NewActivitySnapshotEvent(iterActivityID, "ITERATION", iterContent))
+		return nil, s.writeEvent(ctx, w, sseW, aguievents.NewStepStartedEvent(stepName))
 
 	case api.EventIterationStop:
 		if s.lastStep != "" {
-			if err := writeSSE(ctx, w, sseW, aguievents.NewStepFinishedEvent(s.lastStep)); err != nil {
+			if err := s.writeEvent(ctx, w, sseW, aguievents.NewStepFinishedEvent(s.lastStep)); err != nil {
 				return nil, err
 			}
 			s.lastStep = ""
@@ -267,16 +272,16 @@ func (s *streamState) translateEvent(ctx context.Context, w io.Writer, sseW sseW
 		if code != "" {
 			opts = append(opts, aguievents.WithErrorCode(code))
 		}
-		return nil, writeSSE(ctx, w, sseW, aguievents.NewRunErrorEvent(msg, opts...))
+		return nil, s.writeEvent(ctx, w, sseW, aguievents.NewRunErrorEvent(msg, opts...))
 
 	case api.EventTimeline:
 		if evt.Timeline == nil {
 			return nil, nil
 		}
-		return nil, writeSSE(ctx, w, sseW, aguievents.NewCustomEvent("timeline", aguievents.WithValue(evt.Timeline)))
+		return nil, s.writeEvent(ctx, w, sseW, aguievents.NewCustomEvent("timeline", aguievents.WithValue(evt.Timeline)))
 
 	case api.EventSkillActivation:
-		return nil, writeSSE(ctx, w, sseW, aguievents.NewCustomEvent("skill_activation", aguievents.WithValue(map[string]any{"name": evt.Name})))
+		return nil, s.writeEvent(ctx, w, sseW, aguievents.NewCustomEvent("skill_activation", aguievents.WithValue(map[string]any{"name": evt.Name})))
 	}
 	return nil, nil
 }
@@ -286,7 +291,7 @@ func (s *streamState) translateEvent(ctx context.Context, w io.Writer, sseW sseW
 func (s *streamState) finalize(ctx context.Context, w io.Writer, sseW sseWriter, filter textFilter) error {
 	interrupted := s.lastToolID != "" && len(s.toolCalls) > 0
 	if s.lastToolID != "" {
-		if err := writeSSE(ctx, w, sseW, aguievents.NewToolCallEndEvent(s.lastToolID)); err != nil {
+		if err := s.writeEvent(ctx, w, sseW, aguievents.NewToolCallEndEvent(s.lastToolID)); err != nil {
 			return err
 		}
 		delete(s.toolNames, s.lastToolID)
@@ -294,27 +299,27 @@ func (s *streamState) finalize(ctx context.Context, w io.Writer, sseW sseWriter,
 	}
 	if s.reasoningStarted && !s.textStarted {
 		reasoningMsgID := "reasoning_" + s.msgID
-		if err := writeSSE(ctx, w, sseW, aguievents.NewReasoningMessageEndEvent(reasoningMsgID)); err != nil {
+		if err := s.writeEvent(ctx, w, sseW, aguievents.NewReasoningMessageEndEvent(reasoningMsgID)); err != nil {
 			return err
 		}
 		if s.reasoningBlockStarted {
-			if err := writeSSE(ctx, w, sseW, aguievents.NewReasoningEndEvent(reasoningMsgID)); err != nil {
+			if err := s.writeEvent(ctx, w, sseW, aguievents.NewReasoningEndEvent(reasoningMsgID)); err != nil {
 				return err
 			}
 		}
 	}
 	if tail := filter.Flush(); tail != "" && s.textStarted {
-		if err := writeSSE(ctx, w, sseW, aguievents.NewTextMessageContentEvent(s.msgID, tail)); err != nil {
+		if err := s.writeEvent(ctx, w, sseW, aguievents.NewTextMessageContentEvent(s.msgID, tail)); err != nil {
 			return err
 		}
 	}
 	if s.textStarted {
-		if err := writeSSE(ctx, w, sseW, aguievents.NewTextMessageEndEvent(s.msgID)); err != nil {
+		if err := s.writeEvent(ctx, w, sseW, aguievents.NewTextMessageEndEvent(s.msgID)); err != nil {
 			return err
 		}
 	}
 	if s.lastStep != "" {
-		if err := writeSSE(ctx, w, sseW, aguievents.NewStepFinishedEvent(s.lastStep)); err != nil {
+		if err := s.writeEvent(ctx, w, sseW, aguievents.NewStepFinishedEvent(s.lastStep)); err != nil {
 			return err
 		}
 		s.lastStep = ""
@@ -323,7 +328,7 @@ func (s *streamState) finalize(ctx context.Context, w io.Writer, sseW sseWriter,
 	if interrupted {
 		outcome = map[string]any{"type": "interrupt"}
 	}
-	return writeSSE(ctx, w, sseW, aguievents.NewRunFinishedEventWithOptions(s.threadID, s.runID, aguievents.WithResult(outcome)))
+	return s.writeEvent(ctx, w, sseW, aguievents.NewRunFinishedEventWithOptions(s.threadID, s.runID, aguievents.WithResult(outcome)))
 }
 
 // textFilter abstracts the stream artifact filter used to strip XML
@@ -362,6 +367,7 @@ func writeSSEWithID(ctx context.Context, w io.Writer, sseW sseWriter, event agui
 	if err := event.Validate(); err != nil {
 		return fmt.Errorf("agui event validation: %w", err)
 	}
+	aguiEventsTotal.WithLabelValues(string(event.Type())).Inc()
 	state.eventSeq++
 	if _, err := fmt.Fprintf(w, "id: %d\n", state.eventSeq); err != nil {
 		return err

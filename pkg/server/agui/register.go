@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log/slog"
 	"sync"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/saker-ai/saker/pkg/api"
@@ -41,6 +42,9 @@ type Deps struct {
 type Options struct {
 	Enabled       bool
 	DevBypassAuth bool
+	RPS           float64       // Rate limit requests per second per identity (default 10)
+	Burst         int           // Rate limit burst size (default 20)
+	DrainTimeout  time.Duration // Graceful shutdown drain period (default 3s)
 }
 
 // Gateway carries the runtime dependencies for AG-UI HTTP handlers.
@@ -49,9 +53,11 @@ type Gateway struct {
 	hitl          *hitlRegistry
 	mu            sync.Mutex
 	activeCancels map[string]context.CancelFunc
+	activeWg      sync.WaitGroup
 	// threadRuns maps threadID → runID for concurrent run mutual exclusion.
-	threadRuns   map[string]string
-	shuttingDown bool
+	threadRuns         map[string]string
+	shuttingDown       bool
+	rateLimiterCleanup func()
 	// artifactCache stores per-thread artifacts so connect can replay them.
 	artifactCache artifactCache
 }
@@ -74,16 +80,28 @@ func RegisterAGUIGateway(engine *gin.Engine, deps Deps) (*Gateway, error) {
 		deps.Logger = slog.Default()
 	}
 
+	rps := deps.Options.RPS
+	if rps == 0 {
+		rps = 10
+	}
+	burst := deps.Options.Burst
+	if burst == 0 {
+		burst = 20
+	}
+	rateLimiter, rateLimiterCleanup := newAGUIRateLimiter(rps, burst, deps.Logger)
+
 	g := &Gateway{
-		deps:          deps,
-		hitl:          newHITLRegistry(),
-		activeCancels: make(map[string]context.CancelFunc),
-		threadRuns:    make(map[string]string),
-		artifactCache: newArtifactCache(),
+		deps:               deps,
+		hitl:               newHITLRegistry(),
+		activeCancels:      make(map[string]context.CancelFunc),
+		threadRuns:         make(map[string]string),
+		artifactCache:      newArtifactCache(),
+		rateLimiterCleanup: rateLimiterCleanup,
 	}
 
 	agents := engine.Group("/v1/agents")
 	agents.Use(g.authMiddleware())
+	agents.Use(rateLimiter)
 	{
 		agents.POST("/run", g.handleRun)
 		agents.POST("/run/agent/:agentId/run", g.handleRun)
@@ -117,16 +135,20 @@ func (g *Gateway) runContext(parent context.Context, runID string) (context.Cont
 		return ctx, func() {}, false
 	}
 	g.activeCancels[runID] = cancel
+	g.activeWg.Add(1)
 	return ctx, func() {
 		cancel()
 		g.mu.Lock()
 		delete(g.activeCancels, runID)
 		g.mu.Unlock()
+		g.activeWg.Done()
 	}, true
 }
 
-// Shutdown cancels all active AG-UI runs so SSE handlers can return before
-// http.Server.Shutdown reaches its deadline. It is safe to call repeatedly.
+// Shutdown gracefully drains active AG-UI runs before force-cancelling.
+// Phase 1: reject new runs, wait for active runs to finish naturally.
+// Phase 2: after drain timeout, force cancel remaining runs.
+// It is safe to call repeatedly.
 func (g *Gateway) Shutdown() {
 	if g == nil {
 		return
@@ -137,15 +159,47 @@ func (g *Gateway) Shutdown() {
 		return
 	}
 	g.shuttingDown = true
-	cancels := make([]context.CancelFunc, 0, len(g.activeCancels))
-	for _, cancel := range g.activeCancels {
-		cancels = append(cancels, cancel)
-	}
-	g.activeCancels = make(map[string]context.CancelFunc)
+	activeCount := len(g.activeCancels)
 	g.mu.Unlock()
 
-	for _, cancel := range cancels {
-		cancel()
+	if activeCount == 0 {
+		g.cleanup()
+		return
 	}
-	g.deps.Logger.Info("agui gateway shutdown", "active_runs_cancelled", len(cancels))
+
+	drain := g.deps.Options.DrainTimeout
+	if drain == 0 {
+		drain = 3 * time.Second
+	}
+
+	done := make(chan struct{})
+	go func() {
+		g.activeWg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		g.deps.Logger.Info("agui gateway drained gracefully", "active_runs", activeCount)
+	case <-time.After(drain):
+		g.mu.Lock()
+		cancels := make([]context.CancelFunc, 0, len(g.activeCancels))
+		for _, cancel := range g.activeCancels {
+			cancels = append(cancels, cancel)
+		}
+		g.activeCancels = make(map[string]context.CancelFunc)
+		g.mu.Unlock()
+		for _, cancel := range cancels {
+			cancel()
+		}
+		g.deps.Logger.Info("agui gateway force shutdown", "cancelled_runs", len(cancels))
+	}
+
+	g.cleanup()
+}
+
+func (g *Gateway) cleanup() {
+	if g.rateLimiterCleanup != nil {
+		g.rateLimiterCleanup()
+	}
 }

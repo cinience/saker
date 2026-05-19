@@ -3,8 +3,11 @@ package agui
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
+	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -13,6 +16,8 @@ import (
 	"github.com/saker-ai/saker/pkg/api"
 	"github.com/saker-ai/saker/pkg/server"
 	toolbuiltin "github.com/saker-ai/saker/pkg/tool/builtin"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 
 	aguievents "github.com/ag-ui-protocol/ag-ui/sdks/community/go/pkg/core/events"
 	aguitypes "github.com/ag-ui-protocol/ag-ui/sdks/community/go/pkg/core/types"
@@ -20,6 +25,7 @@ import (
 )
 
 const keepaliveInterval = 15 * time.Second
+const slowClientWriteTimeout = 30 * time.Second
 
 // handleRun implements POST /v1/agents/run — the main AG-UI streaming endpoint.
 func (g *Gateway) handleRun(c *gin.Context) {
@@ -104,12 +110,26 @@ func (g *Gateway) handleRun(c *gin.Context) {
 
 	g.persistUserMessage(c.Request.Context(), threadID, turnID, projectID, sakerReq.Prompt)
 
+	if span := trace.SpanFromContext(c.Request.Context()); span.IsRecording() {
+		span.SetAttributes(
+			attribute.String("agui.thread_id", threadID),
+			attribute.String("agui.run_id", runID),
+			attribute.String("agui.turn_id", turnID),
+			attribute.String("agui.user", identity.Username),
+		)
+	}
+
+	requestID := c.GetString("requestID")
+	lastEventID := parseAGUILastEventID(c)
+
 	g.deps.Logger.Info("agui run request received",
+		"request_id", requestID,
 		"thread_id", threadID,
 		"run_id", runID,
 		"turn_id", turnID,
 		"project_id", projectID,
 		"user", identity.Username,
+		"last_event_id", lastEventID,
 		"message_count", len(input.Messages),
 		"context_count", len(input.Context),
 		"prompt_len", len(sakerReq.Prompt),
@@ -167,26 +187,33 @@ func (g *Gateway) handleRun(c *gin.Context) {
 // streamSSE writes the AG-UI event stream to the client as SSE.
 func (g *Gateway) streamSSE(c *gin.Context, ctx context.Context, eventCh <-chan api.StreamEvent, sideCh <-chan sideEvent, threadID, runID, turnID, projectID string) {
 	w := c.Writer
-	if err := http.NewResponseController(w).SetWriteDeadline(time.Time{}); err != nil {
-		g.deps.Logger.Debug("agui sse write deadline not adjustable",
-			"thread_id", threadID,
-			"run_id", runID,
-			"error", err,
-		)
-	}
+	rc := http.NewResponseController(w)
+	writeDeadlineSupported := rc.SetWriteDeadline(time.Now().Add(slowClientWriteTimeout)) == nil
+
 	w.Header().Set("Content-Type", "text/event-stream; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-cache, no-store, no-transform")
 	w.Header().Set("Connection", "keep-alive")
 	w.Header().Set("X-Accel-Buffering", "no")
+	if sc := trace.SpanContextFromContext(ctx); sc.TraceID().IsValid() {
+		w.Header().Set("X-Trace-Id", sc.TraceID().String())
+	}
 	w.WriteHeader(http.StatusOK)
 
 	flusher, ok := w.(http.Flusher)
 	if !ok {
 		return
 	}
+
+	flushSSE := func() {
+		if writeDeadlineSupported {
+			_ = rc.SetWriteDeadline(time.Now().Add(slowClientWriteTimeout))
+		}
+		flusher.Flush()
+	}
+
 	// SSE retry directive: instruct client to reconnect after 3s on disconnect.
 	fmt.Fprintf(w, "retry: 3000\n\n")
-	flusher.Flush()
+	flushSSE()
 
 	sseW := aguisse.NewSSEWriter().WithLogger(g.deps.Logger)
 	state := newStreamState(threadID, runID)
@@ -206,7 +233,7 @@ func (g *Gateway) streamSSE(c *gin.Context, ctx context.Context, eventCh <-chan 
 		"turn_id", turnID,
 		"project_id", projectID,
 	)
-	if err := writeSSE(ctx, w, sseW, aguievents.NewRunStartedEvent(threadID, runID)); err != nil {
+	if err := writeSSEWithID(ctx, w, sseW, aguievents.NewRunStartedEvent(threadID, runID), state); err != nil {
 		g.deps.Logger.Warn("agui sse write failed",
 			"thread_id", threadID,
 			"run_id", runID,
@@ -217,9 +244,9 @@ func (g *Gateway) streamSSE(c *gin.Context, ctx context.Context, eventCh <-chan 
 	}
 	// Establish the shared state schema so CopilotKit's useCoAgent
 	// knows that state.artifacts is an array before StateDeltaEvents arrive.
-	if err := writeSSE(ctx, w, sseW, aguievents.NewStateSnapshotEvent(
+	if err := writeSSEWithID(ctx, w, sseW, aguievents.NewStateSnapshotEvent(
 		map[string]any{"artifacts": []any{}},
-	)); err != nil {
+	), state); err != nil {
 		g.deps.Logger.Warn("agui sse initial state snapshot failed",
 			"thread_id", threadID,
 			"run_id", runID,
@@ -227,7 +254,7 @@ func (g *Gateway) streamSSE(c *gin.Context, ctx context.Context, eventCh <-chan 
 		)
 		return
 	}
-	flusher.Flush()
+	flushSSE()
 
 	keepalive := time.NewTicker(keepaliveInterval)
 	defer keepalive.Stop()
@@ -244,7 +271,7 @@ func (g *Gateway) streamSSE(c *gin.Context, ctx context.Context, eventCh <-chan 
 						"error", err,
 					)
 				} else {
-					flusher.Flush()
+					flushSSE()
 				}
 				if len(state.artifacts) > 0 {
 					g.storeArtifacts(threadID, state.artifacts)
@@ -277,11 +304,15 @@ func (g *Gateway) streamSSE(c *gin.Context, ctx context.Context, eventCh <-chan 
 			}
 			newArtifacts, err := state.translateEvent(ctx, w, sseW, evt, filter)
 			if err != nil {
+				if isSlowClientErr(err) {
+					aguiSlowClientDisconnects.Inc()
+				}
 				g.deps.Logger.Warn("agui sse translate/write failed",
 					"thread_id", threadID,
 					"run_id", runID,
 					"turn_id", turnID,
 					"event_type", evt.Type,
+					"slow_client", isSlowClientErr(err),
 					"error", err,
 				)
 				return
@@ -304,7 +335,7 @@ func (g *Gateway) streamSSE(c *gin.Context, ctx context.Context, eventCh <-chan 
 							},
 						},
 					}
-					if err := writeSSE(ctx, w, sseW, aguievents.NewStateDeltaEvent(delta)); err != nil {
+					if err := writeSSEWithID(ctx, w, sseW, aguievents.NewStateDeltaEvent(delta), state); err != nil {
 						g.deps.Logger.Warn("agui sse state delta write failed",
 							"thread_id", threadID,
 							"run_id", runID,
@@ -315,7 +346,7 @@ func (g *Gateway) streamSSE(c *gin.Context, ctx context.Context, eventCh <-chan 
 					}
 				}
 			}
-			flusher.Flush()
+			flushSSE()
 
 		case se := <-sideCh:
 			if len(se.events) == 0 {
@@ -327,7 +358,7 @@ func (g *Gateway) streamSSE(c *gin.Context, ctx context.Context, eventCh <-chan 
 					continue
 				}
 				sideTypes = append(sideTypes, string(event.Type()))
-				if err := writeSSE(ctx, w, sseW, event); err != nil {
+				if err := writeSSEWithID(ctx, w, sseW, event, state); err != nil {
 					g.deps.Logger.Warn("agui side-event write failed",
 						"thread_id", threadID,
 						"run_id", runID,
@@ -345,21 +376,21 @@ func (g *Gateway) streamSSE(c *gin.Context, ctx context.Context, eventCh <-chan 
 				"event_count", len(se.events),
 				"event_types", sideTypes,
 			)
-			flusher.Flush()
+			flushSSE()
 
 		case <-keepalive.C:
 			if _, err := fmt.Fprintf(w, ": keepalive\n\n"); err != nil {
 				return
 			}
-			flusher.Flush()
+			flushSSE()
 
 		case <-ctx.Done():
 			// Emit RUN_ERROR on graceful shutdown so clients know the stream ended abnormally.
 			aguiErrorsTotal.WithLabelValues("cancelled").Inc()
 			errCtx := context.Background()
-			_ = writeSSE(errCtx, w, sseW, aguievents.NewRunErrorEvent("stream cancelled",
-				aguievents.WithRunID(runID), aguievents.WithErrorCode("cancelled")))
-			flusher.Flush()
+			_ = writeSSEWithID(errCtx, w, sseW, aguievents.NewRunErrorEvent("stream cancelled",
+				aguievents.WithRunID(runID), aguievents.WithErrorCode("cancelled")), state)
+			flushSSE()
 			g.deps.Logger.Info("agui runtime stream cancelled",
 				"thread_id", threadID,
 				"run_id", runID,
@@ -422,4 +453,25 @@ func (g *Gateway) clearThreadRun(threadID, runID string) {
 		delete(g.threadRuns, threadID)
 	}
 	g.mu.Unlock()
+}
+
+// parseAGUILastEventID extracts the last event ID from a reconnection request.
+func parseAGUILastEventID(c *gin.Context) int {
+	raw := c.Query("last_event_id")
+	if raw == "" {
+		raw = c.GetHeader("Last-Event-ID")
+	}
+	if raw == "" {
+		return 0
+	}
+	seq, err := strconv.Atoi(raw)
+	if err != nil || seq < 0 {
+		return 0
+	}
+	return seq
+}
+
+// isSlowClientErr returns true if the error indicates a write deadline exceeded.
+func isSlowClientErr(err error) bool {
+	return err != nil && errors.Is(err, os.ErrDeadlineExceeded)
 }

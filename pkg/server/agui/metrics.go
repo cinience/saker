@@ -38,6 +38,14 @@ var (
 			Buckets:   []float64{0.5, 1, 2, 5, 10, 30, 60, 120, 300},
 		},
 	)
+	aguiSlowClientDisconnects = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Namespace: "saker",
+			Subsystem: "agui",
+			Name:      "slow_client_disconnects_total",
+			Help:      "Streams closed due to slow client backpressure.",
+		},
+	)
 )
 
 func init() {
@@ -45,4 +53,5 @@ func init() {
 	prometheus.MustRegister(aguiErrorsTotal)
 	prometheus.MustRegister(aguiActiveStreams)
 	prometheus.MustRegister(aguiRunDuration)
+	prometheus.MustRegister(aguiSlowClientDisconnects)
 }
