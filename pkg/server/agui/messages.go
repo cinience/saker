@@ -11,6 +11,21 @@ import (
 	aguitypes "github.com/ag-ui-protocol/ag-ui/sdks/community/go/pkg/core/types"
 )
 
+// convertFrontendTools converts AG-UI Tool definitions (from CopilotKit frontend
+// actions) into saker model.ToolDefinition for LLM awareness.
+func convertFrontendTools(tools []aguitypes.Tool) []model.ToolDefinition {
+	out := make([]model.ToolDefinition, 0, len(tools))
+	for _, t := range tools {
+		params, _ := t.Parameters.(map[string]any)
+		out = append(out, model.ToolDefinition{
+			Name:        t.Name,
+			Description: t.Description,
+			Parameters:  params,
+		})
+	}
+	return out
+}
+
 // messagesToRequest converts AG-UI RunAgentInput into a saker api.Request.
 // Uses the ThreadID as SessionID so saker's runtime manages conversation
 // history across turns. The latest user message becomes the Prompt.
@@ -44,11 +59,21 @@ func messagesToRequest(input aguitypes.RunAgentInput, identity Identity) api.Req
 		req.User = identity.Username
 	}
 
-	// Forward props to metadata for downstream access.
+	// Forward frontend tools as ExtraTools for model awareness.
+	if len(input.Tools) > 0 {
+		req.ExtraTools = convertFrontendTools(input.Tools)
+	}
+
+	// Forward state and props to metadata for downstream access.
+	meta := make(map[string]any)
 	if input.ForwardedProps != nil {
-		req.Metadata = map[string]any{
-			"_agui_forwarded_props": input.ForwardedProps,
-		}
+		meta["_agui_forwarded_props"] = input.ForwardedProps
+	}
+	if input.State != nil {
+		meta["_agui_state"] = input.State
+	}
+	if len(meta) > 0 {
+		req.Metadata = meta
 	}
 
 	return req

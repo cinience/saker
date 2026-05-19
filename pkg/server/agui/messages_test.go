@@ -165,3 +165,68 @@ func containsStr(s, sub string) bool {
 	}
 	return false
 }
+
+func TestMessagesToRequest_FrontendTools(t *testing.T) {
+	t.Parallel()
+	input := aguitypes.RunAgentInput{
+		ThreadID: "t1",
+		Messages: []aguitypes.Message{
+			{Role: aguitypes.RoleUser, Content: "hi"},
+		},
+		Tools: []aguitypes.Tool{
+			{Name: "searchWeb", Description: "Search the web", Parameters: map[string]any{"type": "object"}},
+			{Name: "navigate", Description: "Go to URL"},
+		},
+	}
+	req := messagesToRequest(input, Identity{})
+	if len(req.ExtraTools) != 2 {
+		t.Fatalf("ExtraTools = %d, want 2", len(req.ExtraTools))
+	}
+	if req.ExtraTools[0].Name != "searchWeb" {
+		t.Errorf("ExtraTools[0].Name = %q, want searchWeb", req.ExtraTools[0].Name)
+	}
+	if req.ExtraTools[1].Description != "Go to URL" {
+		t.Errorf("ExtraTools[1].Description = %q", req.ExtraTools[1].Description)
+	}
+}
+
+func TestMessagesToRequest_StateForwarding(t *testing.T) {
+	t.Parallel()
+	state := map[string]any{"count": float64(3), "items": []any{"a", "b"}}
+	input := aguitypes.RunAgentInput{
+		ThreadID: "t1",
+		Messages: []aguitypes.Message{
+			{Role: aguitypes.RoleUser, Content: "hi"},
+		},
+		State: state,
+	}
+	req := messagesToRequest(input, Identity{})
+	if req.Metadata == nil {
+		t.Fatal("Metadata should not be nil")
+	}
+	got, ok := req.Metadata["_agui_state"]
+	if !ok {
+		t.Fatal("_agui_state not found in Metadata")
+	}
+	m, ok := got.(map[string]any)
+	if !ok {
+		t.Fatalf("_agui_state type = %T, want map[string]any", got)
+	}
+	if m["count"] != float64(3) {
+		t.Errorf("state.count = %v", m["count"])
+	}
+}
+
+func TestConvertFrontendTools_NilParameters(t *testing.T) {
+	t.Parallel()
+	tools := []aguitypes.Tool{
+		{Name: "myTool", Description: "does stuff", Parameters: nil},
+	}
+	out := convertFrontendTools(tools)
+	if len(out) != 1 {
+		t.Fatalf("expected 1 tool, got %d", len(out))
+	}
+	if out[0].Parameters != nil {
+		t.Errorf("Parameters should be nil for nil input, got %v", out[0].Parameters)
+	}
+}

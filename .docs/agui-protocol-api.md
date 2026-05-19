@@ -231,9 +231,40 @@ Supported methods: `agent/run`, `agent/connect`, `info`, `threads`, `capabilitie
 | Delete | DELETE `/threads/:threadId` | Soft delete |
 | Archive | POST `/threads/:threadId/archive` | Treated as soft delete |
 
+## Client State Forwarding
+
+`RunAgentInput.State` is forwarded to `req.Metadata["_agui_state"]`. This enables agents to access frontend shared state (e.g. CopilotKit's `useCoAgent` state) during execution.
+
+## Frontend Tools
+
+`RunAgentInput.Tools` (frontend-defined actions from CopilotKit) are converted to `model.ToolDefinition` and injected as `req.ExtraTools`. These are sent to the LLM for awareness but NOT executed by saker's tool executor — the model's tool calls for these are passed through to the client.
+
 ## ForwardedProps
 
 `RunAgentInput.ForwardedProps` is injected into `req.Metadata["_agui_forwarded_props"]` for downstream access by tools and middleware.
+
+## Run Outcome
+
+`RUN_FINISHED` events include a `result` field with the run outcome per protocol spec:
+
+```json
+{"type": "RUN_FINISHED", "threadId": "...", "runId": "...", "result": {"type": "success"}}
+```
+
+## Message ID Stability
+
+Message IDs follow the deterministic format `msg_<threadID>_<runID>`, ensuring:
+- Same thread + run always produces the same message ID
+- CopilotKit can reliably reference messages for updates
+- IDs are stable across reconnects within the same run
+
+## Artifact Persistence
+
+Artifacts extracted from tool results are cached per-thread in memory. On reconnect (`/agent/connect`), the STATE_SNAPSHOT replays all previously generated artifacts:
+
+```json
+{"type": "STATE_SNAPSHOT", "snapshot": {"artifacts": [{"type": "image", "url": "...", "name": "..."}]}}
+```
 
 ## Error Handling
 

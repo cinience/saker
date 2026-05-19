@@ -50,6 +50,8 @@ type Gateway struct {
 	mu            sync.Mutex
 	activeCancels map[string]context.CancelFunc
 	shuttingDown  bool
+	// artifactCache stores per-thread artifacts so connect can replay them.
+	artifactCache sync.Map // map[threadID][]server.Artifact
 }
 
 // RegisterAGUIGateway mounts the AG-UI protocol endpoints on the supplied

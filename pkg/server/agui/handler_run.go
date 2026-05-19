@@ -224,6 +224,9 @@ func (g *Gateway) streamSSE(c *gin.Context, ctx context.Context, eventCh <-chan 
 				} else {
 					flusher.Flush()
 				}
+				if len(state.artifacts) > 0 {
+					g.storeArtifacts(threadID, state.artifacts)
+				}
 				g.persistAssistantMessage(context.Background(), threadID, turnID, projectID, accumulated.String())
 				if g.deps.ConversationStore != nil {
 					_ = g.deps.ConversationStore.CloseTurn(context.Background(), turnID, "completed")
@@ -357,4 +360,24 @@ func mergeMetadata(base, extra map[string]any) map[string]any {
 		base[k] = v
 	}
 	return base
+}
+
+// storeArtifacts appends artifacts to the per-thread cache for replay on connect.
+func (g *Gateway) storeArtifacts(threadID string, arts []server.Artifact) {
+	existing, _ := g.artifactCache.Load(threadID)
+	var all []server.Artifact
+	if existing != nil {
+		all = existing.([]server.Artifact)
+	}
+	all = append(all, arts...)
+	g.artifactCache.Store(threadID, all)
+}
+
+// loadArtifacts returns cached artifacts for a thread.
+func (g *Gateway) loadArtifacts(threadID string) []server.Artifact {
+	v, ok := g.artifactCache.Load(threadID)
+	if !ok {
+		return nil
+	}
+	return v.([]server.Artifact)
 }

@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"io"
-	"strings"
 	"testing"
 
 	"github.com/saker-ai/saker/pkg/api"
@@ -442,14 +441,27 @@ func TestNewStreamState(t *testing.T) {
 	if s.runID != "run_xyz" {
 		t.Errorf("runID = %q", s.runID)
 	}
-	if !strings.HasPrefix(s.msgID, "msg_") {
-		t.Errorf("msgID should start with msg_, got %q", s.msgID)
+	if s.msgID != "msg_thread_abc_run_xyz" {
+		t.Errorf("msgID = %q, want msg_thread_abc_run_xyz", s.msgID)
 	}
 	if s.textStarted {
 		t.Error("textStarted should be false initially")
 	}
 	if len(s.toolCalls) != 0 {
 		t.Error("toolCalls should be empty initially")
+	}
+}
+
+func TestNewStreamState_StableMsgID(t *testing.T) {
+	t.Parallel()
+	s1 := newStreamState("t1", "r1")
+	s2 := newStreamState("t1", "r1")
+	if s1.msgID != s2.msgID {
+		t.Errorf("same thread+run should produce same msgID: %q vs %q", s1.msgID, s2.msgID)
+	}
+	s3 := newStreamState("t1", "r2")
+	if s1.msgID == s3.msgID {
+		t.Error("different runs should produce different msgIDs")
 	}
 }
 

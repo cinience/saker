@@ -49,7 +49,7 @@ func newStreamState(threadID, runID string) *streamState {
 	return &streamState{
 		threadID:            threadID,
 		runID:               runID,
-		msgID:               fmt.Sprintf("msg_%s", runID),
+		msgID:               fmt.Sprintf("msg_%s_%s", threadID, runID),
 		toolCalls:           make(map[string]bool),
 		toolNames:           make(map[string]string),
 		suppressedToolCalls: make(map[string]bool),
@@ -311,7 +311,8 @@ func (s *streamState) finalize(ctx context.Context, w io.Writer, sseW sseWriter,
 		}
 		s.lastStep = ""
 	}
-	return writeSSE(ctx, w, sseW, aguievents.NewRunFinishedEvent(s.threadID, s.runID))
+	outcome := map[string]any{"type": "success"}
+	return writeSSE(ctx, w, sseW, aguievents.NewRunFinishedEventWithOptions(s.threadID, s.runID, aguievents.WithResult(outcome)))
 }
 
 // textFilter abstracts the stream artifact filter used to strip XML
