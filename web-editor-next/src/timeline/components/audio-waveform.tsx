@@ -1,4 +1,3 @@
-"use client";
 
 import { useResizeObserver } from "@/hooks/use-resize-observer";
 import {

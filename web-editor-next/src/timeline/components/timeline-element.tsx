@@ -1,4 +1,3 @@
-"use client";
 
 import {
 	type TAction,
@@ -75,7 +74,7 @@ import {
 	VolumeOffIcon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
-import Image from "next/image";
+import Image from "@/lib/image";
 import { createContext, useContext } from "react";
 import { type ComponentProps, type ReactNode, useMemo } from "react";
 import { AudioVolumeLine } from "./audio-volume-line";

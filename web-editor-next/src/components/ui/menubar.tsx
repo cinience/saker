@@ -1,4 +1,3 @@
-"use client";
 
 import { Check, ChevronRight, Circle } from "lucide-react";
 import { Menubar as MenubarPrimitive } from "radix-ui";

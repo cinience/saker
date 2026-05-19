@@ -377,8 +377,8 @@ func tarDirContents(dir string) (io.ReadCloser, error) {
 		if err != nil {
 			return err
 		}
+		defer f.Close()
 		_, copyErr := io.Copy(tw, f)
-		f.Close()
 		return copyErr
 	})
 	if walkErr != nil {

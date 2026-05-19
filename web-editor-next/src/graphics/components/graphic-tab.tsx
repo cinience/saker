@@ -1,4 +1,3 @@
-"use client";
 
 import { PropertyParamField } from "@/components/editor/panels/properties/components/property-param-field";
 import { useElementPlayhead } from "@/components/editor/panels/properties/hooks/use-element-playhead";

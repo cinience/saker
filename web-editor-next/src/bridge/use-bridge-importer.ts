@@ -1,8 +1,7 @@
-"use client";
 
 import { useEditor } from "@/editor/use-editor";
 import type { ProcessedMediaAsset } from "@/media/processing";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "@/lib/navigation";
 import { useEffect, useRef } from "react";
 import { toast } from "sonner";
 import { setOriginNodeId } from "./origin";

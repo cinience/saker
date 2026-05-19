@@ -1,4 +1,3 @@
-"use client";
 
 import { useMaskHandles } from "@/masks/use-mask-handles";
 import { PEN_CURSOR } from "@/preview/components/cursors";

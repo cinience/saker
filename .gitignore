@@ -136,8 +136,9 @@ godeps/aigo/newapi_seedance_video
 godeps/goim/
 godeps/skillhub/
 
-# Packages (build output)
-packages/
+# Packages (binary build outputs; package.json files are tracked)
+packages/*/saker
+packages/*/saker.exe
 
 # Stray sqlite memdb test artifacts
 pkg/project/memdb_*

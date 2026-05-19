@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/saker-ai/saker/pkg/server/skillimport"
 	"github.com/stretchr/testify/require"
 )
 
@@ -26,7 +27,7 @@ func TestFirstString(t *testing.T) {
 
 func TestCollectImportItemSkillIDs(t *testing.T) {
 	t.Parallel()
-	items := []skillImportItemResult{
+	items := []skillimport.ItemResult{
 		{SkillID: "a", Status: "ready"},
 		{SkillID: "b", Status: "conflict"},
 		{SkillID: "c", Status: "ready"},
@@ -73,9 +74,6 @@ func TestDecodeParams_UnmarshalError(t *testing.T) {
 	require.Contains(t, err.Error(), "unmarshal boom")
 }
 
-// buildSkillImportPreviewItems for skillImportSourcePath uses the absolute
-// source path verbatim (no sourceRoot join). It validates each path produces
-// a known skill ID and notes whether the target already exists.
 func TestBuildSkillImportPreviewItems_NewItem(t *testing.T) {
 	srcDir := t.TempDir()
 	skillRoot := filepath.Join(srcDir, "my-skill")
@@ -88,7 +86,7 @@ description: test
 `), 0o644))
 
 	target := t.TempDir()
-	items, err := buildSkillImportPreviewItems(skillImportSourcePath, []string{skillRoot}, "", target)
+	items, err := buildSkillImportPreviewItems(skillimport.SourcePath, []string{skillRoot}, "", target)
 	require.NoError(t, err)
 	require.Len(t, items, 1)
 	require.Equal(t, "my-skill", items[0].SkillID)
@@ -110,7 +108,7 @@ body
 	target := t.TempDir()
 	require.NoError(t, os.MkdirAll(filepath.Join(target, "dup-skill"), 0o755))
 
-	items, err := buildSkillImportPreviewItems(skillImportSourcePath, []string{skillRoot}, "", target)
+	items, err := buildSkillImportPreviewItems(skillimport.SourcePath, []string{skillRoot}, "", target)
 	require.NoError(t, err)
 	require.Len(t, items, 1)
 	require.Equal(t, "conflict", items[0].Status)
@@ -120,7 +118,7 @@ body
 func TestBuildSkillImportPreviewItems_InvalidSource(t *testing.T) {
 	target := t.TempDir()
 	missing := filepath.Join(t.TempDir(), "no-such-skill")
-	_, err := buildSkillImportPreviewItems(skillImportSourcePath, []string{missing}, "", target)
+	_, err := buildSkillImportPreviewItems(skillimport.SourcePath, []string{missing}, "", target)
 	require.Error(t, err)
 }
 
@@ -136,7 +134,7 @@ body
 `), 0o644))
 
 	target := t.TempDir()
-	items, err := buildSkillImportPreviewItems(skillImportSourceGit, []string{"alpha"}, root, target)
+	items, err := buildSkillImportPreviewItems(skillimport.SourceGit, []string{"alpha"}, root, target)
 	require.NoError(t, err)
 	require.Len(t, items, 1)
 	require.Equal(t, "alpha", items[0].SkillID)

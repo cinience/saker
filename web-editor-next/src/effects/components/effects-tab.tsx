@@ -1,4 +1,3 @@
-"use client";
 
 import { useAssetsPanelStore } from "@/components/editor/panels/assets/assets-panel-store";
 import { PropertyParamField } from "@/components/editor/panels/properties/components/property-param-field";

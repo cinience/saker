@@ -1,4 +1,3 @@
-"use client";
 
 import { OcVideoIcon } from "@/components/icons";
 import {
@@ -58,9 +57,9 @@ import {
 	Video01Icon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
-import Image from "next/image";
-import Link from "next/link";
-import { useRouter } from "next/navigation";
+import Image from "@/lib/image";
+import Link from "@/lib/link";
+import { useRouter } from "@/lib/navigation";
 import { formatTimecode, mediaTimeToSeconds } from "opencut-wasm";
 import type { KeyboardEvent, MouseEvent } from "react";
 import { useEffect, useState } from "react";

@@ -1,4 +1,3 @@
-"use client";
 
 import { timelineTimeToSnappedPixels } from "@/timeline";
 import { formatRulerLabel } from "@/timeline/ruler-utils";

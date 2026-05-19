@@ -1,4 +1,3 @@
-"use client";
 
 import {
 	TAB_KEYS,

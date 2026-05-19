@@ -47,6 +47,8 @@ cpk-web-inspector {
 
 .saker-copilot-chat .copilotKitMessagesContainer {
   padding: 20px 40px 12px;
+  max-width: 848px;
+  margin: 0 auto;
 }
 
 /* ── Messages: shared base ── */

@@ -1,4 +1,3 @@
-"use client";
 
 import { SELECTABLE_ITEM_ATTRIBUTE } from "@/selection/attributes";
 import { SelectionContext } from "@/selection/context";

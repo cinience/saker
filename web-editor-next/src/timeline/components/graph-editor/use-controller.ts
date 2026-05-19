@@ -1,4 +1,3 @@
-"use client";
 
 import type { NormalizedCubicBezier } from "@/animation/types";
 import { registerCanceller } from "@/editor/cancel-interaction";

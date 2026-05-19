@@ -134,6 +134,8 @@
 }
 
 .messages-inner {
+  max-width: 848px;
+  margin: 0 auto;
   padding: 0 40px;
 }
 

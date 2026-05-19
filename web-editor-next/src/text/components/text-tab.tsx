@@ -1,4 +1,3 @@
-"use client";
 
 import { resolveColorAtTime, resolveNumberAtTime } from "@/animation/values";
 import { KeyframeToggle } from "@/components/editor/panels/properties/components/keyframe-toggle";

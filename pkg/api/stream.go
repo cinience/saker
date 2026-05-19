@@ -19,8 +19,11 @@ const (
 	// EventPing is a keepalive heartbeat used by Anthropic streams.
 	EventPing = "ping"
 
+	// Reasoning/thinking streaming events.
+	EventReasoningDelta = "reasoning_delta"
+
 	// Agent-specific extension events.
-	EventAgentStart          = "agent_start"
+	EventAgentStart = "agent_start"
 	EventAgentStop           = "agent_stop"
 	EventIterationStart      = "iteration_start"
 	EventIterationStop       = "iteration_stop"

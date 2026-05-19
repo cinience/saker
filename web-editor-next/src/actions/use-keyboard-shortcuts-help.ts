@@ -1,4 +1,3 @@
-"use client";
 
 import { ACTIONS, type TActionWithOptionalArgs } from "@/actions";
 import { useKeybindingsStore } from "@/actions/keybindings-store";

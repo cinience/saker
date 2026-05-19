@@ -1,4 +1,3 @@
-"use client";
 
 import { useState } from "react";
 import { X, Trash2, Image, Video, Music } from "lucide-react";

@@ -1,4 +1,3 @@
-"use client";
 
 import { useState, useCallback } from "react";
 import { Play, X } from "lucide-react";

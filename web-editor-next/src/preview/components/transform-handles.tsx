@@ -1,4 +1,3 @@
-"use client";
 
 import { usePreviewViewport } from "@/preview/components/preview-viewport";
 import {

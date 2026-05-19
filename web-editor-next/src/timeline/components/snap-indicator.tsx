@@ -1,4 +1,3 @@
-"use client";
 
 import {
 	TIMELINE_INDICATOR_LINE_WIDTH_PX,

@@ -1,4 +1,3 @@
-"use client";
 
 import { SectionField } from "@/components/section";
 import { ColorPicker } from "@/components/ui/color-picker";

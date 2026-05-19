@@ -8,51 +8,11 @@ import (
 	"path/filepath"
 
 	"github.com/saker-ai/saker/pkg/api"
+	"github.com/saker-ai/saker/pkg/server/skillimport"
 )
-
-type skillImportSourceType string
-
-const (
-	skillImportSourcePath    skillImportSourceType = "path"
-	skillImportSourceGit     skillImportSourceType = "git"
-	skillImportSourceArchive skillImportSourceType = "archive"
-)
-
-type skillImportScope string
-
-const (
-	skillImportScopeLocal  skillImportScope = "local"
-	skillImportScopeGlobal skillImportScope = "global"
-)
-
-type skillImportParams struct {
-	SourceType       skillImportSourceType   `json:"source_type"`
-	SourcePath       string                  `json:"source_path"`
-	SourcePaths      []string                `json:"source_paths"`
-	RepoURL          string                  `json:"repo_url"`
-	ArchiveURL       string                  `json:"archive_url"`
-	TargetScope      skillImportScope        `json:"target_scope"`
-	ConflictStrategy skillImportConflictMode `json:"conflict_strategy"`
-}
-
-type skillImportConflictMode string
-
-const (
-	skillImportConflictOverwrite skillImportConflictMode = "overwrite"
-	skillImportConflictSkip      skillImportConflictMode = "skip"
-	skillImportConflictError     skillImportConflictMode = "error"
-)
-
-type skillImportItemResult struct {
-	SkillID    string `json:"skill_id"`
-	SourcePath string `json:"source_path,omitempty"`
-	Path       string `json:"path"`
-	Status     string `json:"status"`
-	Message    string `json:"message,omitempty"`
-}
 
 func (h *Handler) handleSkillImportPreview(req Request) Response {
-	var params skillImportParams
+	var params skillimport.Params
 	if err := decodeParams(req.Params, &params); err != nil {
 		return h.invalidParams(req.ID, "invalid params: "+err.Error())
 	}
@@ -68,7 +28,7 @@ func (h *Handler) handleSkillImportPreview(req Request) Response {
 }
 
 func (h *Handler) handleSkillImport(req Request) Response {
-	var params skillImportParams
+	var params skillimport.Params
 	if err := decodeParams(req.Params, &params); err != nil {
 		return h.invalidParams(req.ID, "invalid params: "+err.Error())
 	}
@@ -81,7 +41,7 @@ func (h *Handler) handleSkillImport(req Request) Response {
 	return h.success(req.ID, map[string]any{"taskId": taskID})
 }
 
-func (h *Handler) runSkillImportTask(taskID string, params skillImportParams) {
+func (h *Handler) runSkillImportTask(taskID string, params skillimport.Params) {
 	logLine := func(line string) {
 		h.taskTracker.AppendLog(taskID, line)
 	}
@@ -92,7 +52,7 @@ func (h *Handler) runSkillImportTask(taskID string, params skillImportParams) {
 	progress(5, "validating import request")
 	logLine("Validating import request")
 
-	sourceType, paths, err := normalizeSkillImportParams(params)
+	sourceType, paths, err := skillimport.NormalizeParams(params)
 	if err != nil {
 		h.taskTracker.Fail(taskID, err.Error())
 		return
@@ -101,7 +61,7 @@ func (h *Handler) runSkillImportTask(taskID string, params skillImportParams) {
 	progress(15, "preparing import source")
 	logLine("Preparing import source")
 
-	sourceRoot, cleanup, err := prepareSkillImportSource(sourceType, params)
+	sourceRoot, cleanup, err := skillimport.PrepareSource(sourceType, params)
 	if err != nil {
 		h.taskTracker.Fail(taskID, err.Error())
 		return
@@ -110,10 +70,10 @@ func (h *Handler) runSkillImportTask(taskID string, params skillImportParams) {
 		defer cleanup()
 	}
 
-	if sourceType != skillImportSourcePath && len(paths) == 0 {
+	if sourceType != skillimport.SourcePath && len(paths) == 0 {
 		progress(35, "discovering skill directories")
 		logLine("Discovering skill directories")
-		paths, err = discoverSkillImportPaths(sourceRoot)
+		paths, err = skillimport.DiscoverPaths(sourceRoot)
 		if err != nil {
 			h.taskTracker.Fail(taskID, err.Error())
 			return
@@ -121,7 +81,7 @@ func (h *Handler) runSkillImportTask(taskID string, params skillImportParams) {
 		logLine(fmt.Sprintf("Discovered %d skill directories", len(paths)))
 	}
 
-	targetRoot, err := resolveSkillImportTargetRoot(h.runtime, params.TargetScope)
+	targetRoot, err := skillimport.ResolveTargetRoot(h.runtime, params.TargetScope)
 	if err != nil {
 		h.taskTracker.Fail(taskID, err.Error())
 		return
@@ -132,30 +92,30 @@ func (h *Handler) runSkillImportTask(taskID string, params skillImportParams) {
 	}
 
 	imported := make([]string, 0, len(paths))
-	items := make([]skillImportItemResult, 0, len(paths))
+	items := make([]skillimport.ItemResult, 0, len(paths))
 	for idx, sourcePath := range paths {
 		progress(45+((idx)*45)/maxInt(len(paths), 1), "importing skills")
 		logLine("Importing " + sourcePath)
 
 		skillSource := sourcePath
-		if sourceType != skillImportSourcePath {
+		if sourceType != skillimport.SourcePath {
 			skillSource = filepath.Join(sourceRoot, filepath.Clean(sourcePath))
 		}
 
-		skillID, err := validateImportedSkill(skillSource)
+		skillID, err := skillimport.ValidateSkill(skillSource)
 		if err != nil {
 			h.taskTracker.Fail(taskID, err.Error())
 			return
 		}
 		targetDir := filepath.Join(targetRoot, skillID)
-		conflictAction, err := prepareTargetDir(targetDir, params.ConflictStrategy)
+		conflictAction, err := skillimport.PrepareTargetDir(targetDir, params.ConflictStrategy)
 		if err != nil {
 			h.taskTracker.Fail(taskID, err.Error())
 			return
 		}
 		if conflictAction == "skipped" {
 			logLine(fmt.Sprintf("Skipped existing skill %s", skillID))
-			items = append(items, skillImportItemResult{
+			items = append(items, skillimport.ItemResult{
 				SkillID:    skillID,
 				SourcePath: skillSource,
 				Path:       targetDir,
@@ -164,12 +124,12 @@ func (h *Handler) runSkillImportTask(taskID string, params skillImportParams) {
 			})
 			continue
 		}
-		if err := copyDir(skillSource, targetDir); err != nil {
+		if err := skillimport.CopyDir(skillSource, targetDir); err != nil {
 			h.taskTracker.Fail(taskID, err.Error())
 			return
 		}
 		imported = append(imported, targetDir)
-		items = append(items, skillImportItemResult{
+		items = append(items, skillimport.ItemResult{
 			SkillID:    skillID,
 			SourcePath: skillSource,
 			Path:       targetDir,
@@ -199,30 +159,30 @@ func (h *Handler) runSkillImportTask(taskID string, params skillImportParams) {
 		"items":            items,
 		"importedSkills":   collectImportItemSkillIDs(items, "imported"),
 		"skippedSkills":    collectImportItemSkillIDs(items, "skipped"),
-		"conflictStrategy": string(normalizeConflictStrategy(params.ConflictStrategy)),
+		"conflictStrategy": string(skillimport.NormalizeConflictStrategy(params.ConflictStrategy)),
 	})
 }
 
-func previewSkillImport(rt *api.Runtime, params skillImportParams) (map[string]any, error) {
-	sourceType, paths, err := normalizeSkillImportParams(params)
+func previewSkillImport(rt *api.Runtime, params skillimport.Params) (map[string]any, error) {
+	sourceType, paths, err := skillimport.NormalizeParams(params)
 	if err != nil {
 		return nil, err
 	}
-	sourceRoot, cleanup, err := prepareSkillImportSource(sourceType, params)
+	sourceRoot, cleanup, err := skillimport.PrepareSource(sourceType, params)
 	if err != nil {
 		return nil, err
 	}
 	if cleanup != nil {
 		defer cleanup()
 	}
-	if sourceType != skillImportSourcePath && len(paths) == 0 {
-		paths, err = discoverSkillImportPaths(sourceRoot)
+	if sourceType != skillimport.SourcePath && len(paths) == 0 {
+		paths, err = skillimport.DiscoverPaths(sourceRoot)
 		if err != nil {
 			return nil, err
 		}
 	}
 
-	targetRoot, err := resolveSkillImportTargetRoot(rt, params.TargetScope)
+	targetRoot, err := skillimport.ResolveTargetRoot(rt, params.TargetScope)
 	if err != nil {
 		return nil, err
 	}
@@ -234,20 +194,20 @@ func previewSkillImport(rt *api.Runtime, params skillImportParams) (map[string]a
 	return map[string]any{
 		"items":             items,
 		"targetScope":       string(params.TargetScope),
-		"conflictStrategy":  string(normalizeConflictStrategy(params.ConflictStrategy)),
+		"conflictStrategy":  string(skillimport.NormalizeConflictStrategy(params.ConflictStrategy)),
 		"readySkills":       collectImportItemSkillIDs(items, "ready"),
 		"conflictingSkills": collectImportItemSkillIDs(items, "conflict"),
 	}, nil
 }
 
-func buildSkillImportPreviewItems(sourceType skillImportSourceType, paths []string, sourceRoot string, targetRoot string) ([]skillImportItemResult, error) {
-	items := make([]skillImportItemResult, 0, len(paths))
+func buildSkillImportPreviewItems(sourceType skillimport.SourceType, paths []string, sourceRoot string, targetRoot string) ([]skillimport.ItemResult, error) {
+	items := make([]skillimport.ItemResult, 0, len(paths))
 	for _, sourcePath := range paths {
 		skillSource := sourcePath
-		if sourceType != skillImportSourcePath {
+		if sourceType != skillimport.SourcePath {
 			skillSource = filepath.Join(sourceRoot, filepath.Clean(sourcePath))
 		}
-		skillID, err := validateImportedSkill(skillSource)
+		skillID, err := skillimport.ValidateSkill(skillSource)
 		if err != nil {
 			return nil, err
 		}
@@ -260,7 +220,7 @@ func buildSkillImportPreviewItems(sourceType skillImportSourceType, paths []stri
 		} else if !os.IsNotExist(err) {
 			return nil, err
 		}
-		items = append(items, skillImportItemResult{
+		items = append(items, skillimport.ItemResult{
 			SkillID:    skillID,
 			SourcePath: skillSource,
 			Path:       targetDir,
@@ -298,7 +258,7 @@ func firstString(items []string) string {
 	return items[0]
 }
 
-func collectImportItemSkillIDs(items []skillImportItemResult, status string) []string {
+func collectImportItemSkillIDs(items []skillimport.ItemResult, status string) []string {
 	out := make([]string, 0, len(items))
 	for _, item := range items {
 		if item.Status == status {

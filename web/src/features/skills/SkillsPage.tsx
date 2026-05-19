@@ -1,4 +1,3 @@
-"use client";
 
 import { useCallback, useState } from "react";
 import { Store, Boxes } from "lucide-react";

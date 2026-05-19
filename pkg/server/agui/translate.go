@@ -20,6 +20,8 @@ type streamState struct {
 	msgID    string
 	// textStarted is true after the first TEXT_MESSAGE_START has been emitted.
 	textStarted bool
+	// reasoningStarted is true after REASONING_MESSAGE_START has been emitted.
+	reasoningStarted bool
 	// toolCalls tracks which tool call IDs have been started.
 	toolCalls map[string]bool
 	// toolNames maps tool call IDs to their tool names for artifact extraction.
@@ -58,9 +60,28 @@ func newStreamState(threadID, runID string) *streamState {
 // emit as StateDeltaEvents.
 func (s *streamState) translateEvent(ctx context.Context, w io.Writer, sseW sseWriter, evt api.StreamEvent, filter textFilter) ([]server.Artifact, error) {
 	switch evt.Type {
+	case api.EventReasoningDelta:
+		if evt.Delta == nil || evt.Delta.Text == "" {
+			return nil, nil
+		}
+		if !s.reasoningStarted {
+			s.reasoningStarted = true
+			reasoningMsgID := "reasoning_" + s.msgID
+			if err := writeSSE(ctx, w, sseW, aguievents.NewReasoningMessageStartEvent(reasoningMsgID, "assistant")); err != nil {
+				return nil, err
+			}
+		}
+		return nil, writeSSE(ctx, w, sseW, aguievents.NewReasoningMessageContentEvent("reasoning_"+s.msgID, evt.Delta.Text))
+
 	case api.EventContentBlockDelta:
 		if evt.Delta == nil || evt.Delta.Text == "" {
 			return nil, nil
+		}
+		// Close reasoning phase when text content starts arriving.
+		if s.reasoningStarted && !s.textStarted {
+			if err := writeSSE(ctx, w, sseW, aguievents.NewReasoningMessageEndEvent("reasoning_"+s.msgID)); err != nil {
+				return nil, err
+			}
 		}
 		safe := filter.Push(evt.Delta.Text)
 		if safe == "" {
@@ -191,6 +212,11 @@ func (s *streamState) finalize(ctx context.Context, w io.Writer, sseW sseWriter,
 		}
 		delete(s.toolNames, s.lastToolID)
 		s.lastToolID = ""
+	}
+	if s.reasoningStarted && !s.textStarted {
+		if err := writeSSE(ctx, w, sseW, aguievents.NewReasoningMessageEndEvent("reasoning_"+s.msgID)); err != nil {
+			return err
+		}
 	}
 	if tail := filter.Flush(); tail != "" && s.textStarted {
 		if err := writeSSE(ctx, w, sseW, aguievents.NewTextMessageContentEvent(s.msgID, tail)); err != nil {

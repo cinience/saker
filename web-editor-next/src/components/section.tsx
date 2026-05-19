@@ -1,4 +1,3 @@
-"use client";
 
 import { cn } from "@/utils/ui";
 import { ChevronDown } from "lucide-react";

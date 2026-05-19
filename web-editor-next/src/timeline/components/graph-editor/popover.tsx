@@ -1,4 +1,3 @@
-"use client";
 
 import { getBezierPoint } from "@/animation/bezier";
 import type { NormalizedCubicBezier } from "@/animation/types";

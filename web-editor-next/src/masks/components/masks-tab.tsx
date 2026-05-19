@@ -1,4 +1,3 @@
-"use client";
 
 import { usePropertyDraft } from "@/components/editor/panels/properties/hooks/use-property-draft";
 import {

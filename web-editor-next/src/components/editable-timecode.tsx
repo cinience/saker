@@ -1,4 +1,3 @@
-"use client";
 
 import { cn } from "@/utils/ui";
 import { type MediaTime, parseMediaTimecode, snapSeekMediaTime } from "@/wasm";

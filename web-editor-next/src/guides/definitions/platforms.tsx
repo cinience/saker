@@ -1,5 +1,5 @@
 import type { GuideDefinition } from "@/guides/types";
-import Image from "next/image";
+import Image from "@/lib/image";
 import { TikTokLayout } from "./tiktok-layout";
 
 function PlatformLogo({

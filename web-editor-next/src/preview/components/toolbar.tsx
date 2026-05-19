@@ -1,4 +1,3 @@
-"use client";
 
 import { invokeAction } from "@/actions";
 import { EditableTimecode } from "@/components/editable-timecode";

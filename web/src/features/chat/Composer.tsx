@@ -1,4 +1,3 @@
-"use client";
 
 import { useState, useRef, useCallback, useMemo, useEffect } from "react";
 import { useT } from "@/features/i18n";

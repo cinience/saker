@@ -480,6 +480,9 @@ func (m *bifrostModel) CompleteStream(ctx context.Context, req Request, cb Strea
 		// Reasoning content (thinking block from DeepSeek/Kimi/Anthropic)
 		if delta.Reasoning != nil && *delta.Reasoning != "" {
 			reasoning.WriteString(*delta.Reasoning)
+			if err := cb(StreamResult{ReasoningDelta: *delta.Reasoning}); err != nil {
+				return err
+			}
 		}
 
 		// Tool call deltas — accumulate by index, emit completed calls as we

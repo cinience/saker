@@ -1,4 +1,3 @@
-"use client";
 
 import { useEffect, useState, useCallback } from "react";
 import { Copy, Trash2, Download, ClipboardCopy, FolderHeart, Group, Bookmark } from "lucide-react";

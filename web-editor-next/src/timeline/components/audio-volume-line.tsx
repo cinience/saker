@@ -1,4 +1,3 @@
-"use client";
 
 import { useEditor } from "@/editor/use-editor";
 import { VOLUME_DB_MAX, VOLUME_DB_MIN } from "@/timeline/audio-constants";

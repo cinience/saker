@@ -295,6 +295,11 @@ func (m *conversationModel) Generate(ctx context.Context, agentCtx *agent.Contex
 
 	var resp *model.Response
 	streamErr := m.base.CompleteStream(ctx, req, func(sr model.StreamResult) error {
+		if sr.ReasoningDelta != "" {
+			if emit := streamEmitFromContext(ctx); emit != nil {
+				emit(ctx, StreamEvent{Type: EventReasoningDelta, Delta: &Delta{Type: "reasoning_delta", Text: sr.ReasoningDelta}})
+			}
+		}
 		if sr.Final && sr.Response != nil {
 			resp = sr.Response
 		}

@@ -1,4 +1,3 @@
-"use client";
 
 import { getElementLocalTime } from "@/animation";
 import { useEditor } from "@/editor/use-editor";

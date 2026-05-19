@@ -5,9 +5,9 @@
   "license": "MIT",
   "private": true,
   "scripts": {
-    "dev": "next dev -p 10111",
-    "build": "next build",
-    "start": "next start -p 10111",
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
     "audit:i18n": "node scripts/audit-i18n.mjs",
     "test": "tsx --test src/features/editor-runtime/webavCompose.test.mts src/features/editor-bridge/protocol.test.mts src/features/skills/shared/useSkillhubRpc.test.mts"
   },
@@ -23,7 +23,6 @@
     "framer-motion": "^12.38.0",
     "lucide-react": "^1.8.0",
     "marked": "^15.0.0",
-    "next": "^16.2.6",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "recharts": "^3.8.1",
@@ -34,10 +33,10 @@
     "@types/node": "^22.0.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^4.4.1",
     "tsx": "^4.21.0",
-    "typescript": "^5.7.0"
-  },
-  "overrides": {
-    "postcss": "8.5.13"
+    "typescript": "^5.7.0",
+    "vite": "^6.3.5",
+    "vite-plugin-singlefile": "^2.0.3"
   }
 }

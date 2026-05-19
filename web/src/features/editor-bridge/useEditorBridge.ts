@@ -1,4 +1,3 @@
-"use client";
 
 import { useEffect } from "react";
 import { useAssetStore } from "@/features/canvas/panels/assetStore";

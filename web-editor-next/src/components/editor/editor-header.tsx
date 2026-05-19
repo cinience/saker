@@ -1,4 +1,3 @@
-"use client";
 
 import { ShortcutsDialog } from "@/actions/components/shortcuts-dialog";
 import { useEditor } from "@/editor/use-editor";
@@ -9,8 +8,8 @@ import { DEFAULT_LOGO_URL } from "@/site/brand";
 import { cn } from "@/utils/ui";
 import { CommandIcon, Logout05Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
-import Image from "next/image";
-import { useRouter } from "next/navigation";
+import Image from "@/lib/image";
+import { useRouter } from "@/lib/navigation";
 import { useRef, useState } from "react";
 import { toast } from "sonner";
 import { ThemeToggle } from "../theme-toggle";

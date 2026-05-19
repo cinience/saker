@@ -12,28 +12,11 @@
 		"resolveJsonModule": true,
 		"isolatedModules": true,
 		"jsx": "react-jsx",
-		"incremental": true,
-		"plugins": [
-			{
-				"name": "next"
-			}
-		],
 		"paths": {
-			"@/*": ["./src/*"],
-			"content-collections": ["./.content-collections/generated"]
+			"@/*": ["./src/*"]
 		},
 		"forceConsistentCasingInFileNames": true
 	},
-	"include": [
-		"**/*.ts",
-		"**/*.tsx",
-		"apps/web/.next/types/**/*.ts",
-		"next-env.d.ts",
-		".next/types/**/*.ts",
-		"src/types/**/*.d.ts",
-		"../../use-frame-cache.ts",
-		"src/stores/timeline-store.ts",
-		".next/dev/types/**/*.ts"
-	],
+	"include": ["src", "vite-env.d.ts"],
 	"exclude": ["node_modules"]
 }

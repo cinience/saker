@@ -1,4 +1,3 @@
-"use client";
 
 import { invokeAction } from "@/actions";
 import {
@@ -55,7 +54,7 @@ import {
 	Video01Icon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react";
-import Image from "next/image";
+import Image from "@/lib/image";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 

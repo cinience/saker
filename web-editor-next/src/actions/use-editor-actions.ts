@@ -1,4 +1,3 @@
-"use client";
 
 import { invokeAction } from "@/actions";
 import { useActionHandler } from "@/actions/use-action-handler";

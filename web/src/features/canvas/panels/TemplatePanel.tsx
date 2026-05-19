@@ -1,4 +1,3 @@
-"use client";
 
 import { Bookmark, Image, Video, Music, Trash2, X } from "lucide-react";
 import { useTemplateStore, type NodeTemplate } from "./templateStore";

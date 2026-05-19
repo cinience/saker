@@ -1,4 +1,3 @@
-"use client";
 
 import { useKeybindingsStore } from "@/actions/keybindings-store";
 import {

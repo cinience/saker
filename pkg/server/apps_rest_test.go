@@ -725,6 +725,7 @@ func TestAppsRunWithBearerKey(t *testing.T) {
 	if out["runId"] == "" {
 		t.Fatal("missing runId")
 	}
+	drainRun(t, s.handler.canvasExecutor, out["runId"].(string))
 }
 
 func TestAppsRunWithInvalidBearerKey(t *testing.T) {

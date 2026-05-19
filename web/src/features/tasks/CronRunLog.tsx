@@ -1,4 +1,3 @@
-"use client";
 
 import type { CronRun } from "@/features/rpc/types";
 import { useT } from "@/features/i18n";

@@ -1,4 +1,3 @@
-"use client";
 
 import { createAudioContext } from "@/media/audio";
 import {

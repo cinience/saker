@@ -1,4 +1,3 @@
-"use client";
 
 import { useState } from "react";
 import { UserPlus, Trash2, Crown } from "lucide-react";

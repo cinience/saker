@@ -1,4 +1,3 @@
-"use client";
 
 import { useState, useEffect, useCallback } from "react";
 import { Video, Plus, Square, AlertCircle, Radio } from "lucide-react";

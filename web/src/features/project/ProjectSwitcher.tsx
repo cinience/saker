@@ -1,4 +1,3 @@
-"use client";
 
 import { Plus, Folder, Settings as SettingsIcon } from "lucide-react";
 

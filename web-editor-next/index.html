@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Saker Editor</title>
+    <meta name="description" content="Saker Video Editor" />
+    <link rel="icon" href="/favicon.svg" />
+    <script>
+      (function () {
+        try {
+          var STORAGE_KEY = "saker-theme";
+          var DARK_SET = { dark: 1, "cinema-gold": 1 };
+          var LIGHT_SET = { light: 1, "warm-editorial": 1, "ink-wash": 1, brutalist: 1 };
+          var raw = localStorage.getItem(STORAGE_KEY) || "dark";
+          var theme = raw;
+          if (theme === "system") {
+            theme = matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+          }
+          var root = document.documentElement;
+          root.setAttribute("data-theme", theme);
+          if (DARK_SET[theme]) root.classList.add("dark");
+          else if (LIGHT_SET[theme]) root.classList.remove("dark");
+        } catch (e) {
+          document.documentElement.setAttribute("data-theme", "dark");
+          document.documentElement.classList.add("dark");
+        }
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

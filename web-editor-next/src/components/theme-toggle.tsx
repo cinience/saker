@@ -1,4 +1,3 @@
-"use client";
 
 import { cn } from "@/utils/ui";
 import { Sun03Icon } from "@hugeicons/core-free-icons";

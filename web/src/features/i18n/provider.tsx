@@ -1,4 +1,3 @@
-"use client";
 
 import { useContext, useState, useEffect, type ReactNode } from "react";
 import { type Locale, I18nContext } from "./context";

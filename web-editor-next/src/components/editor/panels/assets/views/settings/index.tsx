@@ -1,4 +1,3 @@
-"use client";
 
 import { PanelView } from "@/components/editor/panels/assets/views/base-panel";
 import { usePropertyDraft } from "@/components/editor/panels/properties/hooks/use-property-draft";

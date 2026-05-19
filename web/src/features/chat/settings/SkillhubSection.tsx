@@ -1,4 +1,3 @@
-"use client";
 
 import { useCallback, useState } from "react";
 import { Cloud, LogOut, RefreshCw } from "lucide-react";

@@ -1,4 +1,4 @@
-.PHONY: test test-unit test-race test-integration test-short coverage lint lint-new bench fuzz docs-sync notices oss-check build saker saker-full install clean test-pipeline test-pipeline-race test-pipeline-bench test-pipeline-stress test-all test-eval test-eval-bench test-eval-llm test-eval-all test-eval-tb2 test-eval-tb2-smoke eval-tb2 eval-tb2-smoke demo-pipeline server web-deps web-dev web-clean web-build web-editor-deps web-editor-dev web-editor-build web-editor-clean desktop run e2e-build e2e-run e2e-clean test-pg-up test-pg-integration test-pg-down changelog swagger check-no-binaries diagrams docker
+.PHONY: test test-unit test-race test-integration test-short coverage lint lint-new bench fuzz docs-sync notices oss-check build saker saker-full compress install clean test-pipeline test-pipeline-race test-pipeline-bench test-pipeline-stress test-all test-eval test-eval-bench test-eval-llm test-eval-all test-eval-tb2 test-eval-tb2-smoke eval-tb2 eval-tb2-smoke demo-pipeline server web-deps web-dev web-clean web-build web-editor-deps web-editor-dev web-editor-build web-editor-clean desktop run e2e-build e2e-run e2e-clean test-pg-up test-pg-integration test-pg-down changelog swagger check-no-binaries diagrams docker
 
 GO ?= go
 PKG ?= ./...
@@ -96,24 +96,23 @@ build: web-build web-editor-build saker
 LDFLAGS ?= -s -w
 
 saker:
-	@# Clean stale Next.js chunks first — content-hashed filenames mean
-	@# every rebuild leaves the previous build's chunks in the bundle and
-	@# blows up the binary. We only wipe the _next/ subtree so a missing
-	@# fresh build doesn't blank out the embedded frontend wholesale.
-	@if [ -d web/out ]; then rm -rf pkg/cli/frontend/dist/_next; fi
-	mkdir -p pkg/cli/frontend/dist
-	@if [ -d web/out ]; then cp -r web/out/* pkg/cli/frontend/dist/; fi
-	@if [ -d web-editor-next/out ]; then rm -rf pkg/cli/editor/dist/_next; fi
-	mkdir -p pkg/cli/editor/dist
-	@if [ -d web-editor-next/out ]; then cp -r web-editor-next/out/* pkg/cli/editor/dist/; fi
-	@find pkg/cli/editor/dist -maxdepth 2 -name '__next.*.txt' -delete 2>/dev/null || true
-	@touch pkg/cli/editor/dist/.gitkeep
+	@if [ -d web/out ]; then rm -rf pkg/cli/frontend/dist && mkdir -p pkg/cli/frontend/dist && cp -r web/out/* pkg/cli/frontend/dist/; fi
+	@if [ ! -d pkg/cli/frontend/dist ]; then mkdir -p pkg/cli/frontend/dist && touch pkg/cli/frontend/dist/.gitkeep; fi
+	@if [ -d web-editor-next/out ]; then rm -rf pkg/cli/editor/dist && mkdir -p pkg/cli/editor/dist && cp -r web-editor-next/out/* pkg/cli/editor/dist/; fi
+	@if [ ! -d pkg/cli/editor/dist ]; then mkdir -p pkg/cli/editor/dist && touch pkg/cli/editor/dist/.gitkeep; fi
 	mkdir -p $(BIN_DIR)
 	$(GO) build -ldflags="$(LDFLAGS)" -trimpath -o $(BINARY) $(CMD)
 
 saker-full:
 	mkdir -p $(BIN_DIR)
 	CGO_ENABLED=1 $(GO) build -tags govm -ldflags="$(LDFLAGS)" -trimpath -o $(BINARY) $(CMD)
+
+compress:
+	@if upx -t $(BINARY) >/dev/null 2>&1; then \
+		echo "$(BINARY) is already compressed, skipping"; \
+	else \
+		upx -9 --lzma $(BINARY); \
+	fi
 
 install:
 	$(GO) install -ldflags="$(LDFLAGS)" -trimpath $(CMD)
@@ -146,8 +145,6 @@ server: web-clean web-build web-editor-clean web-editor-build
 	rm -rf pkg/cli/editor/dist
 	mkdir -p pkg/cli/editor/dist
 	cp -r web-editor-next/out/* pkg/cli/editor/dist/
-	@find pkg/cli/editor/dist -maxdepth 2 -name '__next.*.txt' -delete 2>/dev/null || true
-	@touch pkg/cli/editor/dist/.gitkeep
 	mkdir -p $(BIN_DIR)
 	$(GO) build -ldflags="$(LDFLAGS)" -trimpath -o $(BINARY) $(CMD)
 	@echo "Built $(BINARY) with embedded frontend + /editor/ sub-app (use --server to start)"
@@ -169,7 +166,7 @@ web-dev: web-deps
 	pnpm --filter saker-web run dev
 
 web-clean:
-	rm -rf web/.next web/out
+	rm -rf web/out
 
 web-build: web-deps
 	pnpm --filter saker-web run build
@@ -182,7 +179,7 @@ web-editor-dev: web-editor-deps
 	pnpm --filter saker-web-editor run dev
 
 web-editor-clean:
-	rm -rf web-editor-next/.next web-editor-next/out
+	rm -rf web-editor-next/out
 
 web-editor-build: web-editor-deps
 	pnpm --filter saker-web-editor run build

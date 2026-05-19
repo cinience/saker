@@ -1,4 +1,3 @@
-"use client";
 
 import { useBridgeImporter } from "@/bridge/use-bridge-importer";
 import { EditorHeader } from "@/components/editor/editor-header";
@@ -31,7 +30,7 @@ import {
 import { Timeline } from "@/timeline/components";
 import { Cancel01Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { useSearchParams } from "next/navigation";
+import { useSearchParams } from "@/lib/navigation";
 import { Suspense, useMemo, useState } from "react";
 
 export default function EditorPage() {

@@ -1,4 +1,3 @@
-"use client";
 
 import { cn } from "@/utils/ui";
 import { HugeiconsIcon } from "@hugeicons/react";

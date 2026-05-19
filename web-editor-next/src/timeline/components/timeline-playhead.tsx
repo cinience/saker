@@ -1,4 +1,3 @@
-"use client";
 
 import { useEditor } from "@/editor/use-editor";
 import {

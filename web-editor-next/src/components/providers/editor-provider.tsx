@@ -1,4 +1,3 @@
-"use client";
 
 import { useKeybindingsStore } from "@/actions/keybindings-store";
 import { useEditorActions } from "@/actions/use-editor-actions";
@@ -12,7 +11,7 @@ import {
 } from "@/services/renderer/gpu-renderer";
 import { useTimelineStore } from "@/timeline/timeline-store";
 import { Loader2 } from "lucide-react";
-import { useRouter } from "next/navigation";
+import { useRouter } from "@/lib/navigation";
 import { useEffect, useState } from "react";
 
 interface EditorProviderProps {

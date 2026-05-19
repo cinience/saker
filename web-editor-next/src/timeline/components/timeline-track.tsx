@@ -1,4 +1,3 @@
-"use client";
 
 import type { TimelineTrack } from "@/timeline";
 import type { TimelineElement as TimelineElementType } from "@/timeline";

@@ -4,19 +4,21 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/saker-ai/saker/pkg/server/skillimport"
 )
 
 func TestNormalizeSkillImportParamsPath(t *testing.T) {
-	sourceType, paths, err := normalizeSkillImportParams(skillImportParams{
-		SourceType:  skillImportSourcePath,
+	sourceType, paths, err := skillimport.NormalizeParams(skillimport.Params{
+		SourceType:  skillimport.SourcePath,
 		SourcePath:  "/tmp/demo-skill",
-		TargetScope: skillImportScopeLocal,
+		TargetScope: skillimport.ScopeLocal,
 	})
 	if err != nil {
 		t.Fatalf("normalize import params: %v", err)
 	}
-	if sourceType != skillImportSourcePath {
-		t.Fatalf("sourceType=%q want %q", sourceType, skillImportSourcePath)
+	if sourceType != skillimport.SourcePath {
+		t.Fatalf("sourceType=%q want %q", sourceType, skillimport.SourcePath)
 	}
 	if len(paths) != 1 || paths[0] != "/tmp/demo-skill" {
 		t.Fatalf("paths=%v", paths)
@@ -24,11 +26,11 @@ func TestNormalizeSkillImportParamsPath(t *testing.T) {
 }
 
 func TestNormalizeSkillImportParamsRejectsEscapingSourcePaths(t *testing.T) {
-	_, _, err := normalizeSkillImportParams(skillImportParams{
-		SourceType:  skillImportSourceGit,
+	_, _, err := skillimport.NormalizeParams(skillimport.Params{
+		SourceType:  skillimport.SourceGit,
 		RepoURL:     "https://example.com/repo.git",
 		SourcePaths: []string{"../outside"},
-		TargetScope: skillImportScopeLocal,
+		TargetScope: skillimport.ScopeLocal,
 	})
 	if err == nil {
 		t.Fatal("expected validation error")
@@ -46,7 +48,7 @@ func TestValidateImportedSkillReadsFrontmatterName(t *testing.T) {
 		t.Fatalf("write skill: %v", err)
 	}
 
-	name, err := validateImportedSkill(skillDir)
+	name, err := skillimport.ValidateSkill(skillDir)
 	if err != nil {
 		t.Fatalf("validate imported skill: %v", err)
 	}
@@ -62,7 +64,7 @@ func TestPrepareTargetDirConflictStrategies(t *testing.T) {
 		t.Fatalf("mkdir target dir: %v", err)
 	}
 
-	action, err := prepareTargetDir(targetDir, skillImportConflictSkip)
+	action, err := skillimport.PrepareTargetDir(targetDir, skillimport.ConflictSkip)
 	if err != nil {
 		t.Fatalf("skip conflict: %v", err)
 	}
@@ -70,7 +72,7 @@ func TestPrepareTargetDirConflictStrategies(t *testing.T) {
 		t.Fatalf("action=%q want skipped", action)
 	}
 
-	action, err = prepareTargetDir(targetDir, skillImportConflictOverwrite)
+	action, err = skillimport.PrepareTargetDir(targetDir, skillimport.ConflictOverwrite)
 	if err != nil {
 		t.Fatalf("overwrite conflict: %v", err)
 	}
@@ -81,7 +83,7 @@ func TestPrepareTargetDirConflictStrategies(t *testing.T) {
 	if err := os.MkdirAll(targetDir, 0o755); err != nil {
 		t.Fatalf("recreate target dir: %v", err)
 	}
-	if _, err := prepareTargetDir(targetDir, skillImportConflictError); err == nil {
+	if _, err := skillimport.PrepareTargetDir(targetDir, skillimport.ConflictError); err == nil {
 		t.Fatal("expected error conflict strategy to fail")
 	}
 }
@@ -101,7 +103,7 @@ func TestBuildSkillImportPreviewItemsReportsConflicts(t *testing.T) {
 		t.Fatalf("write skill: %v", err)
 	}
 
-	items, err := buildSkillImportPreviewItems(skillImportSourcePath, []string{importDir}, "", targetRoot)
+	items, err := buildSkillImportPreviewItems(skillimport.SourcePath, []string{importDir}, "", targetRoot)
 	if err != nil {
 		t.Fatalf("build preview items: %v", err)
 	}

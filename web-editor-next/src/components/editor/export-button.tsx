@@ -1,4 +1,3 @@
-"use client";
 
 import { clearOriginNodeId, getOriginNodeId } from "@/bridge/origin";
 import {

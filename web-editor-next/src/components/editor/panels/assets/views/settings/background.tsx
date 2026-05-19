@@ -1,4 +1,3 @@
-"use client";
 
 import {
 	BACKGROUND_BLUR_INTENSITY_PRESETS,

@@ -1,4 +1,3 @@
-"use client";
 
 import { invokeAction } from "@/actions";
 import { OcShapesIcon, OcVideoIcon } from "@/components/icons";

@@ -1,4 +1,3 @@
-"use client";
 
 import type { TActionWithOptionalArgs } from "@/actions";
 import { getDefaultShortcuts } from "@/actions";

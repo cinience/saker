@@ -866,7 +866,7 @@ func TestCronHandler_ToggleNilStore(t *testing.T) {
 
 func TestCronHandler_Run(t *testing.T) {
 	t.Parallel()
-	h, _, _ := newCronTestHandler(t)
+	h, _, sched := newCronTestHandler(t)
 
 	// Add a job first.
 	created, _ := h.cronStore.Add(&CronJob{Name: "manual-run", Prompt: "p", Enabled: true})
@@ -881,6 +881,18 @@ func TestCronHandler_Run(t *testing.T) {
 		// The handler may error because scheduler can't actually execute
 		// without a runtime, but the important thing is it didn't crash.
 		t.Logf("handleCronRun error (expected without runtime): %+v", resp.Error)
+	}
+
+	// Wait for the background goroutine to finish so TempDir cleanup succeeds.
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		sched.mu.Lock()
+		running := sched.running[created.ID]
+		sched.mu.Unlock()
+		if !running {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }
 

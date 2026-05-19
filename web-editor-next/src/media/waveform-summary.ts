@@ -1,4 +1,3 @@
-"use client";
 
 import { getSourceTimeAtClipTime } from "@/retime";
 import type { RetimeConfig } from "@/timeline";

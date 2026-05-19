@@ -1,4 +1,3 @@
-"use client";
 
 import type { AppInputField } from "./appsApi";
 import { resolveHttpBaseUrl } from "@/features/rpc/httpRpc";

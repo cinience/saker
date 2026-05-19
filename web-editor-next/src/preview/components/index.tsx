@@ -1,4 +1,3 @@
-"use client";
 
 import { ContextMenu, ContextMenuTrigger } from "@/components/ui/context-menu";
 import { useEditor } from "@/editor/use-editor";
