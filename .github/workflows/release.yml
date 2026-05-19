@@ -36,7 +36,7 @@ jobs:
         run: pnpm --filter saker-web-editor run build
 
       - name: Upload frontend artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: frontend-dist
           path: |
@@ -120,7 +120,7 @@ jobs:
           fi
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: saker-${{ matrix.goos }}-${{ matrix.goarch }}
           path: dist/saker-*.*
