@@ -41,6 +41,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case StreamToolStartMsg:
 		a.chat.FinishStreaming()
+		cmds = append(cmds, a.flushChat())
 		a.chat.AddToolCallWithParams(msg.Name, msg.Params, "pending")
 		a.smartSpinner.SetVerb(toolVerb(msg.Name, msg.Params))
 
@@ -64,6 +65,11 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		for _, p := range msg.ImagePaths {
 			a.chat.AddImage(p)
 		}
+		// Flush completed messages to scrollback before starting the next
+		// streaming buffer. This prevents the live area from growing too
+		// tall and leaking unflushed content into the terminal scrollback,
+		// which would cause duplicate rendering.
+		cmds = append(cmds, a.flushChat())
 		a.chat.StartStreaming()
 		a.smartSpinner.SetVerb("Thinking...")
 

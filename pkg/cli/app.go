@@ -30,7 +30,6 @@ import (
 	versionpkg "github.com/saker-ai/saker/pkg/version"
 	"github.com/godeps/goim"
 	"github.com/google/uuid"
-	"github.com/joho/godotenv"
 )
 
 // RuntimeClient is the interface for the saker runtime.
@@ -314,8 +313,6 @@ Options:
 			*timeoutMs = parsed
 		}
 	}
-
-	_ = godotenv.Overload(filepath.Join(*projectFlag, ".env"))
 
 	provider, resolvedModel := buildModelProvider(*providerName, *modelName, *systemPrompt)
 	selectedBackend := strings.ToLower(strings.TrimSpace(*sandboxBackend))

@@ -87,6 +87,13 @@ cpk-web-inspector {
   margin: 0 auto;
 }
 
+/* ── Fix: CopilotKit v2 cpk:mx-auto not resolving — force centering ── */
+.saker-copilot-chat [class*="cpk:mx-auto"] {
+  margin-left: auto !important;
+  margin-right: auto !important;
+  max-width: 848px;
+}
+
 /* ── Messages: shared base ── */
 .saker-copilot-chat .copilotKitMessage {
   border-radius: 14px;
@@ -317,6 +324,14 @@ cpk-web-inspector {
 @media (max-width: 768px) {
   .saker-copilot-chat--active .copilotKitMessages::before { display: none; }
   .saker-copilot-chat .copilotKitInput { width: calc(100% - 24px); }
+}
+
+/* ── Fix: cpk:prose dark mode color not resolving ── */
+.saker-copilot-chat [class*="cpk:prose"] {
+  color: var(--text, #e2e8f0) !important;
+}
+.saker-copilot-chat .copilotKitUserMessage [class*="cpk:prose"] {
+  color: inherit !important;
 }
 
 /* ── Block Google Fonts & v2 Tailwind font overrides (CSP) ── */
