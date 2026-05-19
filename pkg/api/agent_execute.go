@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -10,11 +11,16 @@ import (
 	"github.com/saker-ai/saker/pkg/config"
 	coreevents "github.com/saker-ai/saker/pkg/core/events"
 	"github.com/saker-ai/saker/pkg/logging"
+	"github.com/saker-ai/saker/pkg/message"
 	"github.com/saker-ai/saker/pkg/metrics"
 	"github.com/saker-ai/saker/pkg/middleware"
 	"github.com/saker-ai/saker/pkg/model"
 	"github.com/saker-ai/saker/pkg/runtime/skills"
 )
+
+const repeatWarningInjection = `You have called the same tool repeatedly.
+If a tool was denied or failed, do NOT retry with slight variations.
+Try a fundamentally different approach or ask for guidance.`
 
 func (rt *Runtime) runAgent(prep preparedRun) (runResult, error) {
 	return rt.runAgentWithMiddleware(prep)
@@ -192,14 +198,19 @@ func (rt *Runtime) runAgentWithMiddleware(prep preparedRun, extras ...middleware
 		maxIters = prep.maxIterationsOverride
 	}
 	ag, err := agent.New(modelAdapter, toolExec, agent.Options{
-		MaxIterations:       maxIters,
-		Timeout:             rt.opts.Timeout,
-		Middleware:          chain,
-		MaxBudgetUSD:        rt.opts.MaxBudgetUSD,
-		MaxTokens:           rt.opts.MaxTokens,
-		ModelName:           budgetModelName,
-		RepeatLoopThreshold: rt.opts.RepeatLoopThreshold,
-		PassthroughTools:    prep.passthroughTools,
+		MaxIterations:         maxIters,
+		Timeout:               rt.opts.Timeout,
+		Middleware:            chain,
+		MaxBudgetUSD:          rt.opts.MaxBudgetUSD,
+		MaxTokens:             rt.opts.MaxTokens,
+		ModelName:             budgetModelName,
+		RepeatLoopThreshold:   rt.opts.RepeatLoopThreshold,
+		SameToolSoftThreshold: agent.DefaultSameToolSoftThreshold,
+		SameToolHardThreshold: agent.DefaultSameToolHardThreshold,
+		OnRepeatWarning: func(_ context.Context, _ agent.ToolCall, _ int) {
+			prep.history.Append(message.Message{Role: "system", Content: repeatWarningInjection})
+		},
+		PassthroughTools: prep.passthroughTools,
 	})
 	if err != nil {
 		return runResult{}, err

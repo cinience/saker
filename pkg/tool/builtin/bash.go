@@ -16,10 +16,13 @@ import (
 )
 
 const (
-	defaultBashTimeout = 10 * time.Minute
-	maxBashTimeout     = 60 * time.Minute
-	maxBashOutputLen   = 30000
-	bashDescript       = `
+	defaultBashTimeout      = 10 * time.Minute
+	maxBashTimeout          = 60 * time.Minute
+	BashMaxOutputDefault    = 30_000
+	BashMaxOutputUpperLimit = 150_000
+	MaxTaskOutputBytes      = 5 << 30
+	maxBashOutputLen        = BashMaxOutputDefault
+	bashDescript            = `
 	# Bash Tool Documentation
 
 	Executes bash commands in a persistent shell session with optional timeout, ensuring proper handling and security measures.
@@ -246,14 +249,24 @@ func (b *BashTool) SetOutputThresholdBytes(threshold int) {
 	if b == nil {
 		return
 	}
-	b.outputThresholdBytes = threshold
+	b.outputThresholdBytes = clampBashOutputThreshold(threshold)
 }
 
 func (b *BashTool) effectiveOutputThresholdBytes() int {
 	if b == nil || b.outputThresholdBytes <= 0 {
 		return maxBashOutputLen
 	}
-	return b.outputThresholdBytes
+	return clampBashOutputThreshold(b.outputThresholdBytes)
+}
+
+func clampBashOutputThreshold(threshold int) int {
+	if threshold <= 0 {
+		return maxBashOutputLen
+	}
+	if threshold > BashMaxOutputUpperLimit {
+		return BashMaxOutputUpperLimit
+	}
+	return threshold
 }
 
 // SetCommandLimits overrides the maximum command length (bytes) and argument count
@@ -360,18 +373,21 @@ func (b *BashTool) Execute(ctx context.Context, params map[string]interface{}) (
 		return &tool.ToolResult{Success: res.ExitCode == 0, Output: output, Data: data}, nil
 	}
 
-	execCtx := ctx
+	var execCtx context.Context
 	var cancel context.CancelFunc
 	if timeout > 0 {
 		execCtx, cancel = context.WithTimeout(ctx, timeout)
-		defer cancel()
+	} else {
+		execCtx, cancel = context.WithCancel(ctx)
 	}
+	defer cancel()
 
 	cmd := exec.CommandContext(execCtx, "bash", "-c", command)
 	cmd.Env = os.Environ()
 	cmd.Dir = workdir
 
 	spool := newBashOutputSpool(ctx, b.effectiveOutputThresholdBytes())
+	spool.SetLimitExceededHook(cancel)
 	cmd.Stdout = spool.StdoutWriter()
 	cmd.Stderr = spool.StderrWriter()
 

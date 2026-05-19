@@ -47,9 +47,9 @@ const (
 // them in saker.
 //
 // Returns primary unchanged when:
-// - failover is disabled or unconfigured
-// - the primary isn't a bifrostModel (e.g. unit-test stubs); saker no longer
-//   has its own failover wrapper, so a non-Bifrost primary just runs alone.
+//   - failover is disabled or unconfigured
+//   - the primary isn't a bifrostModel (e.g. unit-test stubs); saker no longer
+//     has its own failover wrapper, so a non-Bifrost primary just runs alone.
 func (rt *Runtime) wrapWithFailover(primary model.Model) model.Model {
 	rt.mu.RLock()
 	cfg := rt.settings.Failover
@@ -187,7 +187,7 @@ type conversationModel struct {
 	tracer Tracer
 }
 
-func (m *conversationModel) Generate(ctx context.Context, _ *agent.Context) (*agent.ModelOutput, error) {
+func (m *conversationModel) Generate(ctx context.Context, agentCtx *agent.Context) (*agent.ModelOutput, error) {
 	if m.base == nil {
 		return nil, errors.New("model is nil")
 	}
@@ -219,6 +219,7 @@ func (m *conversationModel) Generate(ctx context.Context, _ *agent.Context) (*ag
 		snapshot = m.trimmer.Trim(snapshot)
 	}
 	systemPrompt := m.systemPrompt
+	budgetStatus := budgetStatusFromAgentContext(agentCtx)
 	rulesAppendix := ""
 	if m.rulesLoader != nil {
 		if rules := m.rulesLoader.GetContent(); rules != "" {
@@ -248,6 +249,9 @@ func (m *conversationModel) Generate(ctx context.Context, _ *agent.Context) (*ag
 		if rulesAppendix != "" {
 			blocks[len(blocks)-1] += rulesAppendix
 		}
+		if budgetStatus != "" {
+			blocks[len(blocks)-1] += "\n\n" + budgetStatus
+		}
 		req.SystemBlocks = blocks
 	} else {
 		if m.detectedLanguage != "" && m.detectedLanguage != "English" {
@@ -256,6 +260,9 @@ func (m *conversationModel) Generate(ctx context.Context, _ *agent.Context) (*ag
 				sectionLanguage(m.detectedLanguage), 1)
 		}
 		req.System = systemPrompt + rulesAppendix
+		if budgetStatus != "" {
+			req.System += "\n\n" + budgetStatus
+		}
 	}
 	if m.outputMode != OutputSchemaModePostProcess {
 		req.ResponseFormat = cloneResponseFormat(m.outputSchema)
@@ -430,6 +437,16 @@ func (m *conversationModel) Generate(ctx context.Context, _ *agent.Context) (*ag
 		}
 	}
 	return out, nil
+}
+
+func budgetStatusFromAgentContext(c *agent.Context) string {
+	if c == nil || len(c.Values) == 0 {
+		return ""
+	}
+	if s, ok := c.Values["agent.budget_status"].(string); ok {
+		return strings.TrimSpace(s)
+	}
+	return ""
 }
 
 func (rt *Runtime) applyOutputSchema(

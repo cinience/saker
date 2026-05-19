@@ -127,7 +127,7 @@ func (m *AsyncTaskManager) startWithContext(ctx context.Context, id, command, wo
 		dir := filepath.Join(bashOutputBaseDir(), sanitizePathComponent(sessionID))
 		outputPath := filepath.Join(dir, bashOutputFilename())
 		return openBashOutputFile(outputPath)
-	})
+	}).SetMaxBytes(MaxTaskOutputBytes)
 	m.tasks[trimmedID] = task
 	m.mu.Unlock()
 
@@ -138,6 +138,7 @@ func (m *AsyncTaskManager) startWithContext(ctx context.Context, id, command, wo
 	} else {
 		execCtx, cancel = context.WithCancel(ctx)
 	}
+	task.output.SetLimitExceededHook(cancel)
 
 	task.mu.Lock()
 	task.cancel = cancel

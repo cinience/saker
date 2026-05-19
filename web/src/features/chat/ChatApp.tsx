@@ -31,7 +31,8 @@ import type {
 } from "@/features/rpc/types";
 import { LoginPage } from "@/features/auth/LoginPage";
 import { IconNav, type NavView } from "./IconNav";
-import { Composer, type Attachment } from "./Composer";
+import { Composer } from "./Composer";
+import { type Attachment } from "./useFileUpload";
 import { SkillsPage } from "@/features/skills";
 import { SettingsPanel } from "./SettingsPanel";
 import { useCanvasBridge } from "@/features/canvas/useCanvasBridge";
@@ -57,35 +58,48 @@ interface ChatAppProps {
   onOidcLogin?: () => void;
 }
 
+import { useChatStore } from "./useChatStore";
+
 export function ChatApp({ authRequired, authenticated, onLogin, onLogout, authProviders, onOidcLogin }: ChatAppProps) {
   const { t } = useT();
   const rpcRef = useRef<RPCClient | null>(null);
   const switchThreadRef = useRef<((id: string) => Promise<void>) | null>(null);
-  // Three states replace the old `connected`:
-  //   bootstrapped         — HTTP boot finished, main UI can render
-  //   wsConnected          — WebSocket is currently OPEN (used to disable
-  //                          composer / show banner when a streaming session
-  //                          loses its connection mid-turn)
-  //   wsHasBeenConnectedRef — WS has opened at least once this session;
-  //                          banner stays hidden until the user has actually
-  //                          relied on streaming (avoids alarming idle users)
-  const [bootstrapped, setBootstrapped] = useState(false);
-  const [wsConnected, setWsConnected] = useState(false);
-  const wsHasBeenConnectedRef = useRef(false);
+  
+  const bootstrapped = useChatStore((s) => s.bootstrapped);
+  const setBootstrapped = useChatStore((s) => s.setBootstrapped);
+  const wsConnected = useChatStore((s) => s.wsConnected);
+  const setWsConnected = useChatStore((s) => s.setWsConnected);
+  const wsHasBeenConnected = useChatStore((s) => s.wsHasBeenConnected);
+  const setWsHasBeenConnected = useChatStore((s) => s.setWsHasBeenConnected);
+
   // Derived "looks fine" gate — true at idle (never connected) and while
   // currently connected. Mirrors the old `connected || !hasConnectedRef.current`
   // pattern that several child components rely on.
-  const wsHealthy = wsConnected || !wsHasBeenConnectedRef.current;
-  const [showLogin, setShowLogin] = useState(false);
-  const [threads, setThreads] = useState<Thread[]>([]);
-  const [activeThreadId, setActiveThreadId] = useState("");
-  const [messages, setMessages] = useState<ThreadItem[]>([]);
-  const [streamText, setStreamText] = useState("");
-  const [turnStatus, setTurnStatus] = useState<TurnStatus>("idle");
-  const [activeTurnId, setActiveTurnId] = useState("");
-  const [approvals, setApprovals] = useState<ApprovalRequest[]>([]);
-  const [questions, setQuestions] = useState<QuestionRequest[]>([]);
-  const [toolEvents, setToolEvents] = useState<StreamEvent[]>([]);
+  const wsHealthy = wsConnected || !wsHasBeenConnected;
+  const showLogin = useChatStore((s) => s.showLogin);
+  const setShowLogin = useChatStore((s) => s.setShowLogin);
+  
+  const threads = useChatStore((s) => s.threads);
+  const setThreads = useChatStore((s) => s.setThreads);
+  const activeThreadId = useChatStore((s) => s.activeThreadId);
+  const setActiveThreadId = useChatStore((s) => s.setActiveThreadId);
+  const messages = useChatStore((s) => s.messages);
+  const setMessages = useChatStore((s) => s.setMessages);
+  const streamText = useChatStore((s) => s.streamText);
+  const setStreamText = useChatStore((s) => s.setStreamText);
+  const turnStatus = useChatStore((s) => s.turnStatus);
+  const setTurnStatus = useChatStore((s) => s.setTurnStatus);
+  
+  const activeTurnId = useChatStore((s) => s.activeTurnId);
+  const setActiveTurnId = useChatStore((s) => s.setActiveTurnId);
+  
+  const approvals = useChatStore((s) => s.approvals);
+  const setApprovals = useChatStore((s) => s.setApprovals);
+  const questions = useChatStore((s) => s.questions);
+  const setQuestions = useChatStore((s) => s.setQuestions);
+  const toolEvents = useChatStore((s) => s.toolEvents);
+  const setToolEvents = useChatStore((s) => s.setToolEvents);
+  
   const lastPromptRef = useRef("");
   const manuscriptCommandsRef = useRef(new Map<string, {
     nodeId: string;
@@ -96,11 +110,13 @@ export function ChatApp({ authRequired, authenticated, onLogin, onLogout, authPr
   }>());
 
   const isMobile = useIsMobile();
-  const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
+  const mobileDrawerOpen = useChatStore((s) => s.mobileDrawerOpen);
+  const setMobileDrawerOpen = useChatStore((s) => s.setMobileDrawerOpen);
 
   // Navigation & panel state — synced with URL hash.
   // Initialize with default to avoid SSR/client hydration mismatch (#418).
-  const [activeView, setActiveViewRaw] = useState<NavView>("chats");
+  const activeView = useChatStore((s) => s.activeView);
+  const setActiveViewRaw = useChatStore((s) => s.setActiveView);
   const [hydrated, setHydrated] = useState(false);
 
   const setActiveView = useCallback((view: NavView, threadId?: string) => {
@@ -113,7 +129,7 @@ export function ChatApp({ authRequired, authenticated, onLogin, onLogout, authPr
     } else {
       window.location.hash = view;
     }
-  }, []);
+  }, [setActiveViewRaw]);
 
   // Sync view from URL hash after hydration (avoids SSR mismatch).
   useEffect(() => {
@@ -123,7 +139,7 @@ export function ChatApp({ authRequired, authenticated, onLogin, onLogout, authPr
     if (threadId) {
       switchThreadRef.current?.(threadId);
     }
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [setActiveViewRaw]);
 
   // Respond to browser back/forward — restore view and thread
   useEffect(() => {
@@ -136,14 +152,24 @@ export function ChatApp({ authRequired, authenticated, onLogin, onLogout, authPr
     };
     window.addEventListener("hashchange", onHashChange);
     return () => window.removeEventListener("hashchange", onHashChange);
-  }, []);
-  const [skills, setSkills] = useState<SkillInfo[]>([]);
-  const [settings, setSettings] = useState<ServerSettings | null>(null);
-  const [registeredTools, setRegisteredTools] = useState<{ name: string; description: string; category: string }[]>([]);
-  const [embedBackends, setEmbedBackends] = useState<{ name: string; env_key: string; available: boolean }[]>([]);
-  const [currentUser, setCurrentUser] = useState<{ username: string; role: string }>({ username: "", role: "admin" });
-  const [panelCollapsed, setPanelCollapsed] = useState(true);
-  const [canvasChatOpen, setCanvasChatOpen] = useState(false);
+  }, [setActiveViewRaw]);
+
+  const skills = useChatStore((s) => s.skills);
+  const setSkills = useChatStore((s) => s.setSkills);
+  const settings = useChatStore((s) => s.settings);
+  const setSettings = useChatStore((s) => s.setSettings);
+  
+  const registeredTools = useChatStore((s) => s.registeredTools);
+  const setRegisteredTools = useChatStore((s) => s.setRegisteredTools);
+  const embedBackends = useChatStore((s) => s.embedBackends);
+  const setEmbedBackends = useChatStore((s) => s.setEmbedBackends);
+  const currentUser = useChatStore((s) => s.currentUser);
+  const setCurrentUser = useChatStore((s) => s.setCurrentUser);
+  
+  const panelCollapsed = useChatStore((s) => s.panelCollapsed);
+  const setPanelCollapsed = useChatStore((s) => s.setPanelCollapsed);
+  const canvasChatOpen = useChatStore((s) => s.canvasChatOpen);
+  const setCanvasChatOpen = useChatStore((s) => s.setCanvasChatOpen);
   const canvasNodes = useCanvasStore((s) => s.nodes);
   const canvasHasNodes = canvasNodes.length > 0;
   const highlightedTurnId = useCanvasStore((s) => s.highlightedTurnId);
@@ -185,7 +211,7 @@ export function ChatApp({ authRequired, authenticated, onLogin, onLogout, authPr
       // First WS open this session — flip the ref so the disconnected banner
       // can fire on subsequent drops. Bootstrap data is already loaded over
       // HTTP; this handler only manages streaming-availability state now.
-      wsHasBeenConnectedRef.current = true;
+      setWsHasBeenConnected(true);
       setWsConnected(true);
     });
 
@@ -975,30 +1001,14 @@ export function ChatApp({ authRequired, authenticated, onLogin, onLogout, authPr
 
       {activeView === "canvas" ? (
         <CanvasLayout
-          sortedThreads={sortedThreads}
-          activeThreadId={activeThreadId}
-          activeThread={activeThread}
           switchThread={switchThread}
           createThread={createThread}
           deleteThread={deleteThread}
-          panelCollapsed={panelCollapsed}
-          wsHealthy={wsHealthy}
-          canvasChatOpen={canvasChatOpen}
-          setCanvasChatOpen={setCanvasChatOpen}
-          canvasHasNodes={canvasHasNodes}
-          messages={messages}
-          streamText={streamText}
-          turnStatus={turnStatus}
-          toolEvents={toolEvents}
-          highlightedTurnId={highlightedTurnId}
-          approvals={approvals}
-          questions={questions}
           onApproval={handleApproval}
           onQuestionRespond={handleQuestionRespond}
           sendMessage={sendMessage}
           sendWithAutoCreate={sendWithAutoCreate}
           cancelTurn={cancelTurn}
-          skills={skills}
         />
       ) : activeView === "apps" ? (
         <AppsView />
@@ -1060,11 +1070,6 @@ export function ChatApp({ authRequired, authenticated, onLogin, onLogout, authPr
           <div className="page-container page-container-settings">
             <h1 className="page-title">{t("nav.settings")}</h1>
             <SettingsPanel
-              settings={settings}
-              connected={wsHealthy}
-              registeredTools={registeredTools}
-              embedBackends={embedBackends}
-              isAdmin={currentUser.role === "admin"}
               onUpdateAigo={updateAigoSettings}
               onUpdateFailover={updateFailoverSettings}
               onUpdateSandbox={updateSandboxSettings}
@@ -1079,19 +1084,10 @@ export function ChatApp({ authRequired, authenticated, onLogin, onLogout, authPr
         </div>
       ) : (
         <ChatMainView
-          isMobile={isMobile}
-          mobileDrawerOpen={mobileDrawerOpen}
-          setMobileDrawerOpen={setMobileDrawerOpen}
-          sortedThreads={sortedThreads}
-          activeThreadId={activeThreadId}
           switchThread={switchThread}
           createThread={createThread}
           deleteThread={deleteThread}
-          panelCollapsed={panelCollapsed}
-          wsHealthy={wsHealthy}
-          turnStatus={turnStatus}
           onAutoCreateThread={handleAutoCreateThread}
-          skills={skills}
         />
       )}
       {showLogin && onLogin && (

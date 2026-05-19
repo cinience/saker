@@ -205,6 +205,7 @@ func (a *App) runServerMode(stdout, stderr io.Writer, opts api.Options, addr, da
 
 	var gw *openaigw.Gateway
 	var agw *aguigw.Gateway
+	var srv *server.Server
 	srvOpts.EngineHook = func(engine *gin.Engine) error {
 		if gwFlags.Enabled {
 			deps := openaigw.Deps{
@@ -228,6 +229,7 @@ func (a *App) runServerMode(stdout, stderr io.Writer, opts api.Options, addr, da
 			Logger:            logger,
 			Options:           aguigw.Options{Enabled: true, DevBypassAuth: gwFlags.DevBypassAuth},
 			SessionValidator:  sessionValidator,
+			MediaCacher:       srv.Handler(),
 		}
 		g, err := aguigw.RegisterAGUIGateway(engine, aguiDeps)
 		if err != nil {
@@ -275,7 +277,7 @@ func (a *App) runServerMode(stdout, stderr io.Writer, opts api.Options, addr, da
 		}
 	}
 
-	srv, err := server.New(apiRuntime, srvOpts)
+	srv, err = server.New(apiRuntime, srvOpts)
 	if err != nil {
 		return fmt.Errorf("create server: %w", err)
 	}

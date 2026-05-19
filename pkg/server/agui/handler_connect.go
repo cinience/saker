@@ -81,6 +81,16 @@ func (g *Gateway) handleConnect(c *gin.Context, body []byte) {
 		g.deps.Logger.Warn("agui connect: failed to write snapshot", "thread_id", threadID, "run_id", runID, "error", err)
 		return
 	}
+	// Emit state snapshot establishing the artifacts schema for CopilotKit's
+	// useCoAgent. On reconnect, artifacts from previous runs are not available
+	// from the conversation store (which doesn't persist artifact metadata).
+	// The frontend accumulates StateDeltaEvents during streaming sessions.
+	if err := writeSSE(c.Request.Context(), w, sseW, aguievents.NewStateSnapshotEvent(
+		map[string]any{"artifacts": []any{}},
+	)); err != nil {
+		g.deps.Logger.Warn("agui connect: failed to write state snapshot", "thread_id", threadID, "run_id", runID, "error", err)
+		return
+	}
 	if err := writeSSE(c.Request.Context(), w, sseW, aguievents.NewRunFinishedEvent(threadID, runID)); err != nil {
 		g.deps.Logger.Warn("agui connect: failed to write run finished", "thread_id", threadID, "run_id", runID, "error", err)
 		return

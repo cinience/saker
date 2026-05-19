@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/saker-ai/saker/pkg/agent"
 	"github.com/saker-ai/saker/pkg/runtime/commands"
 	"github.com/saker-ai/saker/pkg/runtime/skills"
 	"github.com/saker-ai/saker/pkg/runtime/subagents"
@@ -201,10 +202,31 @@ func buildSubagentContext(req Request, def subagents.Definition, matched bool) (
 			subCtx.Model = model
 		}
 	}
-	if subCtx.SessionID == "" && len(subCtx.Metadata) == 0 && len(subCtx.ToolWhitelist) == 0 && strings.TrimSpace(subCtx.Model) == "" {
+	if !matched && subCtx.SessionID == "" && len(subCtx.Metadata) == 0 && len(subCtx.ToolWhitelist) == 0 && strings.TrimSpace(subCtx.Model) == "" {
 		return subagents.Context{}, false
 	}
+	subCtx.ToolDenylist = mergeToolLists(subCtx.ToolDenylist, defaultSubagentToolDenylist())
 	return subCtx, true
+}
+
+func defaultSubagentToolDenylist() []string {
+	out := make([]string, 0, len(agent.DefaultSubagentDisallowedTools))
+	for name, blocked := range agent.DefaultSubagentDisallowedTools {
+		if blocked {
+			out = append(out, name)
+		}
+	}
+	return normalizeStrings(out)
+}
+
+func mergeToolLists(a, b []string) []string {
+	if len(a) == 0 {
+		return normalizeStrings(b)
+	}
+	if len(b) == 0 {
+		return normalizeStrings(a)
+	}
+	return normalizeStrings(append(append([]string(nil), a...), b...))
 }
 
 func metadataString(meta map[string]any, key string) string {

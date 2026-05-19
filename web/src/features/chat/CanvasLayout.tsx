@@ -1,81 +1,73 @@
 "use client";
 
+import { useMemo } from "react";
 import { X, MessageCircle } from "lucide-react";
-import type { Thread, ThreadItem, ApprovalRequest, QuestionRequest, StreamEvent, SkillInfo } from "@/features/rpc/types";
 import { CanvasView } from "@/features/canvas/CanvasView";
 import { ThreadPanel } from "./ThreadPanel";
 import { StatusBar } from "./StatusBar";
-import { Composer, type Attachment } from "./Composer";
+import { Composer } from "./Composer";
+import { type Attachment } from "./useFileUpload";
 import { ChatStream } from "./ChatStream";
 import { StarterState } from "./StarterState";
 import { useT } from "@/features/i18n";
-import type { TurnStatus } from "./chatUtils";
+import { useChatStore } from "./useChatStore";
+import { useCanvasStore } from "@/features/canvas/store";
 
 export interface CanvasLayoutProps {
-  sortedThreads: Thread[];
-  activeThreadId: string;
-  activeThread: Thread | undefined;
   switchThread: (id: string) => Promise<void>;
   createThread: () => Promise<void>;
   deleteThread: (id: string) => void;
-  panelCollapsed: boolean;
-  wsHealthy: boolean;
-  canvasChatOpen: boolean;
-  setCanvasChatOpen: (open: boolean) => void;
-  canvasHasNodes: boolean;
-  messages: ThreadItem[];
-  streamText: string;
-  turnStatus: TurnStatus;
-  toolEvents: StreamEvent[];
-  highlightedTurnId: string | null;
-  approvals: ApprovalRequest[];
-  questions: QuestionRequest[];
   onApproval: (id: string, decision: "allow" | "deny") => void;
   onQuestionRespond: (id: string, answers: Record<string, string>) => void;
   sendMessage: (text: string, attachments?: Attachment[]) => void;
   sendWithAutoCreate: (text: string, attachments?: Attachment[]) => void;
   cancelTurn: () => void;
-  skills: SkillInfo[];
 }
 
 export function CanvasLayout({
-  sortedThreads,
-  activeThreadId,
-  activeThread,
   switchThread,
   createThread,
   deleteThread,
-  panelCollapsed,
-  wsHealthy,
-  canvasChatOpen,
-  setCanvasChatOpen,
-  canvasHasNodes,
-  messages,
-  streamText,
-  turnStatus,
-  toolEvents,
-  highlightedTurnId,
-  approvals,
-  questions,
   onApproval,
   onQuestionRespond,
   sendMessage,
   sendWithAutoCreate,
   cancelTurn,
-  skills,
 }: CanvasLayoutProps) {
   const { t } = useT();
+
+  const threads = useChatStore((s) => s.threads);
+  const activeThreadId = useChatStore((s) => s.activeThreadId);
+  const panelCollapsed = useChatStore((s) => s.panelCollapsed);
+  const wsConnected = useChatStore((s) => s.wsConnected);
+  const wsHasBeenConnected = useChatStore((s) => s.wsHasBeenConnected);
+  const canvasChatOpen = useChatStore((s) => s.canvasChatOpen);
+  const setCanvasChatOpen = useChatStore((s) => s.setCanvasChatOpen);
+  const messages = useChatStore((s) => s.messages);
+  const streamText = useChatStore((s) => s.streamText);
+  const turnStatus = useChatStore((s) => s.turnStatus);
+  const toolEvents = useChatStore((s) => s.toolEvents);
+  const approvals = useChatStore((s) => s.approvals);
+  const questions = useChatStore((s) => s.questions);
+  const skills = useChatStore((s) => s.skills);
+
+  const wsHealthy = wsConnected || !wsHasBeenConnected;
+
+  const canvasNodes = useCanvasStore((s) => s.nodes);
+  const canvasHasNodes = canvasNodes.length > 0;
+  const highlightedTurnId = useCanvasStore((s) => s.highlightedTurnId);
+
+  const activeThread = useMemo(
+    () => threads.find((t) => t.id === activeThreadId),
+    [threads, activeThreadId]
+  );
 
   return (
     <>
       <ThreadPanel
-        threads={sortedThreads}
-        activeThreadId={activeThreadId}
         onSelectThread={switchThread}
         onCreateThread={createThread}
         onDeleteThread={deleteThread}
-        collapsed={panelCollapsed}
-        connected={wsHealthy}
       />
       <div className={`canvas-layout${panelCollapsed ? "" : " panel-expanded"}`}>
         {/* Canvas area — shrinks when drawer opens */}

@@ -190,6 +190,18 @@ func (g *Gateway) streamSSE(c *gin.Context, ctx context.Context, eventCh <-chan 
 		)
 		return
 	}
+	// Establish the shared state schema so CopilotKit's useCoAgent
+	// knows that state.artifacts is an array before StateDeltaEvents arrive.
+	if err := writeSSE(ctx, w, sseW, aguievents.NewStateSnapshotEvent(
+		map[string]any{"artifacts": []any{}},
+	)); err != nil {
+		g.deps.Logger.Warn("agui sse initial state snapshot failed",
+			"thread_id", threadID,
+			"run_id", runID,
+			"error", err,
+		)
+		return
+	}
 	flusher.Flush()
 
 	keepalive := time.NewTicker(keepaliveInterval)
@@ -235,7 +247,8 @@ func (g *Gateway) streamSSE(c *gin.Context, ctx context.Context, eventCh <-chan 
 			if evt.Type == api.EventContentBlockDelta && evt.Delta != nil && evt.Delta.Text != "" {
 				accumulated.WriteString(evt.Delta.Text)
 			}
-			if err := state.translateEvent(ctx, w, sseW, evt, filter); err != nil {
+			newArtifacts, err := state.translateEvent(ctx, w, sseW, evt, filter)
+			if err != nil {
 				g.deps.Logger.Warn("agui sse translate/write failed",
 					"thread_id", threadID,
 					"run_id", runID,
@@ -244,6 +257,35 @@ func (g *Gateway) streamSSE(c *gin.Context, ctx context.Context, eventCh <-chan 
 					"error", err,
 				)
 				return
+			}
+			if len(newArtifacts) > 0 {
+				cacher := g.deps.MediaCacher
+				for _, a := range newArtifacts {
+					cached := a
+					if cacher != nil && (strings.HasPrefix(a.URL, "http://") || strings.HasPrefix(a.URL, "https://")) {
+						cached = cacher.CacheArtifactMedia(ctx, a)
+					}
+					delta := []aguievents.JSONPatchOperation{
+						{
+							Op:   "add",
+							Path: "/artifacts/-",
+							Value: map[string]string{
+								"type": cached.Type,
+								"url":  cached.URL,
+								"name": cached.Name,
+							},
+						},
+					}
+					if err := writeSSE(ctx, w, sseW, aguievents.NewStateDeltaEvent(delta)); err != nil {
+						g.deps.Logger.Warn("agui sse state delta write failed",
+							"thread_id", threadID,
+							"run_id", runID,
+							"artifact_url", cached.URL,
+							"error", err,
+						)
+						return
+					}
+				}
 			}
 			flusher.Flush()
 

@@ -10,12 +10,20 @@ import (
 	"github.com/saker-ai/saker/pkg/api"
 	"github.com/saker-ai/saker/pkg/conversation"
 	"github.com/saker-ai/saker/pkg/project"
+	"github.com/saker-ai/saker/pkg/server"
 )
 
 // Runner is the narrow stream-execution interface the gateway needs.
 // *api.Runtime satisfies it directly.
 type Runner interface {
 	RunStream(ctx context.Context, req api.Request) (<-chan api.StreamEvent, error)
+}
+
+// MediaCacher downloads remote media URLs and returns artifacts pointing to
+// locally cached copies. *server.Handler satisfies this interface via its
+// public CacheArtifactMedia method.
+type MediaCacher interface {
+	CacheArtifactMedia(ctx context.Context, a server.Artifact) server.Artifact
 }
 
 // Deps bundles the runtime dependencies for the AG-UI gateway.
@@ -26,6 +34,7 @@ type Deps struct {
 	Logger            *slog.Logger
 	Options           Options
 	SessionValidator  func(c *gin.Context) (username, role string, ok bool)
+	MediaCacher       MediaCacher
 }
 
 // Options holds operator-configurable settings for the AG-UI gateway.

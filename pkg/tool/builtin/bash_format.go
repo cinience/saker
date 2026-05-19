@@ -51,7 +51,7 @@ func newBashOutputSpool(ctx context.Context, threshold int) *bashOutputSpool {
 	}
 	spool.stdout = tool.NewSpoolWriter(threshold, func() (io.WriteCloser, string, error) {
 		return openBashOutputFile(outputPath)
-	})
+	}).SetMaxBytes(MaxTaskOutputBytes)
 	spool.stderr = tool.NewSpoolWriter(threshold, func() (io.WriteCloser, string, error) {
 		if err := ensureBashOutputDir(dir); err != nil {
 			return nil, "", err
@@ -61,13 +61,25 @@ func newBashOutputSpool(ctx context.Context, threshold int) *bashOutputSpool {
 			return nil, "", err
 		}
 		return f, f.Name(), nil
-	})
+	}).SetMaxBytes(MaxTaskOutputBytes)
 	return spool
 }
 
 func (s *bashOutputSpool) StdoutWriter() io.Writer { return s.stdout }
 
 func (s *bashOutputSpool) StderrWriter() io.Writer { return s.stderr }
+
+func (s *bashOutputSpool) SetLimitExceededHook(hook func()) {
+	if s == nil {
+		return
+	}
+	if s.stdout != nil {
+		s.stdout.SetLimitExceededHook(hook)
+	}
+	if s.stderr != nil {
+		s.stderr.SetLimitExceededHook(hook)
+	}
+}
 
 func (s *bashOutputSpool) Append(text string, isStderr bool) error {
 	if isStderr {
@@ -86,7 +98,7 @@ func (s *bashOutputSpool) Finalize() (string, string, error) {
 	stderrCloseErr := s.stderr.Close()
 	closeErr := errors.Join(stdoutCloseErr, stderrCloseErr)
 
-	if s.stdout.Truncated() || s.stderr.Truncated() {
+	if (s.stdout.Truncated() && !s.stdout.MaxBytesExceeded()) || (s.stderr.Truncated() && !s.stderr.MaxBytesExceeded()) {
 		combined := combineOutput(s.stdout.String(), s.stderr.String())
 		return combined, "", closeErr
 	}

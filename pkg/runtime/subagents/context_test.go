@@ -64,3 +64,21 @@ func TestContextAllowsAndToolList(t *testing.T) {
 		t.Fatalf("unexpected tool list: %v", list)
 	}
 }
+
+func TestContextDenylistOverridesWhitelist(t *testing.T) {
+	ctx := Context{
+		ToolWhitelist: []string{"bash", "task"},
+		ToolDenylist:  []string{"task"},
+	}
+	if ctx.Allows("task") {
+		t.Fatalf("denylist should block task even when whitelisted")
+	}
+	if !ctx.Allows("bash") {
+		t.Fatalf("unblocked whitelisted tool should remain allowed")
+	}
+
+	unrestricted := Context{ToolDenylist: []string{"ask_user_question"}}
+	if unrestricted.Allows("ask_user_question") {
+		t.Fatalf("denylist should block tool even with empty whitelist")
+	}
+}

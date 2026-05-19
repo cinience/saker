@@ -28,6 +28,20 @@ const DefaultSubagentMaxIterations = 50
 // (e.g. polling, idempotent re-reads) aren't killed prematurely.
 const DefaultRepeatLoopThreshold = 5
 
+const (
+	DefaultSameToolSoftThreshold = 10
+	DefaultSameToolHardThreshold = 15
+	DefaultToolResultMaxChars    = 30_000
+)
+
+var DefaultSubagentDisallowedTools = map[string]bool{
+	"agent":             true,
+	"task":              true,
+	"enter_plan":        true,
+	"ask_user":          true,
+	"ask_user_question": true,
+}
+
 // RepeatWarningHook is called once per run when the agent observes
 // (RepeatLoopThreshold-1) identical consecutive tool calls — i.e. one short
 // of the abort. Implementers typically use this to inject a self-correction
@@ -52,7 +66,11 @@ type Options struct {
 	// signature when the run hits (RepeatLoopThreshold-1) identical
 	// consecutive calls. Useful for injecting a "try a different approach"
 	// nudge into the conversation before the abort fires.
-	OnRepeatWarning RepeatWarningHook
+	OnRepeatWarning       RepeatWarningHook
+	SameToolSoftThreshold int
+	SameToolHardThreshold int
+	ToolResultMaxChars    int
+	ToolResultOutputDir   string
 	// MaxBudgetUSD aborts Run when the cumulative estimated cost reaches
 	// this value (US dollars). Zero disables the check. Requires ModelName
 	// to be set so EstimateCost can resolve a price. The check fires after
@@ -81,6 +99,15 @@ func (o Options) withDefaults() Options {
 	}
 	if o.RepeatLoopThreshold == 0 {
 		o.RepeatLoopThreshold = DefaultRepeatLoopThreshold
+	}
+	if o.SameToolSoftThreshold == 0 {
+		o.SameToolSoftThreshold = DefaultSameToolSoftThreshold
+	}
+	if o.SameToolHardThreshold == 0 {
+		o.SameToolHardThreshold = DefaultSameToolHardThreshold
+	}
+	if o.ToolResultMaxChars == 0 {
+		o.ToolResultMaxChars = DefaultToolResultMaxChars
 	}
 	return o
 }

@@ -86,6 +86,44 @@ func TestBashOutputSpoolFinalizeWritesFile(t *testing.T) {
 	}
 }
 
+func TestBashOutputSpoolFinalizePreservesCappedFilePath(t *testing.T) {
+	tmp := t.TempDir()
+	outPath := filepath.Join(tmp, "stdout.txt")
+	stdout := tool.NewSpoolWriter(1, func() (io.WriteCloser, string, error) {
+		f, err := os.OpenFile(outPath, os.O_CREATE|os.O_EXCL|os.O_RDWR, 0o600)
+		if err != nil {
+			return nil, "", err
+		}
+		return f, outPath, nil
+	}).SetMaxBytes(3)
+	_, _ = stdout.WriteString("ab")
+	_, _ = stdout.WriteString("cdef")
+
+	spool := &bashOutputSpool{
+		threshold:  1,
+		outputPath: outPath,
+		stdout:     stdout,
+		stderr:     tool.NewSpoolWriter(100, nil),
+	}
+	out, path, err := spool.Finalize()
+	if err == nil || !strings.Contains(err.Error(), "max output bytes") {
+		t.Fatalf("expected max output bytes error, got %v", err)
+	}
+	if path != outPath {
+		t.Fatalf("expected capped output path %q, got %q", outPath, path)
+	}
+	if !strings.Contains(out, "Output saved") {
+		t.Fatalf("expected output reference, got %q", out)
+	}
+	data, readErr := os.ReadFile(outPath)
+	if readErr != nil {
+		t.Fatalf("read capped output: %v", readErr)
+	}
+	if string(data) != "abc" {
+		t.Fatalf("expected capped file output, got %q", string(data))
+	}
+}
+
 func TestBashOutputSpoolFinalizeStderrFileOnly(t *testing.T) {
 	tmp := t.TempDir()
 	outPath := filepath.Join(tmp, "combined.txt")

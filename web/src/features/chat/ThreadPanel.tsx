@@ -3,34 +3,34 @@ import { Plus, Trash2, Check } from "lucide-react";
 import type { Thread } from "@/features/rpc/types";
 import { useT } from "@/features/i18n";
 import { usePermissions } from "@/features/project/usePermissions";
+import { useChatStore } from "./useChatStore";
+import { useIsMobile } from "./chatUtils";
 
 interface Props {
-  threads: Thread[];
-  activeThreadId: string;
   onSelectThread: (id: string) => void;
   onCreateThread: () => void;
   onDeleteThread: (id: string) => void;
-  collapsed: boolean;
-  connected: boolean;
-  mobileDrawer?: boolean;
-  mobileOpen?: boolean;
 }
 
 export function ThreadPanel({
-  threads,
-  activeThreadId,
   onSelectThread,
   onCreateThread,
   onDeleteThread,
-  collapsed,
-  connected,
-  mobileDrawer,
-  mobileOpen,
 }: Props) {
   const { t } = useT();
   const perms = usePermissions();
   const [confirmId, setConfirmId] = useState<string | null>(null);
   const confirmRef = useRef<HTMLDivElement>(null);
+
+  const threads = useChatStore((s) => s.threads);
+  const activeThreadId = useChatStore((s) => s.activeThreadId);
+  const panelCollapsed = useChatStore((s) => s.panelCollapsed);
+  const mobileOpen = useChatStore((s) => s.mobileDrawerOpen);
+  const wsConnected = useChatStore((s) => s.wsConnected);
+  const wsHasBeenConnected = useChatStore((s) => s.wsHasBeenConnected);
+  
+  const connected = wsConnected || !wsHasBeenConnected;
+  const isMobile = useIsMobile();
 
   useEffect(() => {
     if (!confirmId) return;
@@ -58,7 +58,11 @@ export function ThreadPanel({
     const last7DaysStart = new Date(todayStart);
     last7DaysStart.setDate(last7DaysStart.getDate() - 7);
 
-    threads.forEach((th) => {
+    const sorted = [...threads].sort(
+      (a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
+    );
+
+    sorted.forEach((th) => {
       const d = new Date(th.updated_at);
       if (d >= todayStart) today.push(th);
       else if (d >= yesterdayStart) yesterday.push(th);
@@ -74,9 +78,9 @@ export function ThreadPanel({
     return groups;
   }, [threads, t]);
 
-  if (!mobileDrawer && collapsed) return null;
+  if (!isMobile && panelCollapsed) return null;
 
-  const mobileClass = mobileDrawer && !mobileOpen ? " mobile-hidden" : "";
+  const mobileClass = isMobile && !mobileOpen ? " mobile-hidden" : "";
 
   return (
     <div id="thread-panel" className={`thread-panel${mobileClass}`} role="navigation" aria-label={t("nav.chats")}>

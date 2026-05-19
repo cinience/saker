@@ -13,6 +13,11 @@ func TestBashToolOutputThresholdSetters(t *testing.T) {
 		t.Fatalf("expected threshold 123 got %d", got)
 	}
 
+	tool.SetOutputThresholdBytes(BashMaxOutputUpperLimit + 1)
+	if got := tool.effectiveOutputThresholdBytes(); got != BashMaxOutputUpperLimit {
+		t.Fatalf("expected threshold to cap at %d got %d", BashMaxOutputUpperLimit, got)
+	}
+
 	tool.SetOutputThresholdBytes(0)
 	if got := tool.effectiveOutputThresholdBytes(); got != maxBashOutputLen {
 		t.Fatalf("expected default threshold after reset %d got %d", maxBashOutputLen, got)
