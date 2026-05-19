@@ -370,3 +370,38 @@ jobs:
         run: |
           cd packages/saker
           npm publish --access public
+
+  homebrew:
+    needs: publish
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Compute SHA256 for Homebrew
+        id: sha
+        run: |
+          VERSION=${GITHUB_REF_NAME}
+          echo "version=${VERSION#v}" >> "$GITHUB_OUTPUT"
+          echo "sha_darwin_arm64=$(sha256sum artifacts/saker-${VERSION}-darwin-arm64.tar.gz | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+          echo "sha_darwin_amd64=$(sha256sum artifacts/saker-${VERSION}-darwin-amd64.tar.gz | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+          echo "sha_linux_arm64=$(sha256sum artifacts/saker-${VERSION}-linux-arm64.tar.gz | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+          echo "sha_linux_amd64=$(sha256sum artifacts/saker-${VERSION}-linux-amd64.tar.gz | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+
+      - name: Trigger Homebrew tap update
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          repository: saker-ai/homebrew-tap
+          event-type: formula-update
+          client-payload: |
+            {
+              "version": "${{ steps.sha.outputs.version }}",
+              "sha_darwin_arm64": "${{ steps.sha.outputs.sha_darwin_arm64 }}",
+              "sha_darwin_amd64": "${{ steps.sha.outputs.sha_darwin_amd64 }}",
+              "sha_linux_arm64": "${{ steps.sha.outputs.sha_linux_arm64 }}",
+              "sha_linux_amd64": "${{ steps.sha.outputs.sha_linux_amd64 }}"
+            }
