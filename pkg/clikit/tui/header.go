@@ -111,7 +111,6 @@ func (h *Header) View() string {
 
 	borderColor := h.styles.Theme.Primary
 	dimStyle := lipgloss.NewStyle().Foreground(h.styles.Theme.FgDim)
-	boldStyle := lipgloss.NewStyle().Bold(true).Foreground(h.styles.Theme.Fg)
 	primaryStyle := lipgloss.NewStyle().Foreground(borderColor).Bold(true)
 	borderStyle := lipgloss.NewStyle().Foreground(borderColor)
 
@@ -141,16 +140,11 @@ func (h *Header) View() string {
 	// === Left column content ===
 	var leftLines []string
 
-	// Greeting
-	leftLines = append(leftLines, boldStyle.Render("  Welcome back!"))
-	leftLines = append(leftLines, "")
-
 	// Mascot
 	mascotColor := h.styles.LogoColor
 	for _, row := range mascotRows {
 		leftLines = append(leftLines, mascotColor.Render(row))
 	}
-	leftLines = append(leftLines, "")
 
 	// Model + session info
 	if h.modelName != "" {
@@ -185,7 +179,6 @@ func (h *Header) View() string {
 	rightLines = append(rightLines, dimStyle.Render("/ to search in scroll mode"))
 	rightLines = append(rightLines, dimStyle.Render("Ctrl+C to interrupt"))
 	rightLines = append(rightLines, dimStyle.Render("/help for all commands"))
-	rightLines = append(rightLines, "")
 
 	// Keybindings section
 	rightLines = append(rightLines, primaryStyle.Render("Shortcuts"))

@@ -6,8 +6,5 @@ import (
 
 // Init implements tea.Model.
 func (a *App) Init() tea.Cmd {
-	return tea.Batch(
-		tea.Println(a.header.View()),
-		a.input.textarea.Focus(),
-	)
+	return a.input.textarea.Focus()
 }

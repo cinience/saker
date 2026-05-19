@@ -192,14 +192,33 @@ desktop: web-build
 	CGO_ENABLED=1 $(GO) build -tags desktop -ldflags="$(LDFLAGS)" -trimpath -o $(BIN_DIR)/saker-desktop ./cmd/desktop
 
 # Build and run server (frontend + backend + start)
+SERVER_ADDR ?= :17000
+
 run: server
-	@lsof -ti :13000 | xargs -r kill 2>/dev/null && echo "Killed process on port 13000" || true
+	@PORT=$$(echo "$(SERVER_ADDR)" | grep -oE '[0-9]+$$'); \
+	if [ -n "$$PORT" ]; then \
+		PIDS=$$(lsof -ti :$$PORT 2>/dev/null); \
+		if [ -n "$$PIDS" ]; then \
+			echo "Port $$PORT in use (PID: $$(echo $$PIDS | tr '\n' ' ')), killing..."; \
+			echo "$$PIDS" | xargs kill 2>/dev/null || true; \
+			sleep 0.5; \
+			PIDS=$$(lsof -ti :$$PORT 2>/dev/null); \
+			if [ -n "$$PIDS" ]; then \
+				echo "Force killing remaining processes on port $$PORT..."; \
+				echo "$$PIDS" | xargs kill -9 2>/dev/null || true; \
+				sleep 0.3; \
+			fi; \
+			echo "Port $$PORT is now free"; \
+		else \
+			echo "Port $$PORT is available"; \
+		fi; \
+	fi
 	@LOG_DIR="$${SAKER_LOG_DIR:-$$HOME/.saker/server/logs}"; \
 	if [ -d "$$LOG_DIR" ]; then \
 		echo "Cleaning server logs: $$LOG_DIR"; \
 		rm -rf "$$LOG_DIR"/* 2>/dev/null || true; \
 	fi
-	@if [ -f .env ]; then set -a && . ./.env && set +a; fi; $(BINARY) --server
+	@if [ -f .env ]; then set -a && . ./.env && set +a; fi; $(BINARY) --server --server-addr "$(SERVER_ADDR)"
 
 # Eval suites (offline — no API key needed)
 test-eval:

@@ -92,6 +92,11 @@ func (c *Chat) AppendStreamText(text string) {
 	c.streamingBuffer.WriteString(text)
 }
 
+// StreamingLineCount returns the number of newlines in the streaming buffer.
+func (c *Chat) StreamingLineCount() int {
+	return strings.Count(c.streamingBuffer.String(), "\n")
+}
+
 // FinishStreaming finalises the current streaming response as a message.
 // Trivial content (whitespace, lone punctuation) between tool calls is discarded
 // to avoid rendering empty "● ." blocks.
@@ -237,7 +242,7 @@ func (c *Chat) View() string {
 				dot := c.styles.AssistantDot.Render(IconCircle)
 				fmt.Fprintf(&b, "%s %s%s\n", dot, line, suffix)
 			} else {
-				fmt.Fprintf(&b, "    %s%s\n", line, suffix)
+				fmt.Fprintf(&b, " %s%s\n", line, suffix)
 			}
 		}
 	}
@@ -296,20 +301,13 @@ func (c *Chat) renderMessages(b *strings.Builder, from, to int) {
 			c.renderIM(b, msg, cw)
 		}
 
-		// Spacing between message groups: only insert a blank line at a
-		// user-turn boundary (or before/after a side-question header).
-		// Within an assistant turn (assistant ↔ tool transitions), keep
-		// the layout tight — there is no semantic break to visualise.
-		nextRole := MsgRole(-1)
+		// Only add a blank separator line before a new user turn.
 		if i+1 < len(c.messages) {
-			nextRole = c.messages[i+1].Role
+			nextRole := c.messages[i+1].Role
+			if nextRole == RoleUser || nextRole == RoleBtw || nextRole == RoleIM {
+				b.WriteString("\n")
+			}
 		}
-		intraTurn := (msg.Role == RoleTool || msg.Role == RoleAssistant) &&
-			(nextRole == RoleTool || nextRole == RoleAssistant)
-		if intraTurn {
-			continue
-		}
-		b.WriteString("\n")
 	}
 }
 
@@ -368,7 +366,7 @@ func (c *Chat) renderAssistant(b *strings.Builder, msg ChatMsg, width int) {
 			firstWritten = true
 			continue
 		}
-		fmt.Fprintf(b, "    %s\n", displayLine)
+		fmt.Fprintf(b, " %s\n", displayLine)
 	}
 }
 
@@ -378,7 +376,7 @@ func (c *Chat) renderAssistant(b *strings.Builder, msg ChatMsg, width int) {
 //	Complete:  ⎿  ✓ Read (file.go) — 42 lines
 //	Error:     ⎿  ✗ Read (file.go) — error message
 func (c *Chat) renderTool(b *strings.Builder, msg ChatMsg) {
-	prefix := c.styles.ResponsePrefix.Render(responsePrefix)
+	dot := c.styles.AssistantDot.Render(IconCircle)
 
 	// Build: icon + name + (params)
 	parts := []string{
@@ -399,14 +397,15 @@ func (c *Chat) renderTool(b *strings.Builder, msg ChatMsg) {
 		}
 	}
 
-	fmt.Fprintf(b, "%s%s\n", prefix, strings.Join(parts, " "))
+	fmt.Fprintf(b, "%s %s\n", dot, strings.Join(parts, " "))
 
-	// Show detail preview (indented below tool line)
+	// Show detail preview with ⎿ continuation prefix
 	if msg.ToolDetail != "" && msg.ToolStatus != "pending" {
+		prefix := c.styles.ResponsePrefix.Render(responsePrefix)
 		detailLines := strings.Split(msg.ToolDetail, "\n")
 		detailStyle := lipgloss.NewStyle().Foreground(c.styles.Theme.FgDim)
 		for _, line := range detailLines {
-			fmt.Fprintf(b, "        %s\n", detailStyle.Render(line))
+			fmt.Fprintf(b, "%s%s\n", prefix, detailStyle.Render(line))
 		}
 	}
 }

@@ -334,6 +334,71 @@ cpk-web-inspector {
   color: inherit !important;
 }
 
+/* ── Tool Call Progress ── */
+.tool-call-progress {
+  background: var(--bg-tertiary, #2a2a3e);
+  border: 1px solid var(--border, #2a2a3e);
+  border-radius: 10px;
+  padding: 10px 14px;
+  margin: 8px 0;
+  font-size: 13px;
+}
+
+.tool-call-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.tool-call-icon {
+  font-size: 14px;
+  width: 20px;
+  text-align: center;
+}
+
+.tool-call-status--inProgress .tool-call-icon,
+.tool-call-status--executing .tool-call-icon {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.tool-call-name {
+  font-weight: 600;
+  color: var(--text-secondary, #cbd5e1);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.tool-call-status {
+  margin-left: auto;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.tool-call-status--inProgress,
+.tool-call-status--executing {
+  color: var(--accent, #6366f1);
+}
+
+.tool-call-status--complete {
+  color: var(--success, #81c995);
+}
+
+.tool-call-result {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border, #2a2a3e);
+  color: var(--text-muted, #64748b);
+  font-size: 12px;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 /* ── Block Google Fonts & v2 Tailwind font overrides (CSP) ── */
 .saker-copilot-chat *,
 [data-copilotkit] * {

@@ -122,18 +122,21 @@ export function TopBar({ username, role, onLogout, leftSlot }: Props) {
       <div className="topbar-left">
         <span className="topbar-brand" title="Saker">
           <svg viewBox="0 0 128 128" width={22} height={22} aria-hidden="true">
-            <rect x="20" y="8" width="16" height="16" rx="3" fill="currentColor" opacity="0.4"/>
-            <rect x="36" y="4" width="16" height="22" rx="3" fill="currentColor" opacity="0.7"/>
-            <rect x="56" y="0" width="16" height="26" rx="3" fill="currentColor"/>
-            <rect x="76" y="4" width="16" height="22" rx="3" fill="currentColor" opacity="0.7"/>
-            <rect x="92" y="8" width="16" height="16" rx="3" fill="currentColor" opacity="0.4"/>
-            <rect x="10" y="38" width="24" height="24" rx="5" fill="currentColor" opacity="0.8"/>
-            <rect x="16" y="44" width="12" height="12" rx="12" fill="var(--bg)"/>
-            <circle cx="22" cy="50" r="3.5" fill="currentColor"/>
-            <rect x="94" y="38" width="24" height="24" rx="5" fill="currentColor" opacity="0.8"/>
-            <rect x="100" y="44" width="12" height="12" rx="12" fill="var(--bg)"/>
-            <circle cx="106" cy="50" r="3.5" fill="currentColor"/>
-            <rect x="34" y="84" width="54" height="10" rx="3" fill="currentColor" opacity="0.8"/>
+            <rect x="30" y="4" width="68" height="28" rx="5" fill="currentColor"/>
+            <rect x="18" y="16" width="16" height="16" rx="4" fill="currentColor" opacity="0.5"/>
+            <rect x="94" y="16" width="16" height="16" rx="4" fill="currentColor" opacity="0.5"/>
+            <rect x="10" y="38" width="12" height="40" rx="3" fill="currentColor" opacity="0.6"/>
+            <rect x="106" y="38" width="12" height="40" rx="3" fill="currentColor" opacity="0.6"/>
+            <polygon points="38,38 56,56 38,74 20,56" fill="currentColor" opacity="0.85"/>
+            <circle cx="38" cy="56" r="6" fill="var(--bg)"/>
+            <circle cx="38" cy="56" r="2.5" fill="currentColor"/>
+            <polygon points="90,38 108,56 90,74 72,56" fill="currentColor" opacity="0.85"/>
+            <circle cx="90" cy="56" r="6" fill="var(--bg)"/>
+            <circle cx="90" cy="56" r="2.5" fill="currentColor"/>
+            <polygon points="64,42 76,66 52,66" fill="currentColor"/>
+            <rect x="42" y="88" width="44" height="22" rx="5" fill="currentColor"/>
+            <rect x="30" y="88" width="16" height="14" rx="4" fill="currentColor" opacity="0.6"/>
+            <rect x="82" y="88" width="16" height="14" rx="4" fill="currentColor" opacity="0.6"/>
           </svg>
           <span className="topbar-brand-text accent-grad-text">Saker</span>
         </span>

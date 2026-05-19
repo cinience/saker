@@ -1,6 +1,6 @@
 
 import { useEffect, useRef } from "react";
-import { useAgent, UseAgentUpdate, CopilotChat } from "@copilotkit/react-core/v2";
+import { useAgent, UseAgentUpdate, CopilotChat, useDefaultRenderTool } from "@copilotkit/react-core/v2";
 import "@copilotkit/react-core/v2/styles.css";
 import { ThreadPanel } from "./ThreadPanel";
 import { EmptyState } from "./EmptyState";
@@ -44,6 +44,22 @@ function CopilotChatArea({
   const wsHealthy = wsConnected || !wsHasBeenConnected;
 
   useAguiHitlActions();
+  useDefaultRenderTool({
+    render: ({ name, status, result }) => (
+      <div className="tool-call-progress">
+        <div className="tool-call-header">
+          <span className="tool-call-icon">{status === "complete" ? "✓" : "⟳"}</span>
+          <span className="tool-call-name">{name}</span>
+          <span className={`tool-call-status tool-call-status--${status}`}>
+            {status === "inProgress" ? "准备中..." : status === "executing" ? "执行中..." : "完成"}
+          </span>
+        </div>
+        {status === "complete" && result && (
+          <div className="tool-call-result">{result.length > 200 ? result.slice(0, 200) + "..." : result}</div>
+        )}
+      </div>
+    ),
+  });
   const { agent } = useAgent({ updates: [UseAgentUpdate.OnRunStatusChanged] });
   const effectiveTurnStatus: TurnStatus = agent?.isRunning ? "running" : turnStatus;
 

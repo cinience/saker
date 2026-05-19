@@ -18,6 +18,8 @@ type streamState struct {
 	threadID string
 	runID    string
 	msgID    string
+	// textMsgSeq counts text message segments (incremented when text resumes after tool calls).
+	textMsgSeq int
 	// eventSeq is the monotonically increasing SSE event ID counter.
 	eventSeq int
 	// textStarted is true after the first TEXT_MESSAGE_START has been emitted.
@@ -57,6 +59,14 @@ func newStreamState(threadID, runID string) *streamState {
 		suppressedToolCalls: make(map[string]bool),
 		seenArtifactURLs:    make(map[string]bool),
 	}
+}
+
+// currentTextMsgID returns the message ID for the current text segment.
+func (s *streamState) currentTextMsgID() string {
+	if s.textMsgSeq <= 1 {
+		return s.msgID
+	}
+	return fmt.Sprintf("%s_%d", s.msgID, s.textMsgSeq)
 }
 
 // writeEvent emits an AG-UI event with a monotonic SSE id for resumability.
@@ -112,11 +122,12 @@ func (s *streamState) translateEvent(ctx context.Context, w io.Writer, sseW sseW
 		}
 		if !s.textStarted {
 			s.textStarted = true
-			if err := s.writeEvent(ctx, w, sseW, aguievents.NewTextMessageStartEvent(s.msgID, aguievents.WithRole("assistant"))); err != nil {
+			s.textMsgSeq++
+			if err := s.writeEvent(ctx, w, sseW, aguievents.NewTextMessageStartEvent(s.currentTextMsgID(), aguievents.WithRole("assistant"))); err != nil {
 				return nil, err
 			}
 		}
-		return nil, s.writeEvent(ctx, w, sseW, aguievents.NewTextMessageContentEvent(s.msgID, safe))
+		return nil, s.writeEvent(ctx, w, sseW, aguievents.NewTextMessageContentEvent(s.currentTextMsgID(), safe))
 
 	case api.EventToolExecutionStart:
 		if evt.Name == "ask_user_question" {
@@ -124,6 +135,29 @@ func (s *streamState) translateEvent(ctx context.Context, w io.Writer, sseW sseW
 				s.suppressedToolCalls[evt.ToolUseID] = true
 			}
 			return nil, nil
+		}
+		// Close open text message before starting tool call — AG-UI requires
+		// TEXT_MESSAGE to be fully closed before TOOL_CALL events.
+		if s.textStarted {
+			if tail := filter.Flush(); tail != "" {
+				if err := s.writeEvent(ctx, w, sseW, aguievents.NewTextMessageContentEvent(s.currentTextMsgID(), tail)); err != nil {
+					return nil, err
+				}
+			}
+			if err := s.writeEvent(ctx, w, sseW, aguievents.NewTextMessageEndEvent(s.currentTextMsgID())); err != nil {
+				return nil, err
+			}
+			s.textStarted = false
+		} else if s.textMsgSeq == 0 {
+			// No text message started yet — emit an empty text message to create
+			// the assistant message container that tool calls reference via parentMessageId.
+			s.textMsgSeq++
+			if err := s.writeEvent(ctx, w, sseW, aguievents.NewTextMessageStartEvent(s.currentTextMsgID(), aguievents.WithRole("assistant"))); err != nil {
+				return nil, err
+			}
+			if err := s.writeEvent(ctx, w, sseW, aguievents.NewTextMessageEndEvent(s.currentTextMsgID())); err != nil {
+				return nil, err
+			}
 		}
 		if s.lastToolID != "" {
 			if err := s.writeEvent(ctx, w, sseW, aguievents.NewToolCallEndEvent(s.lastToolID)); err != nil {
@@ -308,13 +342,20 @@ func (s *streamState) finalize(ctx context.Context, w io.Writer, sseW sseWriter,
 			}
 		}
 	}
-	if tail := filter.Flush(); tail != "" && s.textStarted {
-		if err := s.writeEvent(ctx, w, sseW, aguievents.NewTextMessageContentEvent(s.msgID, tail)); err != nil {
+	if tail := filter.Flush(); tail != "" {
+		if !s.textStarted {
+			s.textStarted = true
+			s.textMsgSeq++
+			if err := s.writeEvent(ctx, w, sseW, aguievents.NewTextMessageStartEvent(s.currentTextMsgID(), aguievents.WithRole("assistant"))); err != nil {
+				return err
+			}
+		}
+		if err := s.writeEvent(ctx, w, sseW, aguievents.NewTextMessageContentEvent(s.currentTextMsgID(), tail)); err != nil {
 			return err
 		}
 	}
 	if s.textStarted {
-		if err := s.writeEvent(ctx, w, sseW, aguievents.NewTextMessageEndEvent(s.msgID)); err != nil {
+		if err := s.writeEvent(ctx, w, sseW, aguievents.NewTextMessageEndEvent(s.currentTextMsgID())); err != nil {
 			return err
 		}
 	}

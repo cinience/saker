@@ -41,7 +41,7 @@ func (a *App) viewNormal() tea.View {
 	}
 
 	if a.spinning {
-		spinnerView := a.styles.StatusText.Render(" " + a.smartSpinner.View())
+		spinnerView := a.styles.StatusText.Render(a.smartSpinner.View())
 		parts = append(parts, spinnerView)
 	}
 
@@ -92,7 +92,7 @@ func (a *App) viewSidePanel() tea.View {
 		var parts []string
 		parts = append(parts, panelView)
 		if a.spinning {
-			spinnerView := a.styles.StatusText.Render(" " + a.smartSpinner.View())
+			spinnerView := a.styles.StatusText.Render(a.smartSpinner.View())
 			parts = append(parts, spinnerView)
 		}
 		parts = append(parts, inputView, statusView)

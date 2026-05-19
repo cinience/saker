@@ -73,6 +73,8 @@ type App struct {
 	permOutcome      <-chan PermissionPanelOutcome
 	permDeliver      chan<- PermissionPanelOutcome
 
+	headerShown bool
+
 	// program is set by Run() so that cross-thread tool callers can use program.Send().
 	program *tea.Program
 }

@@ -23,6 +23,10 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.width = msg.Width
 		a.height = msg.Height
 		a.layout()
+		if !a.headerShown {
+			a.headerShown = true
+			return a, tea.Println(a.header.View())
+		}
 		return a, nil
 
 	case tea.KeyPressMsg:
@@ -38,6 +42,13 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case StreamTextMsg:
 		a.chat.AppendStreamText(msg.Text)
 		a.smartSpinner.AddTokens(len(msg.Text))
+		// Flush streaming buffer periodically to prevent the live area from
+		// growing taller than the terminal and leaking into scrollback.
+		if a.chat.StreamingLineCount() > 10 {
+			a.chat.FinishStreaming()
+			cmds = append(cmds, a.flushChat())
+			a.chat.StartStreaming()
+		}
 
 	case StreamToolStartMsg:
 		a.chat.FinishStreaming()
@@ -430,6 +441,7 @@ func (a *App) checkContextNotification() {
 
 // layout recalculates component sizes based on window dimensions.
 func (a *App) layout() {
+	a.header.SetWidth(a.width)
 	a.chat.SetWidth(a.width)
 	a.input.SetWidth(a.width)
 	a.status.SetWidth(a.width)
@@ -457,7 +469,7 @@ func (a *App) flushChat() tea.Cmd {
 	if !ok {
 		return nil
 	}
-	return tea.Println(flushed)
+	return tea.Println(strings.TrimRight(flushed, "\n"))
 }
 
 // handleKey processes key events.
