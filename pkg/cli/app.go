@@ -22,6 +22,7 @@ import (
 	"github.com/saker-ai/saker/pkg/logging"
 	"github.com/saker-ai/saker/pkg/profile"
 	"github.com/saker-ai/saker/pkg/project"
+	toolbuiltin "github.com/saker-ai/saker/pkg/tool/builtin"
 	"github.com/saker-ai/saker/pkg/sandbox/gvisorhelper"
 	"github.com/saker-ai/saker/pkg/sandbox/landlockhelper"
 	"github.com/saker-ai/saker/pkg/server"
@@ -240,6 +241,9 @@ Options:
 	if sessionLogMgr != nil {
 		defer sessionLogMgr.CloseAll()
 	}
+
+	// Clean up stale media files on startup.
+	toolbuiltin.CleanupMediaDir(filepath.Join(absProjectRoot, ".saker", "media"))
 
 	if *showVersion || *showVersionShort {
 		fmt.Fprintln(stdout, a.Version)

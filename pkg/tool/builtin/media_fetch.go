@@ -9,14 +9,116 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 )
 
+type mediaDirKey struct{}
+
+type mediaDir struct {
+	abs string // absolute path for writing files
+	rel string // project-relative path for return values
+}
+
+// WithMediaDir injects a media storage directory into the context.
+// absDir is the absolute write path; relDir is the project-relative prefix
+// used in returned paths (e.g. ".saker/media").
+func WithMediaDir(ctx context.Context, absDir, relDir string) context.Context {
+	if absDir == "" {
+		return ctx
+	}
+	return context.WithValue(ctx, mediaDirKey{}, mediaDir{abs: absDir, rel: relDir})
+}
+
+// mediaDirFromContext retrieves the media directory config from context.
+func mediaDirFromContext(ctx context.Context) (absDir, relDir string) {
+	if ctx == nil {
+		return "", ""
+	}
+	md, _ := ctx.Value(mediaDirKey{}).(mediaDir)
+	return md.abs, md.rel
+}
+
 const (
 	mediaFetchTimeout  = 2 * time.Minute
 	mediaFetchMaxBytes = 200 << 20 // 200 MB
+
+	defaultMediaMaxFiles      = 200
+	defaultMediaMaxTotalBytes = 500 << 20 // 500 MB
+	defaultMediaMaxAge        = 7 * 24 * time.Hour
 )
+
+// CleanupMediaDir removes stale files from the media directory.
+// Cleanup order: files older than maxAge, then oldest files when count exceeds
+// maxFiles, then largest-first when total size exceeds maxTotalBytes.
+func CleanupMediaDir(dir string) {
+	cleanupMedia(dir, defaultMediaMaxFiles, defaultMediaMaxTotalBytes, defaultMediaMaxAge)
+}
+
+func cleanupMedia(dir string, maxFiles int, maxTotalBytes int64, maxAge time.Duration) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return
+	}
+
+	type fileEntry struct {
+		path  string
+		size  int64
+		mtime time.Time
+	}
+
+	var files []fileEntry
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		info, err := e.Info()
+		if err != nil {
+			continue
+		}
+		files = append(files, fileEntry{
+			path:  filepath.Join(dir, e.Name()),
+			size:  info.Size(),
+			mtime: info.ModTime(),
+		})
+	}
+
+	// Phase 1: delete files older than maxAge.
+	cutoff := time.Now().Add(-maxAge)
+	var remaining []fileEntry
+	for _, f := range files {
+		if f.mtime.Before(cutoff) {
+			os.Remove(f.path)
+		} else {
+			remaining = append(remaining, f)
+		}
+	}
+	files = remaining
+
+	// Phase 2: delete oldest files when count exceeds maxFiles.
+	if len(files) > maxFiles {
+		sort.Slice(files, func(i, j int) bool { return files[i].mtime.Before(files[j].mtime) })
+		excess := len(files) - maxFiles
+		for i := 0; i < excess; i++ {
+			os.Remove(files[i].path)
+		}
+		files = files[excess:]
+	}
+
+	// Phase 3: delete largest files when total size exceeds maxTotalBytes.
+	var totalSize int64
+	for _, f := range files {
+		totalSize += f.size
+	}
+	if totalSize > maxTotalBytes {
+		sort.Slice(files, func(i, j int) bool { return files[i].size > files[j].size })
+		for i := 0; i < len(files) && totalSize > maxTotalBytes; i++ {
+			totalSize -= files[i].size
+			os.Remove(files[i].path)
+		}
+	}
+}
 
 // resolveMediaPath checks whether path is an HTTP(S) URL. If so it downloads
 // the resource to a content-addressed temp file and returns the local path.
@@ -36,21 +138,33 @@ func ResolveMediaPath(ctx context.Context, path string) (localPath string, err e
 
 	ext := extensionForMediaType(mediaType, trimmed)
 	hash := sha256.Sum256(data)
-	name := hex.EncodeToString(hash[:8]) + ext
+	fileName := "saker-media-" + hex.EncodeToString(hash[:8]) + ext
 
-	tmpDir := os.TempDir()
-	localPath = filepath.Join(tmpDir, "saker-media-"+name)
+	absDir, relDir := mediaDirFromContext(ctx)
+	if absDir == "" {
+		absDir = os.TempDir()
+	}
+	if err := os.MkdirAll(absDir, 0o755); err != nil {
+		return "", fmt.Errorf("create media dir: %w", err)
+	}
+	diskPath := filepath.Join(absDir, fileName)
 
 	// Content-addressed: skip write if file already exists with same hash.
-	if _, err := os.Stat(localPath); err == nil {
-		return localPath, nil
+	if _, err := os.Stat(diskPath); err == nil {
+		if relDir != "" {
+			return filepath.Join(relDir, fileName), nil
+		}
+		return diskPath, nil
 	}
 
-	if err := os.WriteFile(localPath, data, 0o644); err != nil {
+	if err := os.WriteFile(diskPath, data, 0o644); err != nil {
 		return "", fmt.Errorf("write temp media: %w", err)
 	}
 
-	return localPath, nil
+	if relDir != "" {
+		return filepath.Join(relDir, fileName), nil
+	}
+	return diskPath, nil
 }
 
 func fetchMediaURL(ctx context.Context, rawURL string) ([]byte, string, error) {

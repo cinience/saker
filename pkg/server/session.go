@@ -132,8 +132,22 @@ func (s *SessionStore) UpdateThreadTitle(threadID, title string) bool {
 	s.mu.Lock()
 	idx, ok := s.threadIdx[threadID]
 	if !ok {
+		tee := s.tee
+		if tee == nil {
+			s.mu.Unlock()
+			return false
+		}
+		// Thread may have been created externally (e.g. by the AGUI gateway)
+		// directly in the conversation store. Import it into the in-memory
+		// cache so ListThreads/GetThread find it, and delegate to tee so the
+		// persistent store is also updated.
+		now := time.Now()
+		t := Thread{ID: threadID, Title: title, CreatedAt: now, UpdatedAt: now}
+		s.threadIdx[threadID] = len(s.threads)
+		s.threads = append(s.threads, t)
 		s.mu.Unlock()
-		return false
+		tee.recordThreadTitleUpdate(threadID, title)
+		return true
 	}
 	s.threads[idx].Title = title
 	s.threads[idx].UpdatedAt = time.Now()

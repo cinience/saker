@@ -6,27 +6,25 @@ import (
 )
 
 func TestSectionIdentity(t *testing.T) {
-	t.Run("empty model name returns empty", func(t *testing.T) {
-		if got := sectionIdentity(""); got != "" {
-			t.Errorf("sectionIdentity(\"\") = %q, want empty", got)
-		}
-		if got := sectionIdentity("   "); got != "" {
-			t.Errorf("sectionIdentity(whitespace) = %q, want empty", got)
+	t.Run("always returns Saker identity", func(t *testing.T) {
+		s := sectionIdentity("any-model")
+		if !strings.Contains(s, "Saker") {
+			t.Errorf("sectionIdentity should mention Saker, got %q", s)
 		}
 	})
 
-	t.Run("includes the model name verbatim", func(t *testing.T) {
+	t.Run("does not leak model name", func(t *testing.T) {
 		s := sectionIdentity("qwen-plus-2025-04")
-		if !strings.Contains(s, "qwen-plus-2025-04") {
-			t.Errorf("sectionIdentity should embed the model name, got %q", s)
+		if strings.Contains(s, "qwen-plus-2025-04") {
+			t.Errorf("sectionIdentity should not leak the model name, got %q", s)
 		}
 	})
 
-	t.Run("anti-hallucination block lists common imposter targets", func(t *testing.T) {
+	t.Run("blocks common model names", func(t *testing.T) {
 		s := sectionIdentity("deepseek-v3")
-		for _, want := range []string{"Claude", "GPT", "Anthropic", "OpenAI", "DeepSeek", "Qwen", "truthfully"} {
+		for _, want := range []string{"Claude", "GPT", "Anthropic", "OpenAI"} {
 			if !strings.Contains(s, want) {
-				t.Errorf("sectionIdentity should mention %q to defuse identity collapse, got %q", want, s)
+				t.Errorf("sectionIdentity should mention %q in deny list, got %q", want, s)
 			}
 		}
 	})
@@ -62,6 +60,9 @@ func TestSectionDoingTasks(t *testing.T) {
 	}
 	if !strings.Contains(s, "OWASP") {
 		t.Error("sectionDoingTasks should mention security awareness")
+	}
+	if !strings.Contains(s, "Report outcomes faithfully") {
+		t.Error("sectionDoingTasks should mention faithful reporting")
 	}
 }
 
@@ -180,6 +181,17 @@ func TestSectionEnvironment(t *testing.T) {
 	if !strings.Contains(s, "Current date") {
 		t.Error("should contain current date")
 	}
+	if !strings.Contains(s, "Knowledge cutoff") {
+		t.Error("should contain knowledge cutoff for known model")
+	}
+
+	t.Run("unknown model has no cutoff", func(t *testing.T) {
+		env2 := environmentInfo{CWD: "/x", ModelName: "unknown-model"}
+		s2 := sectionEnvironment(env2)
+		if strings.Contains(s2, "Knowledge cutoff") {
+			t.Error("should not include cutoff for unknown model")
+		}
+	})
 }
 
 func TestSectionLanguage(t *testing.T) {
@@ -421,6 +433,40 @@ func TestBuildMCPInstructionsSection(t *testing.T) {
 		}
 		if strings.Contains(s, "## empty") {
 			t.Error("should exclude server with empty instructions")
+		}
+	})
+}
+
+func TestSectionContextManagement(t *testing.T) {
+	s := sectionContextManagement()
+	if !strings.Contains(s, "Write down") {
+		t.Error("should instruct to write down important information")
+	}
+	if !strings.Contains(s, "automatically cleared") {
+		t.Error("should mention automatic clearing")
+	}
+	if !strings.Contains(s, "Context management") {
+		t.Error("should have context management header")
+	}
+	if !strings.Contains(s, "summarized") {
+		t.Error("should mention summarization")
+	}
+}
+
+func TestSectionScratchpad(t *testing.T) {
+	t.Run("empty dir returns empty", func(t *testing.T) {
+		if s := sectionScratchpad(""); s != "" {
+			t.Errorf("expected empty, got %q", s)
+		}
+	})
+
+	t.Run("non-empty dir includes path", func(t *testing.T) {
+		s := sectionScratchpad("/tmp/saker/scratchpad/sess-1")
+		if !strings.Contains(s, "/tmp/saker/scratchpad/sess-1") {
+			t.Error("should contain the scratchpad path")
+		}
+		if !strings.Contains(s, "Scratchpad Directory") {
+			t.Error("should have section header")
 		}
 	})
 }

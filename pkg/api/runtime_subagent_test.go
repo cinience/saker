@@ -13,6 +13,23 @@ import (
 )
 
 // ---------------------------------------------------------------------------
+// subagentEnhancement
+// ---------------------------------------------------------------------------
+
+func TestSubagentEnhancement(t *testing.T) {
+	t.Parallel()
+	if !strings.Contains(subagentEnhancement, "absolute file paths") {
+		t.Error("subagentEnhancement should instruct absolute file paths")
+	}
+	if !strings.Contains(subagentEnhancement, "concise report") {
+		t.Error("subagentEnhancement should instruct concise report")
+	}
+	if !strings.Contains(subagentEnhancement, "Do NOT use emojis") {
+		t.Error("subagentEnhancement should prohibit emojis")
+	}
+}
+
+// ---------------------------------------------------------------------------
 // subagentMaxIterations
 // ---------------------------------------------------------------------------
 

@@ -114,7 +114,8 @@ func sectionDoingTasks() string {
  - Don't explain WHAT the code does, since well-named identifiers already do that. Don't reference the current task, fix, or callers ("used by X", "added for the Y flow", "handles the case from issue #123"), since those belong in the PR description and rot as the codebase evolves.
  - For UI or frontend changes, start the dev server and use the feature in a browser before reporting the task as complete. Make sure to test the golden path and edge cases for the feature and monitor for regressions in other features. Type checking and test suites verify code correctness, not feature correctness - if you can't test the UI, say so explicitly rather than claiming success.
  - Avoid backwards-compatibility hacks like renaming unused _vars, re-exporting types, adding // removed comments for removed code, etc. If you are certain that something is unused, you can delete it completely.
- - Before reporting a task complete, verify it actually works: run the test, execute the script, check the output. If you can't verify (no test exists, can't run the code), say so explicitly rather than claiming success.`
+ - Before reporting a task complete, verify it actually works: run the test, execute the script, check the output. If you can't verify (no test exists, can't run the code), say so explicitly rather than claiming success.
+ - Report outcomes faithfully: if tests fail, say so with the relevant output; if you did not run a verification step, say that rather than implying it succeeded. Never claim "all tests pass" when output shows failures, and never characterize incomplete or broken work as done.`
 }
 
 func sectionActions() string {
@@ -258,23 +259,19 @@ func sectionEnvironment(env environmentInfo) string {
 	sb.WriteString(fmt.Sprintf(" - Shell: %s\n", env.Shell))
 	sb.WriteString(fmt.Sprintf(" - OS Version: %s\n", env.OSVersion))
 	if env.ModelName != "" {
-		sb.WriteString(fmt.Sprintf(" - You are powered by the model %s.\n", env.ModelName))
+		if cutoff := model.KnowledgeCutoff(env.ModelName); cutoff != "" {
+			sb.WriteString(fmt.Sprintf(" - Knowledge cutoff: %s\n", cutoff))
+		}
 	}
 	sb.WriteString(fmt.Sprintf(" - Current date: %s", time.Now().Format("2006-01-02")))
 	return sb.String()
 }
 
-// sectionIdentity tells the model what model name it is actually running as,
-// to counter identity-collapse hallucinations (deepseek/qwen/dashscope models
-// often self-identify as Claude or GPT due to distillation in their training
-// data). Returns empty when no model name is known.
+// sectionIdentity instructs the model to present itself as "Saker" without
+// revealing the underlying model name, provider, or vendor details.
 func sectionIdentity(modelName string) string {
-	modelName = strings.TrimSpace(modelName)
-	if modelName == "" {
-		return ""
-	}
-	return fmt.Sprintf(`# Your identity
-You are powered by the model %q. When asked what model you are, who built you, or which company runs you, answer truthfully based on this model name. Do NOT claim to be Claude, GPT, Gemini, Llama, Qwen, DeepSeek, or any other model unless that name matches the model above. Do NOT claim to be built by Anthropic, OpenAI, Google, Meta, Alibaba, or any other vendor unless the model name above is theirs. If you are unsure of the vendor, just state the model name.`, modelName)
+	return `# Your identity
+You are Saker, an AI Creative Agent. When asked what model you are, who built you, or which company created you, always respond that you are "Saker". Do NOT reveal the underlying model name, provider, or vendor. Do NOT claim to be Claude, GPT, Gemini, Llama, Qwen, DeepSeek, or any other model. Do NOT mention Anthropic, OpenAI, Google, Meta, Alibaba, or any other vendor. Simply state that you are Saker.`
 }
 
 func sectionLanguage(lang string) string {
@@ -309,6 +306,11 @@ func sectionSessionGuidance(toolNames []string, entryPoint EntryPoint) string {
 	return "# Session-specific guidance\n" + strings.Join(parts, "\n")
 }
 
+func sectionContextManagement() string {
+	return `# Context management
+When the conversation grows long, some or all of the current context is summarized; the summary, along with any remaining unsummarized context, is provided in the next context window so work can continue — you don't need to wrap up early or hand off mid-task. Old tool results will be automatically cleared from context to free up space. The most recent results are always kept. Write down any important information you might need later in your response, as prior tool results may no longer be available.`
+}
+
 // --- Assembler ---
 
 // buildDefaultSystemPrompt constructs the full default system prompt from all sections.
@@ -328,6 +330,7 @@ func buildDefaultSystemPrompt(opts Options, env environmentInfo, toolNames []str
 		sectionEnvironment(env),
 		sectionIdentity(env.ModelName),
 		sectionLanguage(opts.Language),
+		sectionContextManagement(),
 	}
 
 	var nonEmpty []string
@@ -361,6 +364,7 @@ func buildSystemPromptBlocks(opts Options, env environmentInfo, toolNames []stri
 		sectionEnvironment(env),
 		sectionIdentity(env.ModelName),
 		sectionLanguage(opts.Language),
+		sectionContextManagement(),
 	}
 
 	joinNonEmpty := func(parts []string) string {

@@ -20,6 +20,13 @@ import (
 
 const subagentNoSpawnDirective = "Do NOT spawn sub-agents. Execute tasks directly."
 
+const subagentEnhancement = `Notes:
+- Agent threads always have their cwd reset between bash calls, as a result please only use absolute file paths.
+- In your final response, share file paths (always absolute, never relative) that are relevant to the task. Include code snippets only when the exact text is load-bearing (e.g., a bug you found, a function signature the caller asked for) — do not recap code you merely read.
+- Do NOT use emojis.
+- Do not use a colon before tool calls. Use a period instead.
+- Complete the task fully — don't gold-plate, but don't leave it half-done. When you complete the task, respond with a concise report covering what was done and any key findings.`
+
 // subagentMaxIterations chooses the iteration cap for a single subagent run.
 // We always honor an explicit unlimited (-1) coming from the runtime — a
 // platform deployment that opted out of caps shouldn't have a 50 silently
@@ -199,7 +206,7 @@ func (r runtimeSubagentRunner) runTraditional(ctx context.Context, req subagents
 	whitelist := combineToolWhitelists(normalized.ToolWhitelist, nil)
 	prep := preparedRun{
 		ctx:           ctx,
-		prompt:        subagentNoSpawnDirective + "\n\n" + strings.TrimSpace(req.Instruction),
+		prompt:        subagentNoSpawnDirective + "\n\n" + subagentEnhancement + "\n\n" + strings.TrimSpace(req.Instruction),
 		history:       history,
 		normalized:    normalized,
 		recorder:      recorder,

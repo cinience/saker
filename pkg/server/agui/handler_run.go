@@ -169,6 +169,9 @@ func (g *Gateway) handleRun(c *gin.Context) {
 	}
 	defer func() {
 		finishRun()
+		// Safety net: normal and cancelled paths call clearThreadRun explicitly
+		// before sending terminal events. This covers early-return error paths
+		// (e.g. write failures) where no terminal event is sent.
 		g.clearThreadRun(threadID, runID)
 	}()
 
@@ -325,10 +328,9 @@ func (g *Gateway) streamSSE(c *gin.Context, ctx context.Context, eventCh <-chan 
 				return
 			}
 			eventCounts[string(evt.Type)]++
-			g.deps.Logger.Info("agui runtime event received",
+			g.deps.Logger.Debug("agui runtime event received",
 				"thread_id", threadID,
 				"run_id", runID,
-				"turn_id", turnID,
 				"event_type", evt.Type,
 				"tool_use_id", evt.ToolUseID,
 				"tool_name", evt.Name,
@@ -404,10 +406,9 @@ func (g *Gateway) streamSSE(c *gin.Context, ctx context.Context, eventCh <-chan 
 					return
 				}
 			}
-			g.deps.Logger.Info("agui side event sent",
+			g.deps.Logger.Debug("agui side event sent",
 				"thread_id", threadID,
 				"run_id", runID,
-				"turn_id", turnID,
 				"event_count", len(se.events),
 				"event_types", sideTypes,
 			)
@@ -420,7 +421,9 @@ func (g *Gateway) streamSSE(c *gin.Context, ctx context.Context, eventCh <-chan 
 			flushSSE()
 
 		case <-ctx.Done():
-			// Emit RUN_ERROR on graceful shutdown so clients know the stream ended abnormally.
+			// Clear thread→run mapping before emitting RUN_ERROR for the same
+			// reason as the normal path: client may reconnect immediately.
+			g.clearThreadRun(threadID, runID)
 			aguiErrorsTotal.WithLabelValues("cancelled").Inc()
 			errCtx := context.Background()
 			_ = writeSSEWithID(errCtx, w, sseW, aguievents.NewRunErrorEvent("stream cancelled",

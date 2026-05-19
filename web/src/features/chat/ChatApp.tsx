@@ -351,11 +351,12 @@ export function ChatApp({ authRequired, authenticated, onLogin, onLogout, authPr
       const list = threadsRes.threads || [];
       setThreads(list);
       const { threadId } = parseHash();
-      if (threadId) {
+      const restoreId = threadId || localStorage.getItem("saker_last_thread") || "";
+      if (restoreId && list.some((t) => t.id === restoreId)) {
         // Chat deep links should not open the WebSocket; CopilotKit loads
         // history via AG-UI HTTP/SSE. Canvas still subscribes when the active
         // hash view is canvas because it needs realtime canvas/tool updates.
-        switchThreadRef.current?.(threadId);
+        switchThreadRef.current?.(restoreId);
       }
 
       setCurrentUser({ username: userRes.username || "", role: userRes.role || "admin" });
@@ -483,6 +484,7 @@ export function ChatApp({ authRequired, authenticated, onLogin, onLogout, authPr
       }
 
       setActiveThreadId(threadId);
+      localStorage.setItem("saker_last_thread", threadId);
       // Sync thread ID into URL hash (preserve current view).
       window.location.hash = `${viewForHash}/${threadId}`;
       if (viewForHash !== currentView) {

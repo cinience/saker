@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"path/filepath"
 	"runtime"
 	"time"
 
@@ -17,6 +18,7 @@ import (
 	"github.com/saker-ai/saker/pkg/sandbox"
 	"github.com/saker-ai/saker/pkg/security"
 	"github.com/saker-ai/saker/pkg/tool"
+	toolbuiltin "github.com/saker-ai/saker/pkg/tool/builtin"
 )
 
 func (t *runtimeToolExecutor) measureUsage() sandbox.ResourceUsage {
@@ -158,6 +160,12 @@ func (t *runtimeToolExecutor) Execute(ctx context.Context, call agent.ToolCall, 
 	}
 	if t.host != "" {
 		callSpec.Host = t.host
+	}
+	if t.root != "" {
+		ctx = toolbuiltin.WithMediaDir(ctx,
+			filepath.Join(t.root, ".saker", "media"),
+			filepath.Join(".saker", "media"),
+		)
 	}
 	exec := t.executor
 	if t.permissionResolver != nil {

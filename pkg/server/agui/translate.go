@@ -49,6 +49,8 @@ type streamState struct {
 	seenArtifactURLs map[string]bool
 	// ring buffers serialized SSE frames for future reconnect replay.
 	ring *eventRing
+	// errorSent is true after a RUN_ERROR event has been emitted.
+	errorSent bool
 }
 
 func newStreamState(threadID, runID string) *streamState {
@@ -309,6 +311,7 @@ func (s *streamState) translateEvent(ctx context.Context, w io.Writer, sseW sseW
 		if code != "" {
 			opts = append(opts, aguievents.WithErrorCode(code))
 		}
+		s.errorSent = true
 		return nil, s.writeEvent(ctx, w, sseW, aguievents.NewRunErrorEvent(msg, opts...))
 
 	case api.EventTimeline:
@@ -326,6 +329,9 @@ func (s *streamState) translateEvent(ctx context.Context, w io.Writer, sseW sseW
 // finalize emits closing events for any open tool calls, text message,
 // steps, and the RUN_FINISHED event with appropriate outcome.
 func (s *streamState) finalize(ctx context.Context, w io.Writer, sseW sseWriter, filter textFilter) error {
+	if s.errorSent {
+		return nil
+	}
 	interrupted := s.lastToolID != "" && len(s.toolCalls) > 0
 	if s.lastToolID != "" {
 		if err := s.writeEvent(ctx, w, sseW, aguievents.NewToolCallEndEvent(s.lastToolID)); err != nil {
