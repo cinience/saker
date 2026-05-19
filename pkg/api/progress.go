@@ -37,7 +37,7 @@ func (p *progressMiddleware) streamEmit() streamEmitFunc {
 }
 
 func (p *progressMiddleware) BeforeAgent(ctx context.Context, _ *middleware.State) error {
-	p.emit(context.Background(), StreamEvent{Type: EventAgentStart})
+	p.emit(ctx, StreamEvent{Type: EventAgentStart})
 	return nil
 }
 

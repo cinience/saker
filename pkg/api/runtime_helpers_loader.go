@@ -138,8 +138,8 @@ func mergeCommandRegistrations(fsRegs []commands.CommandRegistration, manual []C
 	return merged
 }
 
-func buildSkillsRegistry(opts Options) (*skills.Registry, []error) {
-	merged, errs := loadSkillRegistrations(opts)
+func buildSkillsRegistry(ctx context.Context, opts Options) (*skills.Registry, []error) {
+	merged, errs := loadSkillRegistrations(ctx, opts)
 
 	reg := skills.NewRegistry()
 	for _, entry := range merged {
@@ -150,13 +150,13 @@ func buildSkillsRegistry(opts Options) (*skills.Registry, []error) {
 	return reg, errs
 }
 
-func loadSkillRegistrations(opts Options) ([]skills.SkillRegistration, []error) {
+func loadSkillRegistrations(ctx context.Context, opts Options) ([]skills.SkillRegistration, []error) {
 	var errs []error
 
 	// Phase 1: remote skills (lowest priority — overridden by FS and manual).
 	var remoteRegs []skills.SkillRegistration
 	for _, src := range opts.RemoteSkillSources {
-		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
 		client := newRemoteSkillClientAdapter(src)
 		outcome := skills.LoadFromRemote(ctx, client, src)
 		cancel()

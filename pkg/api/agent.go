@@ -168,7 +168,7 @@ func New(ctx context.Context, opts Options) (*Runtime, error) {
 			logging.From(ctx).Warn("command loader warning", "error", err)
 		}
 	}
-	skReg, skErrs := buildSkillsRegistry(opts)
+	skReg, skErrs := buildSkillsRegistry(ctx, opts)
 	if len(skErrs) > 0 {
 		for _, err := range skErrs {
 			logging.From(ctx).Warn("skill loader warning", "error", err)

@@ -83,6 +83,9 @@ func (rt *Runtime) persistToConversation(sessionID string, history *message.Hist
 	tail := snapshot[cursor:]
 
 	logger := slog.Default()
+	// Intentionally use context.Background: this runs from a defer after the
+	// request ctx has been cancelled, so we need an independent timeout to
+	// allow the persistence write to complete during graceful shutdown.
 	ctx, cancel := context.WithTimeout(context.Background(), conversationPersistTimeout)
 	defer cancel()
 

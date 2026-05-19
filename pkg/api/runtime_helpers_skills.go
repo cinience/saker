@@ -356,7 +356,11 @@ func (rt *Runtime) ReloadSkills() []error {
 	if rt == nil || rt.skReg == nil {
 		return []error{fmt.Errorf("skill registry not initialized")}
 	}
-	merged, errs := loadSkillRegistrations(rt.opts)
+	// ReloadSkills is user-triggered with no parent context; use Background
+	// with a generous timeout so the reload doesn't hang indefinitely.
+	reloadCtx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+	merged, errs := loadSkillRegistrations(reloadCtx, rt.opts)
 	if err := rt.skReg.ReplaceAll(merged); err != nil {
 		errs = append(errs, err)
 	}

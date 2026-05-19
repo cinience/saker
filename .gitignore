@@ -141,3 +141,6 @@ packages/
 
 # Stray sqlite memdb test artifacts
 pkg/project/memdb_*
+
+# Accidental data dumps (search results, exports, etc.)
+text_*.json

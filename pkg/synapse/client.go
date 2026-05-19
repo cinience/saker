@@ -5,11 +5,12 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"io"
+	"log/slog"
 	"math/rand"
 	"strings"
 	"time"
 
-	"go.uber.org/zap"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
@@ -45,13 +46,13 @@ type HelloOptions struct {
 type Dialer struct {
 	opts   DialOptions
 	hello  HelloOptions
-	logger *zap.Logger
+	logger *slog.Logger
 	rand   *rand.Rand
 }
 
-func NewDialer(opts DialOptions, hello HelloOptions, logger *zap.Logger) *Dialer {
+func NewDialer(opts DialOptions, hello HelloOptions, logger *slog.Logger) *Dialer {
 	if logger == nil {
-		logger = zap.NewNop()
+		logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 	}
 	if opts.KeepaliveTime <= 0 {
 		opts.KeepaliveTime = 30 * time.Second
@@ -157,9 +158,9 @@ func (d *Dialer) Connect(ctx context.Context) (*Session, error) {
 		return nil, fmt.Errorf("hub rejected hello: %s", ack.GetReason())
 	}
 	d.logger.Info("registered with synapse hub",
-		zap.String("addr", d.opts.Addr),
-		zap.String("instance", d.hello.InstanceID),
-		zap.String("assigned_node", ack.GetAssignedNodeId()),
+		"addr", d.opts.Addr,
+		"instance", d.hello.InstanceID,
+		"assigned_node", ack.GetAssignedNodeId(),
 	)
 	return &Session{conn: cc, stream: stream, ack: ack}, nil
 }
@@ -178,9 +179,9 @@ func (d *Dialer) ConnectWithBackoff(ctx context.Context) (*Session, error) {
 			return nil, ctx.Err()
 		}
 		d.logger.Warn("hub connect failed; will retry",
-			zap.String("addr", d.opts.Addr),
-			zap.Duration("backoff", delay),
-			zap.String("err", trimErr(err)),
+			"addr", d.opts.Addr,
+			"backoff", delay,
+			"err", trimErr(err),
 		)
 		jitter := time.Duration(d.rand.Int63n(int64(delay)))
 		select {

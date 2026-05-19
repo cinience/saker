@@ -6,10 +6,10 @@ package synapse
 import (
 	"context"
 	"crypto/tls"
+	"io"
+	"log/slog"
 	"strings"
 	"time"
-
-	"go.uber.org/zap"
 )
 
 // BridgeConfig holds the configuration for the built-in synapse bridge.
@@ -24,7 +24,7 @@ type BridgeConfig struct {
 	InsecureTLS    bool
 	Heartbeat      time.Duration
 	SakerBaseURL   string // base URL of saker's own HTTP server (default: http://127.0.0.1:<port>)
-	Logger         *zap.Logger
+	Logger         *slog.Logger
 }
 
 // RunBridge starts the synapse hub registration loop. It blocks until ctx
@@ -35,7 +35,7 @@ type BridgeConfig struct {
 func RunBridge(ctx context.Context, cfg BridgeConfig) {
 	logger := cfg.Logger
 	if logger == nil {
-		logger = zap.NewNop()
+		logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 	}
 
 	if cfg.Heartbeat <= 0 {
@@ -70,7 +70,7 @@ func RunBridge(ctx context.Context, cfg BridgeConfig) {
 			Labels:        cfg.Labels,
 			Version:       cfg.Version(),
 		},
-		logger.Named("synapse.dialer"),
+		logger.With("component", "synapse.dialer"),
 	)
 
 	for {
@@ -82,17 +82,17 @@ func RunBridge(ctx context.Context, cfg BridgeConfig) {
 			if ctx.Err() != nil {
 				return
 			}
-			logger.Error("synapse connect aborted", zap.Error(err))
+			logger.Error("synapse connect aborted", "error", err)
 			return
 		}
 		pump := NewPump(PumpOptions{
 			Stream:    session.Stream(),
 			Backend:   backend,
-			Logger:    logger.Named("synapse.pump"),
+			Logger:    logger.With("component", "synapse.pump"),
 			Heartbeat: cfg.Heartbeat,
 		})
 		if err := pump.Run(ctx); err != nil {
-			logger.Warn("synapse pump exited; will reconnect", zap.Error(err))
+			logger.Warn("synapse pump exited; will reconnect", "error", err)
 		} else {
 			logger.Info("synapse pump exited cleanly; will reconnect")
 		}

@@ -5,11 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"sync"
 	"sync/atomic"
 	"time"
-
-	"go.uber.org/zap"
 
 	synapsev1 "github.com/saker-ai/saker/proto/synapse/v1"
 )
@@ -18,7 +17,7 @@ import (
 type Pump struct {
 	stream  synapsev1.SynapseHub_RegisterClient
 	backend Backend
-	logger  *zap.Logger
+	logger  *slog.Logger
 
 	sendCh    chan *synapsev1.SakerMessage
 	heartbeat time.Duration
@@ -37,13 +36,13 @@ type Pump struct {
 type PumpOptions struct {
 	Stream    synapsev1.SynapseHub_RegisterClient
 	Backend   Backend
-	Logger    *zap.Logger
+	Logger    *slog.Logger
 	Heartbeat time.Duration
 }
 
 func NewPump(opts PumpOptions) *Pump {
 	if opts.Logger == nil {
-		opts.Logger = zap.NewNop()
+		opts.Logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 	}
 	if opts.Heartbeat <= 0 {
 		opts.Heartbeat = 15 * time.Second
@@ -105,8 +104,8 @@ func (p *Pump) recvLoop(ctx context.Context) error {
 			p.handleCancel(payload.Cancel.GetRequestId())
 		case *synapsev1.HubMessage_Shutdown:
 			p.logger.Info("hub requested shutdown",
-				zap.String("reason", payload.Shutdown.GetReason()),
-				zap.Int32("grace_seconds", payload.Shutdown.GetGraceSeconds()),
+				"reason", payload.Shutdown.GetReason(),
+				"grace_seconds", payload.Shutdown.GetGraceSeconds(),
 			)
 			return nil
 		case *synapsev1.HubMessage_HelloAck:
@@ -116,7 +115,7 @@ func (p *Pump) recvLoop(ctx context.Context) error {
 				Pong: &synapsev1.Pong{UnixNanos: time.Now().UnixNano()},
 			}})
 		default:
-			p.logger.Warn("unknown hub frame", zap.String("type", fmt.Sprintf("%T", payload)))
+			p.logger.Warn("unknown hub frame", "type", fmt.Sprintf("%T", payload))
 		}
 	}
 }
@@ -132,7 +131,7 @@ func (p *Pump) handleRequest(ctx context.Context, req *synapsev1.ChatRequest) {
 		p.mu.Unlock()
 		cancel()
 		p.logger.Warn("duplicate request_id; dropping",
-			zap.String("request_id", req.RequestId))
+			"request_id", req.RequestId)
 		return
 	}
 	p.cancels[req.RequestId] = cancel

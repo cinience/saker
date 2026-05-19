@@ -8,12 +8,12 @@ import (
 	"charm.land/lipgloss/v2"
 )
 
-// mascotRows is a static saker falcon (猎鹰) face,
+// mascotRows is a stylised saker falcon (猎隼) emblem,
 // symbolising the keen vision and swift precision of Saker.
 var mascotRows = [3]string{
-	"   ╱‾‾‾╲   ",
-	"  ( ◉ ◉ )  ",
-	"   ╲_▲_╱   ",
+	" ▗▄███▄▖   ",
+	" ▐◈ ▼ ◈▌   ",
+	"  ▀▄█▄▀    ",
 }
 
 // Header renders the top section of the TUI with mascot and project info.
@@ -58,12 +58,12 @@ func (h *Header) SetSkillCount(n int) { h.skillCount = n }
 // SetUpdateNotice sets the version update notification text.
 func (h *Header) SetUpdateNotice(notice string) { h.updateNotice = notice }
 
-// View renders the header as a CondensedLogo with mascot (Claude Code style).
+// View renders the header with falcon emblem and project info.
 // Layout:
 //
-//	▐▛███▜▌  Saker v0.1.0
-//	▝▜█████▛▘ model-name
-//	  ▘▘ ▝▝   ~/path/to/cwd
+//	▗▄███▄▖   Saker v0.1.0
+//	▐◈ ▼ ◈▌   model-name
+//	 ▀▄█▄▀    ~/path/to/cwd
 func (h *Header) View() string {
 	mascotColor := h.styles.LogoColor
 
