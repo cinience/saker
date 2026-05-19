@@ -47,6 +47,8 @@ type streamState struct {
 	artifacts []server.Artifact
 	// seenArtifactURLs deduplicates artifact URLs within a single stream.
 	seenArtifactURLs map[string]bool
+	// ring buffers serialized SSE frames for future reconnect replay.
+	ring *eventRing
 }
 
 func newStreamState(threadID, runID string) *streamState {
@@ -58,6 +60,7 @@ func newStreamState(threadID, runID string) *streamState {
 		toolNames:           make(map[string]string),
 		suppressedToolCalls: make(map[string]bool),
 		seenArtifactURLs:    make(map[string]bool),
+		ring:                newEventRing(defaultEventRingSize),
 	}
 }
 
@@ -401,6 +404,7 @@ func writeSSE(ctx context.Context, w io.Writer, sseW sseWriter, event aguievents
 }
 
 // writeSSEWithID writes an event with an SSE id: field for resumability.
+// After successful write, the serialized frame is pushed to the ring buffer.
 func writeSSEWithID(ctx context.Context, w io.Writer, sseW sseWriter, event aguievents.Event, state *streamState) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -413,7 +417,15 @@ func writeSSEWithID(ctx context.Context, w io.Writer, sseW sseWriter, event agui
 	if _, err := fmt.Fprintf(w, "id: %d\n", state.eventSeq); err != nil {
 		return err
 	}
-	return sseW.WriteEventWithType(ctx, w, event, string(event.Type()))
+	if err := sseW.WriteEventWithType(ctx, w, event, string(event.Type())); err != nil {
+		return err
+	}
+	if state.ring != nil {
+		if frame, err := json.Marshal(event); err == nil {
+			state.ring.Push(state.eventSeq, frame)
+		}
+	}
+	return nil
 }
 
 // inputToJSON serializes a StreamEvent.Input (typed as interface{}) to a

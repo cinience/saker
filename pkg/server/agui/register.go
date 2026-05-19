@@ -40,11 +40,13 @@ type Deps struct {
 
 // Options holds operator-configurable settings for the AG-UI gateway.
 type Options struct {
-	Enabled       bool
-	DevBypassAuth bool
-	RPS           float64       // Rate limit requests per second per identity (default 10)
-	Burst         int           // Rate limit burst size (default 20)
-	DrainTimeout  time.Duration // Graceful shutdown drain period (default 3s)
+	Enabled          bool
+	DevBypassAuth    bool
+	RPS              float64       // Rate limit requests per second per identity (default 10)
+	Burst            int           // Rate limit burst size (default 20)
+	DrainTimeout     time.Duration // Graceful shutdown drain period (default 3s)
+	MaxActiveStreams  int           // Load shedding: max concurrent runs (default 100, 0 = unlimited)
+	TurnTimeout      time.Duration // Max run duration (default: server.DefaultTurnTimeout)
 }
 
 // Gateway carries the runtime dependencies for AG-UI HTTP handlers.
@@ -60,6 +62,8 @@ type Gateway struct {
 	rateLimiterCleanup func()
 	// artifactCache stores per-thread artifacts so connect can replay them.
 	artifactCache artifactCache
+	// liveRings stores per-run event ring buffers for future reconnect support.
+	liveRings map[string]*eventRing
 }
 
 // RegisterAGUIGateway mounts the AG-UI protocol endpoints on the supplied
@@ -97,6 +101,7 @@ func RegisterAGUIGateway(engine *gin.Engine, deps Deps) (*Gateway, error) {
 		threadRuns:         make(map[string]string),
 		artifactCache:      newArtifactCache(),
 		rateLimiterCleanup: rateLimiterCleanup,
+		liveRings:          make(map[string]*eventRing),
 	}
 
 	agents := engine.Group("/v1/agents")

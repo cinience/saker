@@ -82,6 +82,22 @@ func (g *Gateway) handleRun(c *gin.Context) {
 		return
 	}
 
+	// Load shedding: reject when at capacity.
+	if max := g.deps.Options.MaxActiveStreams; max > 0 {
+		g.mu.Lock()
+		active := len(g.activeCancels)
+		g.mu.Unlock()
+		if active >= max {
+			aguiLoadShedTotal.Inc()
+			c.Header("Retry-After", "5")
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": gin.H{
+				"message": "server at capacity, please retry",
+				"type":    "capacity_error",
+			}})
+			return
+		}
+	}
+
 	threadID := input.ThreadID
 	if threadID == "" {
 		threadID = "thread_" + uuid.New().String()
@@ -121,6 +137,9 @@ func (g *Gateway) handleRun(c *gin.Context) {
 
 	requestID := c.GetString("requestID")
 	lastEventID := parseAGUILastEventID(c)
+	if lastEventID > 0 {
+		aguiReconnectAttemptsTotal.Inc()
+	}
 
 	g.deps.Logger.Info("agui run request received",
 		"request_id", requestID,
@@ -138,7 +157,7 @@ func (g *Gateway) handleRun(c *gin.Context) {
 	// Cancel any existing run on the same thread (mutual exclusion).
 	g.cancelThreadRun(threadID, runID)
 
-	baseCtx, timeoutCancel := context.WithTimeout(c.Request.Context(), server.DefaultTurnTimeout)
+	baseCtx, timeoutCancel := context.WithTimeout(c.Request.Context(), g.effectiveTurnTimeout(input))
 	defer timeoutCancel()
 	ctx, finishRun, ok := g.runContext(baseCtx, runID)
 	if !ok {
@@ -217,6 +236,14 @@ func (g *Gateway) streamSSE(c *gin.Context, ctx context.Context, eventCh <-chan 
 
 	sseW := aguisse.NewSSEWriter().WithLogger(g.deps.Logger)
 	state := newStreamState(threadID, runID)
+	g.mu.Lock()
+	g.liveRings[runID] = state.ring
+	g.mu.Unlock()
+	defer func() {
+		g.mu.Lock()
+		delete(g.liveRings, runID)
+		g.mu.Unlock()
+	}()
 	filter := server.NewStreamArtifactFilter()
 	var accumulated strings.Builder
 	eventCounts := make(map[string]int)
@@ -474,4 +501,38 @@ func parseAGUILastEventID(c *gin.Context) int {
 // isSlowClientErr returns true if the error indicates a write deadline exceeded.
 func isSlowClientErr(err error) bool {
 	return err != nil && errors.Is(err, os.ErrDeadlineExceeded)
+}
+
+// effectiveTurnTimeout returns the turn timeout for a run, respecting operator
+// cap and optional client-requested shorter timeout via ForwardedProps.
+func (g *Gateway) effectiveTurnTimeout(input aguitypes.RunAgentInput) time.Duration {
+	cap := g.deps.Options.TurnTimeout
+	if cap == 0 {
+		cap = server.DefaultTurnTimeout
+	}
+	props, ok := input.ForwardedProps.(map[string]any)
+	if !ok || props == nil {
+		return cap
+	}
+	raw, ok := props["timeout_seconds"]
+	if !ok {
+		return cap
+	}
+	var seconds float64
+	switch v := raw.(type) {
+	case float64:
+		seconds = v
+	case json.Number:
+		seconds, _ = v.Float64()
+	default:
+		return cap
+	}
+	if seconds <= 0 {
+		return cap
+	}
+	requested := time.Duration(seconds * float64(time.Second))
+	if requested < cap {
+		return requested
+	}
+	return cap
 }

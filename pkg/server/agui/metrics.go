@@ -46,6 +46,22 @@ var (
 			Help:      "Streams closed due to slow client backpressure.",
 		},
 	)
+	aguiLoadShedTotal = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Namespace: "saker",
+			Subsystem: "agui",
+			Name:      "load_shed_total",
+			Help:      "Runs rejected due to server at capacity.",
+		},
+	)
+	aguiReconnectAttemptsTotal = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Namespace: "saker",
+			Subsystem: "agui",
+			Name:      "reconnect_attempts_total",
+			Help:      "Client reconnect attempts with Last-Event-ID.",
+		},
+	)
 )
 
 func init() {
@@ -54,4 +70,6 @@ func init() {
 	prometheus.MustRegister(aguiActiveStreams)
 	prometheus.MustRegister(aguiRunDuration)
 	prometheus.MustRegister(aguiSlowClientDisconnects)
+	prometheus.MustRegister(aguiLoadShedTotal)
+	prometheus.MustRegister(aguiReconnectAttemptsTotal)
 }

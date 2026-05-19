@@ -113,17 +113,23 @@ func TestTranslateEvent_ToolExecutionStart(t *testing.T) {
 	_, _ = state.translateEvent(context.Background(), &bytes.Buffer{}, w, evt, nopFilter{})
 
 	types := w.types()
-	if len(types) != 3 {
-		t.Fatalf("expected 3 events (activity+start+args), got %d: %v", len(types), types)
+	if len(types) != 5 {
+		t.Fatalf("expected 5 events (empty msg container+activity+start+args), got %d: %v", len(types), types)
 	}
-	if types[0] != "ACTIVITY_SNAPSHOT" {
-		t.Errorf("first = %q, want ACTIVITY_SNAPSHOT", types[0])
+	if types[0] != "TEXT_MESSAGE_START" {
+		t.Errorf("types[0] = %q, want TEXT_MESSAGE_START", types[0])
 	}
-	if types[1] != "TOOL_CALL_START" {
-		t.Errorf("second = %q, want TOOL_CALL_START", types[1])
+	if types[1] != "TEXT_MESSAGE_END" {
+		t.Errorf("types[1] = %q, want TEXT_MESSAGE_END", types[1])
 	}
-	if types[2] != "TOOL_CALL_ARGS" {
-		t.Errorf("third = %q, want TOOL_CALL_ARGS", types[2])
+	if types[2] != "ACTIVITY_SNAPSHOT" {
+		t.Errorf("types[2] = %q, want ACTIVITY_SNAPSHOT", types[2])
+	}
+	if types[3] != "TOOL_CALL_START" {
+		t.Errorf("types[3] = %q, want TOOL_CALL_START", types[3])
+	}
+	if types[4] != "TOOL_CALL_ARGS" {
+		t.Errorf("types[4] = %q, want TOOL_CALL_ARGS", types[4])
 	}
 	if !state.toolCalls["tc_1"] {
 		t.Error("tool call should be tracked")
@@ -145,14 +151,22 @@ func TestTranslateEvent_ToolExecutionStart_NoInput(t *testing.T) {
 	_, _ = state.translateEvent(context.Background(), &bytes.Buffer{}, w, evt, nopFilter{})
 
 	types := w.types()
-	if len(types) != 2 {
-		t.Fatalf("expected 2 events (activity+start, no args), got %d: %v", len(types), types)
+	// When textMsgSeq==0, an empty text message container is emitted first
+	// so CopilotKit has a parentMessageId for tool calls.
+	if len(types) != 4 {
+		t.Fatalf("expected 4 events (empty msg container+activity+start), got %d: %v", len(types), types)
 	}
-	if types[0] != "ACTIVITY_SNAPSHOT" {
-		t.Errorf("first = %q, want ACTIVITY_SNAPSHOT", types[0])
+	if types[0] != "TEXT_MESSAGE_START" {
+		t.Errorf("types[0] = %q, want TEXT_MESSAGE_START", types[0])
 	}
-	if types[1] != "TOOL_CALL_START" {
-		t.Errorf("second = %q, want TOOL_CALL_START", types[1])
+	if types[1] != "TEXT_MESSAGE_END" {
+		t.Errorf("types[1] = %q, want TEXT_MESSAGE_END", types[1])
+	}
+	if types[2] != "ACTIVITY_SNAPSHOT" {
+		t.Errorf("types[2] = %q, want ACTIVITY_SNAPSHOT", types[2])
+	}
+	if types[3] != "TOOL_CALL_START" {
+		t.Errorf("types[3] = %q, want TOOL_CALL_START", types[3])
 	}
 }
 
