@@ -87,6 +87,7 @@ func RegisterAGUIGateway(engine *gin.Engine, deps Deps) (*Gateway, error) {
 		agents.POST("/run/info", g.handleInfo)
 		agents.GET("/run/threads", g.handleThreads)
 		agents.PATCH("/run/threads/:threadId", g.handleThreadUpdate)
+		agents.POST("/run/threads/:threadId/archive", g.handleThreadArchive)
 		agents.DELETE("/run/threads/:threadId", g.handleThreadDelete)
 		agents.POST("/run/:runId/approval", g.handleApprovalRespond)
 		agents.POST("/run/:runId/answer", g.handleQuestionRespond)

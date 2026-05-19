@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -186,12 +187,12 @@ func convertToolCalls(raw json.RawMessage) []aguitypes.ToolCall {
 }
 
 // formatThreadResponse converts a conversation.Thread to the JSON shape
-// CopilotKit expects: {id, title, createdAt, updatedAt}.
+// CopilotKit v2 expects: {id, name, createdAt, updatedAt}.
 func formatThreadResponse(t *conversation.Thread) gin.H {
 	return gin.H{
 		"id":        t.ID,
-		"title":     t.Title,
-		"createdAt": fmt.Sprintf("%d", t.CreatedAt.UnixMilli()),
-		"updatedAt": fmt.Sprintf("%d", t.UpdatedAt.UnixMilli()),
+		"name":      t.Title,
+		"createdAt": t.CreatedAt.Format(time.RFC3339),
+		"updatedAt": t.UpdatedAt.Format(time.RFC3339),
 	}
 }

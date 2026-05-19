@@ -27,7 +27,7 @@ import (
 )
 
 func main() {
-	addr := flag.String("addr", "http://127.0.0.1:10112", "Saker server base URL")
+	addr := flag.String("addr", "http://127.0.0.1:17000", "Saker server base URL")
 	apiKey := flag.String("api-key", os.Getenv("SAKER_API_KEY"), "Bearer key issued by `saker openai-key create` (or set SAKER_API_KEY)")
 	model := flag.String("model", "saker-default", "Model id from /v1/models")
 	prompt := flag.String("prompt", "Reply with a single short sentence: hello from saker.", "User prompt")

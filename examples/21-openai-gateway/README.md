@@ -21,7 +21,7 @@ on both sides — no `openai-go` SDK dependency.
 make build
 
 ./bin/saker --server \
-  --server-addr 127.0.0.1:10112 \
+  --server-addr 127.0.0.1:17000 \
   --server-data-dir ~/.saker/server \
   --openai-gw-enabled
 ```
@@ -30,7 +30,7 @@ You should see:
 
 ```
 OpenAI-compatible gateway enabled at /v1/* (max_runs=256, ring=512, expires=600s)
-Saker server listening on 127.0.0.1:10112
+Saker server listening on 127.0.0.1:17000
 ```
 
 ### 2. Issue a Bearer API key
@@ -57,7 +57,7 @@ the server. Any non-empty `--api-key` value will then be accepted:
 
 ```bash
 ./bin/saker --server \
-  --server-addr 127.0.0.1:10112 \
+  --server-addr 127.0.0.1:17000 \
   --openai-gw-enabled \
   --openai-gw-dev-bypass
 ```
@@ -83,7 +83,7 @@ Useful flags:
 
 | Flag | Default | Notes |
 |---|---|---|
-| `--addr` | `http://127.0.0.1:10112` | Server base URL |
+| `--addr` | `http://127.0.0.1:17000` | Server base URL |
 | `--api-key` | `$SAKER_API_KEY` | Bearer key from `saker openai-key create` |
 | `--model` | `saker-default` | Tier id from `/v1/models` |
 | `--prompt` | "hello" sentence | User prompt for sync/stream demos |
@@ -95,7 +95,7 @@ Useful flags:
 ```bash
 # /v1/models
 curl -sS -H "Authorization: Bearer $SAKER_API_KEY" \
-  http://127.0.0.1:10112/v1/models | jq
+  http://127.0.0.1:17000/v1/models | jq
 
 # /v1/chat/completions, blocking
 curl -sS -H "Authorization: Bearer $SAKER_API_KEY" \
@@ -104,7 +104,7 @@ curl -sS -H "Authorization: Bearer $SAKER_API_KEY" \
     "model": "saker-default",
     "messages": [{"role":"user","content":"say hi"}]
   }' \
-  http://127.0.0.1:10112/v1/chat/completions
+  http://127.0.0.1:17000/v1/chat/completions
 
 # /v1/chat/completions, streaming SSE
 curl -sS -N -H "Authorization: Bearer $SAKER_API_KEY" \
@@ -114,7 +114,7 @@ curl -sS -N -H "Authorization: Bearer $SAKER_API_KEY" \
     "stream": true,
     "messages": [{"role":"user","content":"say hi"}]
   }' \
-  http://127.0.0.1:10112/v1/chat/completions
+  http://127.0.0.1:17000/v1/chat/completions
 
 # human_input_mode=never (fallback path)
 curl -sS -H "Authorization: Bearer $SAKER_API_KEY" \
@@ -124,7 +124,7 @@ curl -sS -H "Authorization: Bearer $SAKER_API_KEY" \
     "messages": [{"role":"user","content":"pick a color, ask if unsure"}],
     "extra_body": {"human_input_mode": "never", "cancel_on_disconnect": true}
   }' \
-  http://127.0.0.1:10112/v1/chat/completions
+  http://127.0.0.1:17000/v1/chat/completions
 ```
 
 ## What to expect
@@ -152,14 +152,14 @@ all in-flight runs and a client that drops mid-stream cannot resume. Pass
 ```bash
 # SQLite single-process persistence (default Go build, no extra deps)
 ./bin/saker --server \
-  --server-addr 127.0.0.1:10112 \
+  --server-addr 127.0.0.1:17000 \
   --openai-gw-enabled \
   --openai-gw-runhub-dsn 'sqlite:///tmp/saker-runhub.db'
 
 # Postgres multi-process fan-out (requires -tags postgres at build time)
 go build -tags postgres -o ./bin/saker ./cmd/saker
 ./bin/saker --server \
-  --server-addr 127.0.0.1:10112 \
+  --server-addr 127.0.0.1:17000 \
   --openai-gw-enabled \
   --openai-gw-runhub-dsn 'postgres://saker:secret@db:5432/saker?sslmode=disable'
 ```
@@ -179,7 +179,7 @@ curl -sS -D /tmp/headers.log -N -H "Authorization: Bearer $SAKER_API_KEY" \
     "stream": true,
     "messages": [{"role":"user","content":"count slowly to 20"}]
   }' \
-  http://127.0.0.1:10112/v1/chat/completions > /tmp/sse.log
+  http://127.0.0.1:17000/v1/chat/completions > /tmp/sse.log
 
 RUN_ID=$(awk -F': ' 'tolower($1)=="x-saker-run-id"{print $2}' /tmp/headers.log | tr -d '\r\n')
 
@@ -190,13 +190,13 @@ LAST=$(grep -E '^id: ' /tmp/sse.log | tail -n 1 | sed -E 's/^id:[[:space:]]*//; 
 
 # 3. Resume from that seq via the dedicated reconnect endpoint:
 curl -sS -N -H "Authorization: Bearer $SAKER_API_KEY" \
-  "http://127.0.0.1:10112/v1/runs/$RUN_ID/events?last_event_id=$LAST"
+  "http://127.0.0.1:17000/v1/runs/$RUN_ID/events?last_event_id=$LAST"
 
 # Equivalent using the SSE-standard header (browsers' EventSource sends this
 # automatically on auto-reconnect):
 curl -sS -N -H "Authorization: Bearer $SAKER_API_KEY" \
   -H "Last-Event-ID: $LAST" \
-  "http://127.0.0.1:10112/v1/runs/$RUN_ID/events"
+  "http://127.0.0.1:17000/v1/runs/$RUN_ID/events"
 ```
 
 The server replays every event with `seq > last_event_id` from the ring

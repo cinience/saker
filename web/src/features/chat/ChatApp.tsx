@@ -666,9 +666,10 @@ export function ChatApp({ authRequired, authenticated, onLogin, onLogout, authPr
   }, []);
 
   const handleThreadStarted = useCallback((threadId: string, title: string) => {
-    // AG-UI handler already persisted this thread via ensureThread().
-    // Add it to the frontend store and activate it so CopilotChat's
-    // messages area becomes visible (the --active CSS class applies).
+    // AG-UI handler already persisted this thread via ensureThread()
+    // (with an empty title). Add it to the frontend store, activate it
+    // so CopilotChat's messages area becomes visible, and update the
+    // server-side title derived from the first user message.
     const now = new Date().toISOString();
     flushSync(() => {
       setThreads((prev) => {
@@ -678,6 +679,7 @@ export function ChatApp({ authRequired, authenticated, onLogin, onLogout, authPr
       setActiveThreadId(threadId);
     });
     window.location.hash = `chats/${threadId}`;
+    httpRequest("thread/update", { threadId, title }).catch(() => {});
   }, []);
 
   /** Update thread title on the server and locally. */

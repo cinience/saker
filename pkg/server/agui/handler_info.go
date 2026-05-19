@@ -57,19 +57,30 @@ func (g *Gateway) handleStop(c *gin.Context) {
 }
 
 // aguiUnwrapEnvelope handles the CopilotKit single-endpoint envelope format
-// where requests arrive as {"method":"agent/run","body":<RunAgentInput>}.
+// where requests arrive as {"method":"agent/run","params":{...},"body":<RunAgentInput>}.
 // Returns the inner body bytes if wrapped, or the original bytes otherwise.
+// Envelope params (agentId, threadId) are injected into gin.Params so
+// downstream handlers can access them via c.Param().
 func aguiUnwrapEnvelope(c *gin.Context, body []byte) ([]byte, string) {
 	var envelope struct {
-		Method string          `json:"method"`
-		Body   json.RawMessage `json:"body"`
+		Method string            `json:"method"`
+		Params map[string]string `json:"params"`
+		Body   json.RawMessage   `json:"body"`
 	}
 	if err := json.Unmarshal(body, &envelope); err != nil {
 		return body, ""
 	}
+	// Inject envelope params into gin context so handlers can use c.Param().
+	for k, v := range envelope.Params {
+		c.Params = append(c.Params, gin.Param{Key: k, Value: v})
+	}
 	switch envelope.Method {
-	case "info", "threads", "agent/stop":
-		return nil, envelope.Method
+	case "info":
+		return nil, "info"
+	case "threads":
+		return nil, "threads"
+	case "agent/stop":
+		return nil, "agent/stop"
 	case "agent/run":
 		if len(envelope.Body) > 0 {
 			return envelope.Body, ""

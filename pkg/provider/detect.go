@@ -29,7 +29,11 @@ import (
 // china_mainland rates instead of US.
 func Detect(providerFlag, modelFlag, system string) (model.Provider, string) {
 	if modelFlag == "" {
-		modelFlag = os.Getenv("SAKER_MODEL")
+		if v := os.Getenv("SAKER_MODEL"); v != "" {
+			modelFlag = v
+		} else if v := os.Getenv("ANTHROPIC_MODEL"); v != "" {
+			modelFlag = v
+		}
 	}
 	provider := strings.ToLower(strings.TrimSpace(providerFlag))
 

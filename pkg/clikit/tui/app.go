@@ -110,6 +110,7 @@ func New(ctx context.Context, cfg AppConfig) *App {
 	a.header.SetSession(sessionID)
 	a.header.SetSkillCount(len(cfg.Engine.Skills()))
 	a.header.SetUpdateNotice(cfg.UpdateNotice)
+	a.header.SetProvider(detectEnvBaseURL(), detectEnvAPIKey())
 	a.status.SetModel(cfg.Engine.ModelName())
 
 	// Feed skill names to input for Tab completion.

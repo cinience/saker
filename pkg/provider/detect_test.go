@@ -15,6 +15,7 @@ func TestDetect_AnthropicWinsAutoDetect(t *testing.T) {
 	t.Setenv("ANTHROPIC_AUTH_TOKEN", "anth-token")
 	t.Setenv("OPENAI_API_KEY", "openai-key")
 	t.Setenv("SAKER_MODEL", "")
+	t.Setenv("ANTHROPIC_MODEL", "")
 
 	prov, modelName := Detect("", "", "")
 	if _, ok := prov.(*model.AnthropicProvider); !ok {
@@ -33,6 +34,7 @@ func TestDetect_OpenAIFallback(t *testing.T) {
 	t.Setenv("ANTHROPIC_AUTH_TOKEN", "")
 	t.Setenv("OPENAI_API_KEY", "openai-key")
 	t.Setenv("SAKER_MODEL", "")
+	t.Setenv("ANTHROPIC_MODEL", "")
 
 	prov, modelName := Detect("", "", "")
 	if _, ok := prov.(*model.OpenAIProvider); !ok {

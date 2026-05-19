@@ -236,7 +236,7 @@ go run ./examples/20-realtime-video
 - Run:
 ```bash
 # Terminal 1: start saker with the gateway enabled
-./bin/saker --server --server-addr 127.0.0.1:10112 --openai-gw-enabled
+./bin/saker --server --server-addr 127.0.0.1:17000 --openai-gw-enabled
 
 # Terminal 2: issue a Bearer key (or use --openai-gw-dev-bypass on the server)
 ./bin/saker openai-key create --user $USER --project new --name openai-gw-demo

@@ -26,6 +26,8 @@ type Header struct {
 	cwd          string
 	version      string
 	updateNotice string
+	baseURL      string
+	apiKey       string
 }
 
 // NewHeader creates a Header component.
@@ -58,6 +60,48 @@ func (h *Header) SetSkillCount(n int) { h.skillCount = n }
 // SetUpdateNotice sets the version update notification text.
 func (h *Header) SetUpdateNotice(notice string) { h.updateNotice = notice }
 
+// SetProvider sets the base URL and API key for display (both masked).
+func (h *Header) SetProvider(baseURL, apiKey string) {
+	h.baseURL = baseURL
+	h.apiKey = maskAPIKey(apiKey)
+}
+
+// maskAPIKey masks an API key for safe display, showing only first 4 and last 4 chars.
+func maskAPIKey(key string) string {
+	if key == "" {
+		return ""
+	}
+	if len(key) <= 8 {
+		return "****"
+	}
+	return key[:4] + "****" + key[len(key)-4:]
+}
+
+// detectEnvBaseURL returns the configured base URL from environment.
+func detectEnvBaseURL() string {
+	if v := os.Getenv("ANTHROPIC_BASE_URL"); v != "" {
+		return v
+	}
+	if v := os.Getenv("OPENAI_BASE_URL"); v != "" {
+		return v
+	}
+	return ""
+}
+
+// detectEnvAPIKey returns the configured API key from environment.
+func detectEnvAPIKey() string {
+	if v := os.Getenv("ANTHROPIC_AUTH_TOKEN"); v != "" {
+		return v
+	}
+	if v := os.Getenv("ANTHROPIC_API_KEY"); v != "" {
+		return v
+	}
+	if v := os.Getenv("OPENAI_API_KEY"); v != "" {
+		return v
+	}
+	return ""
+}
+
 // View renders the header with falcon emblem and project info.
 // Layout:
 //
@@ -82,6 +126,18 @@ func (h *Header) View() string {
 		}
 	}
 
+	var providerLine string
+	if h.baseURL != "" || h.apiKey != "" {
+		var parts []string
+		if h.baseURL != "" {
+			parts = append(parts, h.baseURL)
+		}
+		if h.apiKey != "" {
+			parts = append(parts, h.apiKey)
+		}
+		providerLine = h.styles.HeaderDim.Render(strings.Join(parts, " · "))
+	}
+
 	cwdLine := h.styles.HeaderDim.Render(h.cwd)
 
 	infoLines := [3]string{titleLine, modelLine, cwdLine}
@@ -90,6 +146,11 @@ func (h *Header) View() string {
 		mascot := mascotColor.Render(mascotRows[i])
 		info := infoLines[i]
 		b.WriteString(fmt.Sprintf(" %s %s\n", mascot, info))
+	}
+
+	// Provider info (below mascot, aligned with info column)
+	if providerLine != "" {
+		b.WriteString(fmt.Sprintf("              %s\n", providerLine))
 	}
 
 	// Keybinding hints
