@@ -18,6 +18,8 @@ type streamState struct {
 	threadID string
 	runID    string
 	msgID    string
+	// eventSeq is the monotonically increasing SSE event ID counter.
+	eventSeq int
 	// textStarted is true after the first TEXT_MESSAGE_START has been emitted.
 	textStarted bool
 	// reasoningBlockStarted is true after REASONING_START (outer wrapper) has been emitted.
@@ -77,7 +79,7 @@ func (s *streamState) translateEvent(ctx context.Context, w io.Writer, sseW sseW
 		}
 		if !s.reasoningStarted {
 			s.reasoningStarted = true
-			if err := writeSSE(ctx, w, sseW, aguievents.NewReasoningMessageStartEvent(reasoningMsgID, "assistant")); err != nil {
+			if err := writeSSE(ctx, w, sseW, aguievents.NewReasoningMessageStartEvent(reasoningMsgID, "reasoning")); err != nil {
 				return nil, err
 			}
 		}
@@ -334,12 +336,29 @@ type sseWriter interface {
 // writeSSE writes an AG-UI event as a typed SSE frame using the caller's
 // request/run context so shutdown and client disconnects do not wait for the
 // SDK writer's network timeout. Events are validated before sending.
+// When state is provided, an incremental SSE `id:` field is prepended for
+// resumable streams via Last-Event-ID.
 func writeSSE(ctx context.Context, w io.Writer, sseW sseWriter, event aguievents.Event) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
 	if err := event.Validate(); err != nil {
 		return fmt.Errorf("agui event validation: %w", err)
+	}
+	return sseW.WriteEventWithType(ctx, w, event, string(event.Type()))
+}
+
+// writeSSEWithID writes an event with an SSE id: field for resumability.
+func writeSSEWithID(ctx context.Context, w io.Writer, sseW sseWriter, event aguievents.Event, state *streamState) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if err := event.Validate(); err != nil {
+		return fmt.Errorf("agui event validation: %w", err)
+	}
+	state.eventSeq++
+	if _, err := fmt.Fprintf(w, "id: %d\n", state.eventSeq); err != nil {
+		return err
 	}
 	return sseW.WriteEventWithType(ctx, w, event, string(event.Type()))
 }

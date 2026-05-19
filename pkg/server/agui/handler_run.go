@@ -107,6 +107,9 @@ func (g *Gateway) handleRun(c *gin.Context) {
 		"prompt_len", len(sakerReq.Prompt),
 	)
 
+	// Cancel any existing run on the same thread (mutual exclusion).
+	g.cancelThreadRun(threadID, runID)
+
 	baseCtx, timeoutCancel := context.WithTimeout(c.Request.Context(), server.DefaultTurnTimeout)
 	defer timeoutCancel()
 	ctx, finishRun, ok := g.runContext(baseCtx, runID)
@@ -117,7 +120,10 @@ func (g *Gateway) handleRun(c *gin.Context) {
 		}})
 		return
 	}
-	defer finishRun()
+	defer func() {
+		finishRun()
+		g.clearThreadRun(threadID, runID)
+	}()
 
 	sideCh := make(chan sideEvent, 8)
 	ctx = toolbuiltin.WithAskQuestionFunc(ctx, g.makeAskQuestionHandler(runID, sideCh))
@@ -170,6 +176,8 @@ func (g *Gateway) streamSSE(c *gin.Context, ctx context.Context, eventCh <-chan 
 	if !ok {
 		return
 	}
+	// SSE retry directive: instruct client to reconnect after 3s on disconnect.
+	fmt.Fprintf(w, "retry: 3000\n\n")
 	flusher.Flush()
 
 	sseW := aguisse.NewSSEWriter().WithLogger(g.deps.Logger)
@@ -332,6 +340,11 @@ func (g *Gateway) streamSSE(c *gin.Context, ctx context.Context, eventCh <-chan 
 			flusher.Flush()
 
 		case <-ctx.Done():
+			// Emit RUN_ERROR on graceful shutdown so clients know the stream ended abnormally.
+			errCtx := context.Background()
+			_ = writeSSE(errCtx, w, sseW, aguievents.NewRunErrorEvent("stream cancelled",
+				aguievents.WithRunID(runID), aguievents.WithErrorCode("cancelled")))
+			flusher.Flush()
 			g.deps.Logger.Info("agui runtime stream cancelled",
 				"thread_id", threadID,
 				"run_id", runID,
@@ -364,20 +377,34 @@ func mergeMetadata(base, extra map[string]any) map[string]any {
 
 // storeArtifacts appends artifacts to the per-thread cache for replay on connect.
 func (g *Gateway) storeArtifacts(threadID string, arts []server.Artifact) {
-	existing, _ := g.artifactCache.Load(threadID)
-	var all []server.Artifact
-	if existing != nil {
-		all = existing.([]server.Artifact)
-	}
-	all = append(all, arts...)
-	g.artifactCache.Store(threadID, all)
+	g.artifactCache.store(threadID, arts)
 }
 
 // loadArtifacts returns cached artifacts for a thread.
 func (g *Gateway) loadArtifacts(threadID string) []server.Artifact {
-	v, ok := g.artifactCache.Load(threadID)
-	if !ok {
-		return nil
+	return g.artifactCache.load(threadID)
+}
+
+// cancelThreadRun cancels an existing run on the same thread (mutual exclusion).
+func (g *Gateway) cancelThreadRun(threadID, newRunID string) {
+	g.mu.Lock()
+	oldRunID, exists := g.threadRuns[threadID]
+	g.threadRuns[threadID] = newRunID
+	var oldCancel context.CancelFunc
+	if exists && oldRunID != newRunID {
+		oldCancel = g.activeCancels[oldRunID]
 	}
-	return v.([]server.Artifact)
+	g.mu.Unlock()
+	if oldCancel != nil {
+		oldCancel()
+	}
+}
+
+// clearThreadRun removes the thread→run mapping when a run finishes.
+func (g *Gateway) clearThreadRun(threadID, runID string) {
+	g.mu.Lock()
+	if g.threadRuns[threadID] == runID {
+		delete(g.threadRuns, threadID)
+	}
+	g.mu.Unlock()
 }

@@ -49,9 +49,11 @@ type Gateway struct {
 	hitl          *hitlRegistry
 	mu            sync.Mutex
 	activeCancels map[string]context.CancelFunc
-	shuttingDown  bool
+	// threadRuns maps threadID → runID for concurrent run mutual exclusion.
+	threadRuns   map[string]string
+	shuttingDown bool
 	// artifactCache stores per-thread artifacts so connect can replay them.
-	artifactCache sync.Map // map[threadID][]server.Artifact
+	artifactCache artifactCache
 }
 
 // RegisterAGUIGateway mounts the AG-UI protocol endpoints on the supplied
@@ -76,6 +78,8 @@ func RegisterAGUIGateway(engine *gin.Engine, deps Deps) (*Gateway, error) {
 		deps:          deps,
 		hitl:          newHITLRegistry(),
 		activeCancels: make(map[string]context.CancelFunc),
+		threadRuns:    make(map[string]string),
+		artifactCache: newArtifactCache(),
 	}
 
 	agents := engine.Group("/v1/agents")
