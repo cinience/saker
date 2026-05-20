@@ -148,9 +148,6 @@ func convertMessages(msgs []conversation.Message) []aguitypes.Message {
 			Content:    m.Content,
 			ToolCallID: m.ToolCallID,
 		}
-		if m.Role == "assistant" && len(m.ToolCalls) > 0 {
-			am.ToolCalls = convertToolCalls(m.ToolCalls)
-		}
 		out = append(out, am)
 	}
 	return out
@@ -158,6 +155,9 @@ func convertMessages(msgs []conversation.Message) []aguitypes.Message {
 
 func shouldSkipHistoryMessage(m *conversation.Message, out []aguitypes.Message) bool {
 	if m == nil {
+		return true
+	}
+	if m.Role == "tool" {
 		return true
 	}
 	content := strings.TrimSpace(m.Content)
@@ -177,34 +177,6 @@ func shouldSkipHistoryMessage(m *conversation.Message, out []aguitypes.Message) 
 		len(prev.ToolCalls) == 0
 }
 
-// convertToolCalls deserializes the stored [{id, name, arguments}] JSON
-// array into AG-UI typed ToolCall structs.
-func convertToolCalls(raw json.RawMessage) []aguitypes.ToolCall {
-	var stored []struct {
-		ID        string          `json:"id"`
-		Name      string          `json:"name"`
-		Arguments json.RawMessage `json:"arguments"`
-	}
-	if err := json.Unmarshal(raw, &stored); err != nil {
-		return nil
-	}
-	out := make([]aguitypes.ToolCall, len(stored))
-	for i, tc := range stored {
-		args := string(tc.Arguments)
-		if args == "" || args == "null" {
-			args = "{}"
-		}
-		out[i] = aguitypes.ToolCall{
-			ID:   tc.ID,
-			Type: aguitypes.ToolCallTypeFunction,
-			Function: aguitypes.FunctionCall{
-				Name:      tc.Name,
-				Arguments: args,
-			},
-		}
-	}
-	return out
-}
 
 // formatThreadResponse converts a conversation.Thread to the JSON shape
 // CopilotKit v2 expects: {id, name, createdAt, updatedAt}.

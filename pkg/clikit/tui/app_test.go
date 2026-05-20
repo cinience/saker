@@ -1266,6 +1266,7 @@ func TestAppUpdate_CommandResultMsgText(t *testing.T) {
 func TestAppUpdate_WindowSizeMsg(t *testing.T) {
 	t.Parallel()
 	a := newTestApp()
+	a.headerShown = true
 	_, cmd := a.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
 
 	if a.width != 120 {

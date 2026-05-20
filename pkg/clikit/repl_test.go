@@ -57,7 +57,7 @@ func (f fakeReplEngine) SandboxBackend() string { return "govm" }
 func TestHandleCommandListsSkills(t *testing.T) {
 	var out bytes.Buffer
 	sessionID := "s1"
-	handled, quit := handleCommand("/skills", fakeReplEngine{}, &sessionID, &out)
+	handled, quit := handleCommand("/skills", fakeReplEngine{}, &sessionID, &out, nil)
 	if !handled {
 		t.Fatalf("skills command should be handled")
 	}
