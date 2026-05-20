@@ -193,8 +193,7 @@ func builtinToolFactories(root string, sandboxDisabled bool, entry EntryPoint, s
 		}
 	}
 
-	if shouldRegisterTaskTool(entry) {
-		factories["task"] = func() tool.Tool { return toolbuiltin.NewTaskTool() }
+	if shouldRegisterAgentTools(entry) {
 		factories["spawn_agent"] = func() tool.Tool { return toolbuiltin.NewSpawnAgentTool() }
 		factories["send_input"] = func() tool.Tool { return toolbuiltin.NewSendInputTool() }
 		factories["wait_agent"] = func() tool.Tool { return toolbuiltin.NewWaitAgentTool() }

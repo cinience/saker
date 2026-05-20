@@ -77,9 +77,6 @@ func registerTools(registry *tool.Registry, opts Options, settings *config.Setti
 			if impl == nil {
 				continue
 			}
-			if t, ok := impl.(*toolbuiltin.TaskTool); ok {
-				refs.taskTool = t
-			}
 			if t, ok := impl.(*toolbuiltin.SpawnAgentTool); ok {
 				refs.spawnAgentTool = t
 			}
@@ -125,8 +122,6 @@ func registerTools(registry *tool.Registry, opts Options, settings *config.Setti
 		} else {
 			slog.Info("aigo tools: no config found (set DASHSCOPE_API_KEY or configure aigo in settings.json)")
 		}
-	} else {
-		refs.taskTool = locateTaskTool(tools)
 	}
 
 	disallowed := toLowerSet(opts.DisallowedTools)
@@ -194,9 +189,6 @@ func registerTools(registry *tool.Registry, opts Options, settings *config.Setti
 	}
 	slog.Debug("tools registered", "count", len(regNames), "names", regNames)
 
-	if refs.taskTool == nil {
-		refs.taskTool = locateTaskTool(filtered)
-	}
 	if refs.streamMonitor == nil {
 		for _, impl := range filtered {
 			if t, ok := impl.(*toolbuiltin.StreamMonitorTool); ok {
@@ -240,7 +232,7 @@ func filterBuiltinNames(enabled []string, order []string) []string {
 	return filtered
 }
 
-func shouldRegisterTaskTool(entry EntryPoint) bool { //nolint:unused // kept for backward compat reference
+func shouldRegisterAgentTools(entry EntryPoint) bool {
 	switch entry {
 	case EntryPointCLI, EntryPointPlatform:
 		return true
@@ -261,17 +253,6 @@ func isInEnabledList(enabled []string, canon string) bool {
 	return false
 }
 
-func locateTaskTool(tools []tool.Tool) *toolbuiltin.TaskTool {
-	for _, impl := range tools {
-		if impl == nil {
-			continue
-		}
-		if task, ok := impl.(*toolbuiltin.TaskTool); ok {
-			return task
-		}
-	}
-	return nil
-}
 
 func effectiveEntryPoint(opts Options) EntryPoint {
 	entry := opts.EntryPoint

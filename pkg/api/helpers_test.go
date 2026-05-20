@@ -231,13 +231,13 @@ func TestRegisterToolsUsesDefaultImplementations(t *testing.T) {
 	if refs, err := registerTools(registry, opts, nil, nil, nil); err != nil {
 		t.Fatalf("register tools: %v", err)
 		_ = refs
-	} else if refs == nil || refs.taskTool == nil {
-		t.Fatal("expected task tool to be registered")
+	} else if refs == nil || refs.spawnAgentTool == nil {
+		t.Fatal("expected spawn_agent tool to be registered")
 	}
 	tools := registry.List()
 	// Core built-in tools that must always be registered.
 	// Exact count varies by env (aigo tools) and settings (disallow lists).
-	coreExpected := []string{"read", "write", "edit", "web_fetch", "web_search", "task_create", "task_list", "task_get", "task_update", "ask_user_question", "skill", "slash_command", "grep", "glob", "task", "video_sampler", "stream_capture", "stream_monitor", "media_index", "media_search"}
+	coreExpected := []string{"read", "write", "edit", "web_fetch", "web_search", "task_create", "task_list", "task_get", "task_update", "ask_user_question", "skill", "slash_command", "grep", "glob", "spawn_agent", "video_sampler", "stream_capture", "stream_monitor", "media_index", "media_search"}
 	if len(tools) < len(coreExpected) {
 		t.Fatalf("expected at least %d default tools, got %d", len(coreExpected), len(tools))
 	}
@@ -262,8 +262,8 @@ func TestRegisterToolsRespectsEnabledWhitelist(t *testing.T) {
 	opts := Options{ProjectRoot: root, EnabledBuiltinTools: []string{"bash", "grep"}}
 	if refs, err := registerTools(registry, opts, nil, nil, nil); err != nil {
 		t.Fatalf("register tools: %v", err)
-	} else if refs != nil && refs.taskTool != nil {
-		t.Fatalf("task tool should not be auto-registered when not whitelisted")
+	} else if refs != nil && refs.spawnAgentTool != nil {
+		t.Fatalf("spawn_agent tool should not be auto-registered when not whitelisted")
 	}
 	tools := registry.List()
 	if len(tools) != 2 {
@@ -397,8 +397,8 @@ func TestRegisterToolsLegacyToolsOverride(t *testing.T) {
 	}
 	if refs, err := registerTools(registry, opts, nil, nil, nil); err != nil {
 		t.Fatalf("register tools: %v", err)
-	} else if refs != nil && refs.taskTool != nil {
-		t.Fatalf("task tool should not be auto-wired when legacy Tools provided")
+	} else if refs != nil && refs.spawnAgentTool != nil {
+		t.Fatalf("spawn_agent tool should not be auto-wired when legacy Tools provided")
 	}
 	tools := registry.List()
 	if len(tools) != 1 || tools[0].Name() != "legacy" {
@@ -412,15 +412,15 @@ func TestRegisterToolsTaskNotAddedForCI(t *testing.T) {
 	opts := Options{ProjectRoot: t.TempDir(), EntryPoint: EntryPointCI}
 	if refs, err := registerTools(registry, opts, nil, nil, nil); err != nil {
 		t.Fatalf("register tools: %v", err)
-	} else if refs != nil && refs.taskTool != nil {
-		t.Fatalf("task tool should not be attached in CI entrypoint")
+	} else if refs != nil && refs.spawnAgentTool != nil {
+		t.Fatalf("spawn_agent tool should not be attached in CI entrypoint")
 	}
 	seen := map[string]struct{}{}
 	for _, impl := range registry.List() {
 		seen[impl.Name()] = struct{}{}
 	}
-	if _, ok := seen["task"]; ok {
-		t.Fatal("Task tool should be absent in CI mode")
+	if _, ok := seen["spawn_agent"]; ok {
+		t.Fatal("spawn_agent tool should be absent in CI mode")
 	}
 	if len(seen) < 9 { // CI preset: core_io (6) + bash_mgmt (3)
 		t.Fatalf("expected at least 9 built-ins for CI, got %d", len(seen))
@@ -433,8 +433,8 @@ func TestRegisterToolsSkipsNilEntries(t *testing.T) {
 	if refs, err := registerTools(registry, opts, nil, nil, nil); err != nil {
 		t.Fatalf("register tools: %v", err)
 		_ = refs
-	} else if refs != nil && refs.taskTool != nil {
-		t.Fatalf("task tool should not be auto-wired when custom tools provided")
+	} else if refs != nil && refs.spawnAgentTool != nil {
+		t.Fatalf("spawn_agent tool should not be auto-wired when custom tools provided")
 	}
 	tools := registry.List()
 	if len(tools) != 1 || tools[0].Name() != "echo" {

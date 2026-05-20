@@ -28,11 +28,10 @@ type runtimeToolExecutor struct {
 }
 
 type registeredToolRefs struct {
-	taskTool            *toolbuiltin.TaskTool
-	spawnAgentTool      *toolbuiltin.SpawnAgentTool
-	sendInputTool       *toolbuiltin.SendInputTool
-	waitAgentTool       *toolbuiltin.WaitAgentTool
-	closeAgentTool      *toolbuiltin.CloseAgentTool
+	spawnAgentTool       *toolbuiltin.SpawnAgentTool
+	sendInputTool        *toolbuiltin.SendInputTool
+	waitAgentTool        *toolbuiltin.WaitAgentTool
+	closeAgentTool       *toolbuiltin.CloseAgentTool
 	spawnAgentsBatchTool *toolbuiltin.SpawnAgentsBatchTool
-	streamMonitor       *toolbuiltin.StreamMonitorTool
+	streamMonitor        *toolbuiltin.StreamMonitorTool
 }

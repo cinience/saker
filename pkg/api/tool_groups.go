@@ -18,7 +18,7 @@ const (
 var groupTools = map[ToolGroup][]string{
 	GroupCoreIO:      {"bash", "file_read", "file_write", "file_edit", "grep", "glob"},
 	GroupBashMgmt:    {"bash_output", "bash_status", "kill_task"},
-	GroupTaskMgmt:    {"task", "task_create", "task_list", "task_get", "task_update"},
+	GroupTaskMgmt:    {"task_create", "task_list", "task_get", "task_update"},
 	GroupAgentMgmt:   {"spawn_agent", "send_input", "wait_agent", "close_agent", "spawn_agents_batch"},
 	GroupWeb:         {"web_fetch", "web_search"},
 	GroupMedia:       {"image_read", "video_sampler", "stream_capture", "stream_monitor", "frame_analyzer", "video_summarizer", "analyze_video", "media_index", "media_search"},
@@ -55,7 +55,6 @@ func GroupsForPreset(p ModePreset) []ToolGroup {
 }
 
 // PresetTools expands a preset into an ordered list of factory keys.
-// For CI mode the "task" subagent tool is excluded from task_mgmt.
 func PresetTools(p ModePreset) []string {
 	groups := presetGroups[p]
 	if groups == nil {
@@ -64,23 +63,9 @@ func PresetTools(p ModePreset) []string {
 
 	var out []string
 	for _, g := range groups {
-		tools := groupTools[g]
-		if p == PresetCI && g == GroupTaskMgmt {
-			tools = withoutTask(tools)
-		}
-		out = append(out, tools...)
+		out = append(out, groupTools[g]...)
 	}
 	return out
-}
-
-func withoutTask(tools []string) []string {
-	var filtered []string
-	for _, t := range tools {
-		if t != "task" {
-			filtered = append(filtered, t)
-		}
-	}
-	return filtered
 }
 
 // presetForEntry maps an EntryPoint to its default ModePreset.

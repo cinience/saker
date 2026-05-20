@@ -17,7 +17,7 @@ func TestPresetTools_CLI(t *testing.T) {
 	tools := PresetTools(PresetCLI)
 	set := toSet(tools)
 
-	mustHave := []string{"bash", "file_read", "grep", "glob", "web_fetch", "ask_user_question", "task"}
+	mustHave := []string{"bash", "file_read", "grep", "glob", "web_fetch", "ask_user_question", "spawn_agent"}
 	for _, name := range mustHave {
 		if !set[name] {
 			t.Errorf("PresetCLI missing %q", name)
@@ -74,7 +74,7 @@ func TestPresetTools_CI(t *testing.T) {
 		}
 	}
 
-	mustNotHave := []string{"task", "web_fetch", "ask_user_question", "canvas_get_node", "browser"}
+	mustNotHave := []string{"spawn_agent", "web_fetch", "ask_user_question", "canvas_get_node", "browser"}
 	for _, name := range mustNotHave {
 		if set[name] {
 			t.Errorf("PresetCI should not include %q", name)

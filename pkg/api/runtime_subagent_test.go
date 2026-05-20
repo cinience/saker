@@ -10,7 +10,6 @@ import (
 	"github.com/saker-ai/saker/pkg/message"
 	"github.com/saker-ai/saker/pkg/runtime/skills"
 	"github.com/saker-ai/saker/pkg/runtime/subagents"
-	toolbuiltin "github.com/saker-ai/saker/pkg/tool/builtin"
 )
 
 // ---------------------------------------------------------------------------
@@ -961,79 +960,6 @@ func TestBuildACPAgentDescriptions(t *testing.T) {
 	})
 }
 
-// ---------------------------------------------------------------------------
-// convertTaskToolResult
-// ---------------------------------------------------------------------------
-
-func TestConvertTaskToolResultSubagent(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name         string
-		res          subagents.Result
-		wantOutput   string
-		wantSuccess  bool
-		wantDataKeys []string
-	}{
-		{
-			name:         "result with output and subagent name",
-			res:          subagents.Result{Subagent: "explore", Output: "found 3 files"},
-			wantOutput:   "found 3 files",
-			wantSuccess:  true,
-			wantDataKeys: []string{"subagent"},
-		},
-		{
-			name:         "empty output with subagent name uses fallback message",
-			res:          subagents.Result{Subagent: "explore", Output: ""},
-			wantOutput:   "subagent explore completed",
-			wantSuccess:  true,
-			wantDataKeys: []string{"subagent"},
-		},
-		{
-			name:         "empty output with no subagent name uses generic fallback",
-			res:          subagents.Result{Output: ""},
-			wantOutput:   "subagent completed",
-			wantSuccess:  true,
-			wantDataKeys: []string{"subagent"},
-		},
-		{
-			name:         "error result marks success false and includes error data",
-			res:          subagents.Result{Subagent: "explore", Output: "", Error: "timeout"},
-			wantOutput:   "subagent explore completed",
-			wantSuccess:  false,
-			wantDataKeys: []string{"subagent", "error"},
-		},
-		{
-			name:         "metadata with subagent_id propagates to data",
-			res:          subagents.Result{Subagent: "explore", Output: "done", Metadata: map[string]any{"subagent_id": "task-123"}},
-			wantOutput:   "done",
-			wantSuccess:  true,
-			wantDataKeys: []string{"subagent", "metadata", "subagent_id"},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			tr := convertTaskToolResult(tt.res)
-			if tr.Output != tt.wantOutput {
-				t.Errorf("Output = %q, want %q", tr.Output, tt.wantOutput)
-			}
-			if tr.Success != tt.wantSuccess {
-				t.Errorf("Success = %v, want %v", tr.Success, tt.wantSuccess)
-			}
-			data, ok := tr.Data.(map[string]any)
-			if !ok && len(tt.wantDataKeys) > 0 {
-				t.Fatalf("Data is not map[string]any: %T", tr.Data)
-			}
-			for _, key := range tt.wantDataKeys {
-				if _, exists := data[key]; !exists {
-					t.Errorf("missing data key %q in %v", key, data)
-				}
-			}
-		})
-	}
-}
 
 // ---------------------------------------------------------------------------
 // selectModelForSubagent
@@ -1215,55 +1141,6 @@ func TestWaitSubagentNoManager(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
-// taskRunner
-// ---------------------------------------------------------------------------
-
-func TestTaskRunnerReturnsFunction(t *testing.T) {
-	rt := &Runtime{}
-	runner := rt.taskRunner()
-	if runner == nil {
-		t.Fatalf("taskRunner should return a non-nil function")
-	}
-}
-
-// ---------------------------------------------------------------------------
-// runTaskInvocation edge cases
-// ---------------------------------------------------------------------------
-
-func TestRunTaskInvocationNilRuntime(t *testing.T) {
-	rt := (*Runtime)(nil)
-	_, err := rt.runTaskInvocation(context.Background(), toolbuiltin.TaskRequest{Prompt: "test"})
-	if err == nil {
-		t.Fatalf("expected error for nil runtime")
-	}
-	if !strings.Contains(err.Error(), "runtime is nil") {
-		t.Errorf("error = %q, want 'runtime is nil'", err.Error())
-	}
-}
-
-func TestRunTaskInvocationNoManager(t *testing.T) {
-	rt := &Runtime{}
-	_, err := rt.runTaskInvocation(context.Background(), toolbuiltin.TaskRequest{Prompt: "test"})
-	if err == nil {
-		t.Fatalf("expected error for nil subMgr")
-	}
-	if !strings.Contains(err.Error(), "subagent manager is not configured") {
-		t.Errorf("error = %q, want 'subagent manager is not configured'", err.Error())
-	}
-}
-
-func TestRunTaskInvocationEmptyPrompt(t *testing.T) {
-	mgr := subagents.NewManager()
-	rt := &Runtime{subMgr: mgr}
-	_, err := rt.runTaskInvocation(context.Background(), toolbuiltin.TaskRequest{Prompt: "   "})
-	if err == nil {
-		t.Fatalf("expected error for empty prompt")
-	}
-	if !strings.Contains(err.Error(), "prompt is empty") {
-		t.Errorf("error = %q, want 'prompt is empty'", err.Error())
-	}
-}
 
 // ---------------------------------------------------------------------------
 // Stub runner for spawn tests

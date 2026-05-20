@@ -16,6 +16,7 @@ type ClientMCPServer struct {
 	Args    []string          `json:"args,omitempty"`
 	Headers map[string]string `json:"headers,omitempty"`
 	Env     map[string]string `json:"env,omitempty"`
+	Timeout float64           `json:"timeout,omitempty"` // per-server timeout in seconds (0 = use global)
 }
 
 // Spec returns the connection spec string used by the tool registry.

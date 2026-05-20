@@ -94,6 +94,49 @@ var (
 			Help:      "Sessions that expired due to detach timeout.",
 		},
 	)
+
+	// MCP metrics
+	aguiMCPCacheHits = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Namespace: "saker",
+			Subsystem: "agui",
+			Name:      "mcp_cache_hits_total",
+			Help:      "MCP registry cache hits (cross-turn reuse).",
+		},
+	)
+	aguiMCPCacheMisses = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Namespace: "saker",
+			Subsystem: "agui",
+			Name:      "mcp_cache_misses_total",
+			Help:      "MCP registry cache misses (new registry created).",
+		},
+	)
+	aguiMCPConnectDuration = prometheus.NewHistogram(
+		prometheus.HistogramOpts{
+			Namespace: "saker",
+			Subsystem: "agui",
+			Name:      "mcp_connect_duration_seconds",
+			Help:      "Time to connect MCP servers.",
+			Buckets:   []float64{0.1, 0.25, 0.5, 1, 2, 5, 10},
+		},
+	)
+	aguiMCPHealthCheckFailures = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Namespace: "saker",
+			Subsystem: "agui",
+			Name:      "mcp_health_check_failures_total",
+			Help:      "MCP health check ping failures triggering reconnect.",
+		},
+	)
+	aguiMCPActiveConnections = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Namespace: "saker",
+			Subsystem: "agui",
+			Name:      "mcp_active_connections",
+			Help:      "Number of active MCP server connections across all cached threads.",
+		},
+	)
 )
 
 func init() {
@@ -108,4 +151,9 @@ func init() {
 	prometheus.MustRegister(aguiReconnectOverflowTotal)
 	prometheus.MustRegister(aguiSessionDetachedTotal)
 	prometheus.MustRegister(aguiSessionExpiredTotal)
+	prometheus.MustRegister(aguiMCPCacheHits)
+	prometheus.MustRegister(aguiMCPCacheMisses)
+	prometheus.MustRegister(aguiMCPConnectDuration)
+	prometheus.MustRegister(aguiMCPHealthCheckFailures)
+	prometheus.MustRegister(aguiMCPActiveConnections)
 }

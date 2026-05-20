@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"math/rand"
 	"sort"
 	"strings"
 	"sync"
@@ -93,6 +94,7 @@ func (s *sessionMCPRegistry) EnsureServers(ctx context.Context, servers []Client
 			if err := entry.registry.PingMCP(pingCtx); err != nil {
 				s.logger.Warn("session MCP: health check failed, will reconnect",
 					"name", name, "error", err)
+				aguiMCPHealthCheckFailures.Inc()
 				toRemove = append(toRemove, name)
 				toAdd = append(toAdd, entry.server)
 			}
@@ -128,6 +130,11 @@ func (s *sessionMCPRegistry) EnsureServers(ctx context.Context, servers []Client
 
 // connectServers connects multiple MCP servers concurrently using errgroup.
 func (s *sessionMCPRegistry) connectServers(ctx context.Context, servers []ClientMCPServer) error {
+	start := time.Now()
+	defer func() {
+		aguiMCPConnectDuration.Observe(time.Since(start).Seconds())
+	}()
+
 	timeout := s.connectTimeout
 	if timeout <= 0 {
 		timeout = 10 * time.Second
@@ -136,9 +143,6 @@ func (s *sessionMCPRegistry) connectServers(ctx context.Context, servers []Clien
 	if maxPar <= 0 {
 		maxPar = 4
 	}
-
-	connectCtx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
 
 	type connResult struct {
 		server   ClientMCPServer
@@ -150,20 +154,21 @@ func (s *sessionMCPRegistry) connectServers(ctx context.Context, servers []Clien
 		results []connResult
 	)
 
-	g, gctx := errgroup.WithContext(connectCtx)
+	g, gctx := errgroup.WithContext(ctx)
 	g.SetLimit(maxPar)
 
 	for _, srv := range servers {
 		g.Go(func() error {
-			reg := tool.NewRegistry()
-			opts := tool.MCPServerOptions{
-				Headers: srv.Headers,
-				Env:     srv.Env,
-				Timeout: timeout,
+			srvTimeout := timeout
+			if srv.Timeout > 0 {
+				srvTimeout = time.Duration(srv.Timeout * float64(time.Second))
+				if srvTimeout > timeout {
+					srvTimeout = timeout
+				}
 			}
-			if err := reg.RegisterMCPServerWithOptions(gctx, srv.Spec(), srv.Name, opts); err != nil {
-				reg.Close()
-				return fmt.Errorf("connect MCP server %q: %w", srv.Name, err)
+			reg, err := s.connectOneServer(gctx, srv, srvTimeout)
+			if err != nil {
+				return err
 			}
 			mu.Lock()
 			results = append(results, connResult{server: srv, registry: reg})
@@ -197,11 +202,48 @@ func (s *sessionMCPRegistry) connectServers(ctx context.Context, servers []Clien
 			server:   r.server,
 			registry: r.registry,
 		}
+		aguiMCPActiveConnections.Inc()
 	}
 	return nil
 }
 
+// connectOneServer connects a single MCP server with retry and exponential backoff.
+func (s *sessionMCPRegistry) connectOneServer(ctx context.Context, srv ClientMCPServer, timeout time.Duration) (*tool.Registry, error) {
+	const maxRetries = 2
+	backoff := 250 * time.Millisecond
+
+	var lastErr error
+	for attempt := 0; attempt <= maxRetries; attempt++ {
+		if attempt > 0 {
+			jitter := time.Duration(rand.Int63n(int64(backoff)))
+			select {
+			case <-ctx.Done():
+				return nil, fmt.Errorf("connect MCP server %q: %w", srv.Name, ctx.Err())
+			case <-time.After(backoff + jitter):
+			}
+			backoff = min(backoff*2, 5*time.Second)
+		}
+		reg := tool.NewRegistry()
+		opts := tool.MCPServerOptions{
+			Headers: srv.Headers,
+			Env:     srv.Env,
+			Timeout: timeout,
+		}
+		if err := reg.RegisterMCPServerWithOptions(ctx, srv.Spec(), srv.Name, opts); err != nil {
+			reg.Close()
+			lastErr = err
+			s.logger.Debug("session MCP: connect attempt failed",
+				"name", srv.Name, "attempt", attempt+1, "error", err)
+			continue
+		}
+		return reg, nil
+	}
+	return nil, fmt.Errorf("connect MCP server %q: %w", srv.Name, lastErr)
+}
+
 // LookupTool finds a tool by name across all connected MCP server registries.
+// It supports both raw names and prefixed names (serverName__toolName) for
+// conflict-resolved tools.
 func (s *sessionMCPRegistry) LookupTool(name string) (tool.Tool, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -209,15 +251,28 @@ func (s *sessionMCPRegistry) LookupTool(name string) (tool.Tool, bool) {
 	if s.closed {
 		return nil, false
 	}
+	// Try direct lookup first.
 	for _, entry := range s.entries {
 		if t, err := entry.registry.Get(name); err == nil {
 			return t, true
+		}
+	}
+	// Try prefixed lookup: strip serverName__ prefix and look in that server.
+	if idx := strings.Index(name, "__"); idx > 0 {
+		serverName := name[:idx]
+		rawName := name[idx+2:]
+		if entry, ok := s.entries[serverName]; ok {
+			if t, err := entry.registry.Get(rawName); err == nil {
+				return t, true
+			}
 		}
 	}
 	return nil, false
 }
 
 // ListToolDefs returns tool definitions aggregated from all connected MCP servers.
+// When multiple servers expose the same tool name, conflicting names are prefixed
+// with serverName__ to disambiguate (matching the main registry convention).
 func (s *sessionMCPRegistry) ListToolDefs() []model.ToolDefinition {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -226,15 +281,31 @@ func (s *sessionMCPRegistry) ListToolDefs() []model.ToolDefinition {
 		return nil
 	}
 
-	var defs []model.ToolDefinition
+	// First pass: detect name conflicts across servers.
+	nameCount := make(map[string]int)
 	for _, entry := range s.entries {
+		for _, t := range entry.registry.List() {
+			name := strings.TrimSpace(t.Name())
+			if name != "" {
+				nameCount[name]++
+			}
+		}
+	}
+
+	// Second pass: build definitions, prefixing conflicting names.
+	var defs []model.ToolDefinition
+	for serverName, entry := range s.entries {
 		for _, t := range entry.registry.List() {
 			name := strings.TrimSpace(t.Name())
 			if name == "" {
 				continue
 			}
+			exportName := name
+			if nameCount[name] > 1 {
+				exportName = serverName + "__" + name
+			}
 			defs = append(defs, model.ToolDefinition{
-				Name:        name,
+				Name:        exportName,
 				Description: strings.TrimSpace(t.Description()),
 				Parameters:  schemaToMap(t.Schema()),
 			})
@@ -332,6 +403,7 @@ func (s *sessionMCPRegistry) Close() {
 	s.closed = true
 	for name, entry := range s.entries {
 		entry.registry.Close()
+		aguiMCPActiveConnections.Dec()
 		s.logger.Debug("session MCP: closed server", "name", name)
 	}
 	s.entries = nil

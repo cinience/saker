@@ -233,7 +233,10 @@ func (g *Gateway) handleNewRun(c *gin.Context, input aguitypes.RunAgentInput, ru
 			}
 			// Try to reuse a cached registry for this thread (cross-turn reuse).
 			mcpReg = g.mcpCache.get(threadID)
-			if mcpReg == nil {
+			if mcpReg != nil {
+				aguiMCPCacheHits.Inc()
+			} else {
+				aguiMCPCacheMisses.Inc()
 				reg := newSessionMCPRegistry(g.deps.Logger)
 				if t := g.deps.Options.MCPConnectTimeout; t > 0 {
 					reg.connectTimeout = t

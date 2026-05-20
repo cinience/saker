@@ -161,7 +161,8 @@ func (g *Gateway) handleCapabilities(c *gin.Context) {
 		},
 		Custom: map[string]any{
 			"mcpServers": map[string]any{
-				"dynamic": true,
+				"dynamic":   true,
+				"connected": g.mcpCache.getServerNames(c.Query("threadId")),
 			},
 		},
 	}

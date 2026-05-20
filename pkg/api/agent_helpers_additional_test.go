@@ -8,11 +8,9 @@ import (
 
 	"github.com/saker-ai/saker/pkg/config"
 	"github.com/saker-ai/saker/pkg/model"
-	"github.com/saker-ai/saker/pkg/runtime/subagents"
 	"github.com/saker-ai/saker/pkg/sandbox"
 	"github.com/saker-ai/saker/pkg/security"
 	"github.com/saker-ai/saker/pkg/tool"
-	toolbuiltin "github.com/saker-ai/saker/pkg/tool/builtin"
 )
 
 type agentHelperStubTool struct {
@@ -75,16 +73,12 @@ func TestRegisterToolsDisallowedAndDuplicates(t *testing.T) {
 			agentHelperStubTool{name: "bash"},
 			agentHelperStubTool{name: "bash"},
 			agentHelperStubTool{name: "read"},
-			toolbuiltin.NewTaskTool(),
 		},
 	}
 	settings := &config.Settings{DisallowedTools: []string{"bash"}}
-	taskTool, err := registerTools(reg, opts, settings, nil, nil)
+	_, err := registerTools(reg, opts, settings, nil, nil)
 	if err != nil {
 		t.Fatalf("register tools failed: %v", err)
-	}
-	if taskTool == nil {
-		t.Fatalf("expected task tool")
 	}
 	if _, err := reg.Get("read"); err != nil {
 		t.Fatalf("expected Read tool registered: %v", err)
@@ -94,15 +88,6 @@ func TestRegisterToolsDisallowedAndDuplicates(t *testing.T) {
 	}
 }
 
-func TestLocateTaskTool(t *testing.T) {
-	if got := locateTaskTool(nil); got != nil {
-		t.Fatalf("expected nil task tool")
-	}
-	toolList := []tool.Tool{agentHelperStubTool{name: "x"}, toolbuiltin.NewTaskTool()}
-	if got := locateTaskTool(toolList); got == nil {
-		t.Fatalf("expected task tool")
-	}
-}
 
 func TestResolveModelErrors(t *testing.T) {
 	if _, err := resolveModel(context.Background(), Options{}); !errors.Is(err, ErrMissingModel) {
@@ -123,51 +108,20 @@ func (m modelProviderFunc) Model(context.Context) (model.Model, error) {
 	return nil, m.err
 }
 
-func TestRunTaskInvocationErrors(t *testing.T) {
-	rt := &Runtime{mode: ModeContext{EntryPoint: EntryPointCLI}}
-	if _, err := rt.runTaskInvocation(context.Background(), toolbuiltin.TaskRequest{Prompt: "hi"}); err == nil {
-		t.Fatalf("expected subagent manager error")
-	}
-	rt.subMgr = subagents.NewManager()
-	if _, err := rt.runTaskInvocation(context.Background(), toolbuiltin.TaskRequest{Prompt: ""}); err == nil {
-		t.Fatalf("expected empty prompt error")
-	}
-	// With a valid prompt and subMgr but no registered handlers, the task
-	// invocation spawns a subagent that fails due to uninitialized runtime state.
-	// It may return an error directly or a result with an error flag.
-	res, err := rt.runTaskInvocation(context.Background(), toolbuiltin.TaskRequest{Prompt: "hi", SubagentType: "nonexistent"})
-	if err == nil && (res == nil || res.Success) {
-		t.Fatalf("expected error or unsuccessful result for unregistered subagent type")
-	}
-}
 
-func TestConvertTaskToolResultDefaults(t *testing.T) {
-	res := subagents.Result{Subagent: "demo", Output: "", Error: "boom", Metadata: map[string]any{"k": "v", "subagent_id": "sub-123"}}
-	out := convertTaskToolResult(res)
-	if out.Success {
-		t.Fatalf("expected failure")
-	}
-	if !strings.Contains(out.Output, "demo") {
-		t.Fatalf("unexpected output %q", out.Output)
-	}
-	if data, ok := out.Data.(map[string]any); !ok || data["error"] != "boom" || data["subagent_id"] != "sub-123" {
-		t.Fatalf("expected error metadata")
-	}
-}
-
-func TestFilterBuiltinNamesAndTaskRegistration(t *testing.T) {
-	order := []string{"file_read", "bash", "task"}
+func TestFilterBuiltinNamesAndAgentRegistration(t *testing.T) {
+	order := []string{"file_read", "bash", "spawn_agent"}
 	if got := filterBuiltinNames([]string{"FILE-READ", "bash"}, order); len(got) != 2 {
 		t.Fatalf("unexpected filtered names %v", got)
 	}
 	if got := filterBuiltinNames([]string{}, order); got != nil {
 		t.Fatalf("expected nil filtered names, got %v", got)
 	}
-	if !shouldRegisterTaskTool(EntryPointCLI) {
-		t.Fatalf("expected task tool for CLI")
+	if !shouldRegisterAgentTools(EntryPointCLI) {
+		t.Fatalf("expected agent tools for CLI")
 	}
-	if shouldRegisterTaskTool(EntryPointCI) {
-		t.Fatalf("expected task tool disabled for CI")
+	if shouldRegisterAgentTools(EntryPointCI) {
+		t.Fatalf("expected agent tools disabled for CI")
 	}
 }
 

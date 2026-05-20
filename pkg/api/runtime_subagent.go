@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"maps"
 	"strings"
 	"time"
 
@@ -15,7 +14,6 @@ import (
 	"github.com/saker-ai/saker/pkg/model"
 	"github.com/saker-ai/saker/pkg/runtime/skills"
 	"github.com/saker-ai/saker/pkg/runtime/subagents"
-	"github.com/saker-ai/saker/pkg/tool"
 	toolbuiltin "github.com/saker-ai/saker/pkg/tool/builtin"
 )
 
@@ -507,117 +505,6 @@ func (rt *Runtime) waitSubagent(ctx context.Context, id string, timeout time.Dur
 		return subagents.WaitResult{}, errors.New("api: subagent manager is not configured")
 	}
 	return exec.Wait(ctx, subagents.WaitRequest{ID: id, Timeout: timeout})
-}
-
-func (rt *Runtime) taskRunner() toolbuiltin.TaskRunner {
-	return func(ctx context.Context, req toolbuiltin.TaskRequest) (*tool.ToolResult, error) {
-		return rt.runTaskInvocation(ctx, req)
-	}
-}
-
-func (rt *Runtime) runTaskInvocation(ctx context.Context, req toolbuiltin.TaskRequest) (*tool.ToolResult, error) {
-	if rt == nil {
-		return nil, errors.New("api: runtime is nil")
-	}
-	if rt.subMgr == nil {
-		return nil, errors.New("api: subagent manager is not configured")
-	}
-	prompt := strings.TrimSpace(req.Prompt)
-	if prompt == "" {
-		return nil, errors.New("api: task prompt is empty")
-	}
-	sessionID := strings.TrimSpace(req.Resume)
-	if sessionID == "" {
-		sessionID = defaultSessionID(rt.mode.EntryPoint)
-	}
-	reqPayload := &Request{
-		Prompt:         prompt,
-		Mode:           rt.mode,
-		SessionID:      sessionID,
-		TargetSubagent: req.SubagentType,
-	}
-	if desc := strings.TrimSpace(req.Description); desc != "" {
-		reqPayload.Metadata = map[string]any{"task.description": desc}
-	}
-	if req.Model != "" {
-		if reqPayload.Metadata == nil {
-			reqPayload.Metadata = map[string]any{}
-		}
-		reqPayload.Metadata["task.model"] = req.Model
-	}
-	activation := skills.ActivationContext{Prompt: prompt}
-	if len(reqPayload.Metadata) > 0 {
-		activation.Metadata = maps.Clone(reqPayload.Metadata)
-	}
-	// Pass background flag through to SpawnRequest via metadata.
-	if req.Background {
-		if reqPayload.Metadata == nil {
-			reqPayload.Metadata = map[string]any{}
-		}
-		reqPayload.Metadata["task.background"] = true
-	}
-
-	handle, err := rt.spawnSubagent(ctx, prompt, activation, reqPayload)
-	if err != nil {
-		return nil, err
-	}
-
-	// Background mode: return immediately with the task handle ID.
-	if req.Background {
-		return &tool.ToolResult{
-			Success: true,
-			Output:  fmt.Sprintf("Agent launched in background with task ID: %s", handle.ID),
-			Data: map[string]any{
-				"subagent_id": handle.ID,
-				"background":  true,
-			},
-		}, nil
-	}
-
-	waited, err := rt.waitSubagent(ctx, handle.ID, 10*time.Minute)
-	if err != nil {
-		return nil, err
-	}
-	if waited.TimedOut || waited.Instance.Result == nil {
-		return nil, errors.New("api: task execution returned no result")
-	}
-	res := *waited.Instance.Result
-	if len(res.Metadata) > 0 {
-		res.Metadata = maps.Clone(res.Metadata)
-	}
-	if len(res.Metadata) == 0 {
-		res.Metadata = map[string]any{}
-	}
-	res.Metadata["subagent_id"] = handle.ID
-	return convertTaskToolResult(res), nil
-}
-
-func convertTaskToolResult(res subagents.Result) *tool.ToolResult {
-	output := strings.TrimSpace(fmt.Sprint(res.Output))
-	if output == "" {
-		if res.Subagent != "" {
-			output = fmt.Sprintf("subagent %s completed", res.Subagent)
-		} else {
-			output = "subagent completed"
-		}
-	}
-	data := map[string]any{
-		"subagent": res.Subagent,
-	}
-	if len(res.Metadata) > 0 {
-		data["metadata"] = res.Metadata
-		if id, ok := res.Metadata["subagent_id"]; ok {
-			data["subagent_id"] = id
-		}
-	}
-	if res.Error != "" {
-		data["error"] = res.Error
-	}
-	return &tool.ToolResult{
-		Success: res.Error == "",
-		Output:  output,
-		Data:    data,
-	}
 }
 
 // selectModelForSubagent returns the appropriate model for the given subagent type.

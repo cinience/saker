@@ -198,7 +198,6 @@ func New(ctx context.Context, opts Options) (*Runtime, error) {
 	if err != nil {
 		return nil, err
 	}
-	taskTool := toolRefs.taskTool
 	mcpServers := collectMCPServers(settings, opts.MCPServers)
 	if err := registerMCPServers(ctx, registry, sbox, mcpServers); err != nil {
 		return nil, err
@@ -356,22 +355,14 @@ func New(ctx context.Context, opts Options) (*Runtime, error) {
 	if rt.checkpoints == nil {
 		rt.checkpoints = checkpoint.NewMemoryStore()
 	}
-	// Ensure subagent manager exists when Task tool is registered, so the
-	// agent-loop fallback path in runTraditional works even without
-	// explicit handler registrations.
-	if rt.subMgr == nil && taskTool != nil {
+	// Ensure subagent manager exists when agent tools are registered.
+	if rt.subMgr == nil && toolRefs.spawnAgentTool != nil {
 		rt.subMgr = subagents.NewManager()
 	}
 	rt.ensureSubagentExecutor()
 	rt.sessionGate = newSessionGate()
 
-	if taskTool != nil {
-		taskTool.SetRunner(rt.taskRunner())
-		if desc := buildACPAgentDescriptions(opts.ACPAgents); desc != "" {
-			taskTool.AppendAgentDescriptions(desc)
-		}
-	}
-	// Wire the new agent management tools.
+	// Wire agent management tools.
 	agentRunner := rt.agentRunnerAdapter()
 	if toolRefs.spawnAgentTool != nil {
 		toolRefs.spawnAgentTool.SetRunner(agentRunner)

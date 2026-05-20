@@ -14,7 +14,6 @@ import (
 	"github.com/saker-ai/saker/pkg/runtime/subagents"
 	"github.com/saker-ai/saker/pkg/security"
 	"github.com/saker-ai/saker/pkg/tool"
-	toolbuiltin "github.com/saker-ai/saker/pkg/tool/builtin"
 )
 
 // ---------------------------------------------------------------------------
@@ -148,10 +147,10 @@ func TestRuntimeToolsApprovalActor(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// shouldRegisterTaskTool
+// shouldRegisterAgentTools
 // ---------------------------------------------------------------------------
 
-func TestRuntimeToolsShouldRegisterTaskTool(t *testing.T) {
+func TestRuntimeToolsShouldRegisterAgentTools(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
 		entry EntryPoint
@@ -165,9 +164,9 @@ func TestRuntimeToolsShouldRegisterTaskTool(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(string(tt.entry), func(t *testing.T) {
-			got := shouldRegisterTaskTool(tt.entry)
+			got := shouldRegisterAgentTools(tt.entry)
 			if got != tt.want {
-				t.Fatalf("shouldRegisterTaskTool(%v) = %v, want %v", tt.entry, got, tt.want)
+				t.Fatalf("shouldRegisterAgentTools(%v) = %v, want %v", tt.entry, got, tt.want)
 			}
 		})
 	}
@@ -201,39 +200,6 @@ func TestRuntimeToolsEffectiveEntryPoint(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
-// locateTaskTool
-// ---------------------------------------------------------------------------
-
-func TestRuntimeToolsLocateTaskTool(t *testing.T) {
-	t.Parallel()
-	// Empty list returns nil.
-	if got := locateTaskTool(nil); got != nil {
-		t.Fatalf("expected nil for nil list")
-	}
-	if got := locateTaskTool([]tool.Tool{}); got != nil {
-		t.Fatalf("expected nil for empty list")
-	}
-	// List without TaskTool returns nil.
-	bash := toolbuiltin.NewBashToolWithRoot(t.TempDir())
-	if got := locateTaskTool([]tool.Tool{bash}); got != nil {
-		t.Fatalf("expected nil when no TaskTool present")
-	}
-	// List with nil entries returns nil.
-	if got := locateTaskTool([]tool.Tool{nil}); got != nil {
-		t.Fatalf("expected nil for nil tool entry")
-	}
-	// List with TaskTool returns it.
-	taskTool := toolbuiltin.NewTaskTool()
-	if got := locateTaskTool([]tool.Tool{bash, taskTool}); got != taskTool {
-		t.Fatalf("expected TaskTool to be found")
-	}
-	// First TaskTool wins when multiple exist.
-	first := toolbuiltin.NewTaskTool()
-	if got := locateTaskTool([]tool.Tool{first, toolbuiltin.NewTaskTool()}); got != first {
-		t.Fatalf("expected first TaskTool to be returned")
-	}
-}
 
 // ---------------------------------------------------------------------------
 // filterBuiltinNames
@@ -296,19 +262,19 @@ func TestRuntimeToolsFilterBuiltinNames(t *testing.T) {
 
 func TestRuntimeToolsBuiltinOrder(t *testing.T) {
 	t.Parallel()
-	// CLI and Platform include "task" tool.
+	// CLI and Platform include agent management tools.
 	cliOrder := builtinOrder(EntryPointCLI, "")
-	if !rtContainsString(cliOrder, "task") {
-		t.Fatalf("CLI order should include task tool")
+	if !rtContainsString(cliOrder, "spawn_agent") {
+		t.Fatalf("CLI order should include spawn_agent tool")
 	}
 	platformOrder := builtinOrder(EntryPointPlatform, "")
-	if !rtContainsString(platformOrder, "task") {
-		t.Fatalf("Platform order should include task tool")
+	if !rtContainsString(platformOrder, "spawn_agent") {
+		t.Fatalf("Platform order should include spawn_agent tool")
 	}
-	// CI does not include "task" tool.
+	// CI does not include agent management tools.
 	ciOrder := builtinOrder(EntryPointCI, "")
-	if rtContainsString(ciOrder, "task") {
-		t.Fatalf("CI order should not include task tool")
+	if rtContainsString(ciOrder, "spawn_agent") {
+		t.Fatalf("CI order should not include spawn_agent tool")
 	}
 	// Core tools are present in all entrypoints.
 	coreTools := []string{"bash", "file_read", "file_write", "file_edit", "grep", "glob"}
