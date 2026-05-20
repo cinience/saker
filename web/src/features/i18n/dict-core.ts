@@ -72,6 +72,8 @@ export const dictCore = {
   "approval.allow": { en: "Allow", zh: "允许" },
   "approval.deny": { en: "Deny", zh: "拒绝" },
   "approval.submitted": { en: "Response submitted", zh: "已提交响应" },
+  "approval.allowed": { en: "Allowed", zh: "已允许" },
+  "approval.denied": { en: "Denied", zh: "已拒绝" },
 } as const;
 
 export type DictCoreKey = keyof typeof dictCore;

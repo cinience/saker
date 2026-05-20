@@ -153,15 +153,12 @@ func (s *streamState) translateEvent(ctx context.Context, w io.Writer, sseW sseW
 			}
 			s.textStarted = false
 		} else if s.textMsgSeq == 0 {
-			// No text message started yet — emit an empty text message to create
-			// the assistant message container that tool calls reference via parentMessageId.
+			// Tool call before any text content. Don't emit an empty
+			// TextMessageStart→End placeholder — CopilotKit finalizes empty
+			// messages in a way that prevents the same ID from being reopened
+			// when actual text arrives later. The parentMessageId on tool calls
+			// will reference msg_X which gets created on first text content.
 			s.textMsgSeq++
-			if err := s.writeEvent(ctx, w, sseW, aguievents.NewTextMessageStartEvent(s.currentTextMsgID(), aguievents.WithRole("assistant"))); err != nil {
-				return nil, err
-			}
-			if err := s.writeEvent(ctx, w, sseW, aguievents.NewTextMessageEndEvent(s.currentTextMsgID())); err != nil {
-				return nil, err
-			}
 		}
 		if s.lastToolID != "" {
 			if err := s.writeEvent(ctx, w, sseW, aguievents.NewToolCallEndEvent(s.lastToolID)); err != nil {

@@ -84,8 +84,28 @@ export function QuestionCard({ question, onRespond }: Props) {
     }
   }, [canSubmit, submitting, submitted, question, selections, showOther, otherTexts, onRespond]);
 
+  if (submitted) {
+    return (
+      <div className="question-card question-card--submitted">
+        {question.questions.map((q, qi) => {
+          const sel = selections[q.question] || [];
+          const other = showOther[q.question] ? otherTexts[q.question]?.trim() : "";
+          const answer = other
+            ? (q.multiSelect ? [...sel, other].join(", ") : other)
+            : sel.join(", ");
+          return (
+            <div key={qi} className="question-result">
+              <span className="question-result-q">{q.question}</span>
+              <span className="question-result-a">{answer}</span>
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
+
   return (
-    <div className={`question-card${submitted ? " question-card--submitted" : ""}`}>
+    <div className="question-card">
       {question.questions.map((q, qi) => {
         const selected = selections[q.question] || [];
         const isOtherActive = showOther[q.question] || false;
