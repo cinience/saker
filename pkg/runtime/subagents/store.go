@@ -9,6 +9,7 @@ type Store interface {
 	Get(id string) (Instance, bool)
 	Update(id string, fn func(*Instance) error) error
 	ListBySession(sessionID string) []Instance
+	ListAll() []Instance
 }
 
 type MemoryStore struct {
@@ -60,6 +61,16 @@ func (s *MemoryStore) ListBySession(sessionID string) []Instance {
 		if inst.SessionID == sessionID || inst.ParentSessionID == sessionID {
 			out = append(out, inst.clone())
 		}
+	}
+	return out
+}
+
+func (s *MemoryStore) ListAll() []Instance {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make([]Instance, 0, len(s.items))
+	for _, inst := range s.items {
+		out = append(out, inst.clone())
 	}
 	return out
 }

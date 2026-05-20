@@ -76,6 +76,46 @@ Output format (plain text labels, not markdown headers):
 %s%s`, ForkBoilerplateTag, ForkBoilerplateTag, ForkDirectivePrefix, directive)
 }
 
+// TruncateToLastNTurns keeps only the last n user+assistant turn pairs from
+// messages while always preserving system-role messages. A "turn" is one
+// user message followed by one assistant message. When n <= 0, all messages
+// are returned unchanged.
+func TruncateToLastNTurns(messages []message.Message, n int) []message.Message {
+	if n <= 0 || len(messages) == 0 {
+		return messages
+	}
+
+	// Separate system messages (always kept) from conversation messages.
+	var system []message.Message
+	var conversation []message.Message
+	for _, msg := range messages {
+		if msg.Role == "system" {
+			system = append(system, msg)
+		} else {
+			conversation = append(conversation, msg)
+		}
+	}
+
+	// Count turns from the end. A turn boundary is each user message.
+	turns := 0
+	cutIdx := 0
+	for i := len(conversation) - 1; i >= 0; i-- {
+		if conversation[i].Role == "user" {
+			turns++
+			if turns >= n {
+				cutIdx = i
+				break
+			}
+		}
+	}
+
+	kept := conversation[cutIdx:]
+	result := make([]message.Message, 0, len(system)+len(kept))
+	result = append(result, system...)
+	result = append(result, kept...)
+	return result
+}
+
 // BuildForkedMessages constructs the messages to prepend to a fork child's
 // conversation. For prompt cache sharing, all fork children must produce
 // byte-identical API request prefixes. This function:

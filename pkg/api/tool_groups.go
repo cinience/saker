@@ -7,6 +7,7 @@ const (
 	GroupCoreIO      ToolGroup = "core_io"
 	GroupBashMgmt    ToolGroup = "bash_mgmt"
 	GroupTaskMgmt    ToolGroup = "task_mgmt"
+	GroupAgentMgmt   ToolGroup = "agent_mgmt"
 	GroupWeb         ToolGroup = "web"
 	GroupMedia       ToolGroup = "media"
 	GroupInteraction ToolGroup = "interaction"
@@ -18,6 +19,7 @@ var groupTools = map[ToolGroup][]string{
 	GroupCoreIO:      {"bash", "file_read", "file_write", "file_edit", "grep", "glob"},
 	GroupBashMgmt:    {"bash_output", "bash_status", "kill_task"},
 	GroupTaskMgmt:    {"task", "task_create", "task_list", "task_get", "task_update"},
+	GroupAgentMgmt:   {"spawn_agent", "send_input", "wait_agent", "close_agent", "spawn_agents_batch"},
 	GroupWeb:         {"web_fetch", "web_search"},
 	GroupMedia:       {"image_read", "video_sampler", "stream_capture", "stream_monitor", "frame_analyzer", "video_summarizer", "analyze_video", "media_index", "media_search"},
 	GroupInteraction: {"ask_user_question", "skill", "slash_command"},
@@ -41,9 +43,9 @@ const (
 )
 
 var presetGroups = map[ModePreset][]ToolGroup{
-	PresetCLI:       {GroupCoreIO, GroupBashMgmt, GroupTaskMgmt, GroupWeb, GroupMedia, GroupInteraction},
-	PresetServerWeb: {GroupCoreIO, GroupBashMgmt, GroupTaskMgmt, GroupWeb, GroupMedia, GroupInteraction, GroupCanvas, GroupBrowser},
-	PresetServerAPI: {GroupCoreIO, GroupBashMgmt, GroupTaskMgmt, GroupWeb, GroupMedia, GroupInteraction},
+	PresetCLI:       {GroupCoreIO, GroupBashMgmt, GroupTaskMgmt, GroupAgentMgmt, GroupWeb, GroupMedia, GroupInteraction},
+	PresetServerWeb: {GroupCoreIO, GroupBashMgmt, GroupTaskMgmt, GroupAgentMgmt, GroupWeb, GroupMedia, GroupInteraction, GroupCanvas, GroupBrowser},
+	PresetServerAPI: {GroupCoreIO, GroupBashMgmt, GroupTaskMgmt, GroupAgentMgmt, GroupWeb, GroupMedia, GroupInteraction},
 	PresetCI:        {GroupCoreIO, GroupBashMgmt},
 }
 

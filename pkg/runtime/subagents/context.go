@@ -17,6 +17,13 @@ type Context struct {
 	ToolDenylist  []string
 	Model         string
 
+	// Depth tracks the current nesting level of subagent spawns.
+	// 0 = root agent, 1 = first-level subagent, etc.
+	Depth int
+	// ForkTurns limits the number of conversation turns copied from the parent
+	// when forking. 0 means copy all history (default).
+	ForkTurns int
+
 	// Fork-specific fields: when set, the subagent inherits the parent's
 	// conversation state for prompt cache sharing.
 	ParentSystemPrompt string // parent's rendered system prompt (byte-identical for cache)
@@ -25,7 +32,14 @@ type Context struct {
 
 // Clone produces a deep copy to maintain isolation between runs.
 func (c Context) Clone() Context {
-	cloned := Context{SessionID: c.SessionID, Model: c.Model, ParentSystemPrompt: c.ParentSystemPrompt, IsFork: c.IsFork}
+	cloned := Context{
+		SessionID:          c.SessionID,
+		Model:              c.Model,
+		Depth:              c.Depth,
+		ForkTurns:          c.ForkTurns,
+		ParentSystemPrompt: c.ParentSystemPrompt,
+		IsFork:             c.IsFork,
+	}
 	if len(c.Metadata) > 0 {
 		cloned.Metadata = maps.Clone(c.Metadata)
 	}

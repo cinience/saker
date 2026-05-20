@@ -99,6 +99,12 @@ func (h *History) TruncateLast(n int) {
 	h.messages = h.messages[:len(h.messages)-n]
 }
 
+// AppendNotification injects a system notification as a user message.
+// Used by the subagent completion callback to inform the parent agent.
+func (h *History) AppendNotification(text string) {
+	h.Append(Message{Role: "user", Content: text})
+}
+
 // Reset clears the history contents.
 func (h *History) Reset() {
 	h.mu.Lock()

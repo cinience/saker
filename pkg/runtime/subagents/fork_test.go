@@ -158,3 +158,120 @@ func TestBuildForkedMessages_DoesNotMutateOriginal(t *testing.T) {
 		t.Error("tool calls share memory with original")
 	}
 }
+
+func TestTruncateToLastNTurns(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name     string
+		messages []message.Message
+		n        int
+		wantLen  int
+		wantMsg  string // content of first non-system message in result
+	}{
+		{
+			name:     "zero n returns all",
+			messages: []message.Message{{Role: "user", Content: "a"}, {Role: "assistant", Content: "b"}},
+			n:        0,
+			wantLen:  2,
+			wantMsg:  "a",
+		},
+		{
+			name:     "negative n returns all",
+			messages: []message.Message{{Role: "user", Content: "a"}, {Role: "assistant", Content: "b"}},
+			n:        -1,
+			wantLen:  2,
+			wantMsg:  "a",
+		},
+		{
+			name: "keeps last 1 turn",
+			messages: []message.Message{
+				{Role: "user", Content: "first"},
+				{Role: "assistant", Content: "reply1"},
+				{Role: "user", Content: "second"},
+				{Role: "assistant", Content: "reply2"},
+			},
+			n:       1,
+			wantLen: 2,
+			wantMsg: "second",
+		},
+		{
+			name: "keeps last 2 turns from 3",
+			messages: []message.Message{
+				{Role: "user", Content: "a"},
+				{Role: "assistant", Content: "b"},
+				{Role: "user", Content: "c"},
+				{Role: "assistant", Content: "d"},
+				{Role: "user", Content: "e"},
+				{Role: "assistant", Content: "f"},
+			},
+			n:       2,
+			wantLen: 4,
+			wantMsg: "c",
+		},
+		{
+			name: "system messages always preserved",
+			messages: []message.Message{
+				{Role: "system", Content: "sys"},
+				{Role: "user", Content: "a"},
+				{Role: "assistant", Content: "b"},
+				{Role: "user", Content: "c"},
+				{Role: "assistant", Content: "d"},
+			},
+			n:       1,
+			wantLen: 3, // system + last turn
+			wantMsg: "sys",
+		},
+		{
+			name: "n larger than total turns returns all",
+			messages: []message.Message{
+				{Role: "user", Content: "only"},
+				{Role: "assistant", Content: "one"},
+			},
+			n:       10,
+			wantLen: 2,
+			wantMsg: "only",
+		},
+		{
+			name:     "empty messages",
+			messages: nil,
+			n:        5,
+			wantLen:  0,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := TruncateToLastNTurns(tt.messages, tt.n)
+			if len(got) != tt.wantLen {
+				t.Errorf("len = %d, want %d; messages: %+v", len(got), tt.wantLen, got)
+			}
+			if tt.wantMsg != "" && len(got) > 0 && got[0].Content != tt.wantMsg {
+				t.Errorf("first msg content = %q, want %q", got[0].Content, tt.wantMsg)
+			}
+		})
+	}
+}
+
+func TestTruncateToLastNTurnsPreservesSystemOrder(t *testing.T) {
+	t.Parallel()
+	msgs := []message.Message{
+		{Role: "system", Content: "prompt"},
+		{Role: "user", Content: "u1"},
+		{Role: "assistant", Content: "a1"},
+		{Role: "user", Content: "u2"},
+		{Role: "assistant", Content: "a2"},
+		{Role: "user", Content: "u3"},
+		{Role: "assistant", Content: "a3"},
+	}
+	got := TruncateToLastNTurns(msgs, 1)
+	// Should be: system, u3, a3
+	if len(got) != 3 {
+		t.Fatalf("len = %d, want 3", len(got))
+	}
+	if got[0].Role != "system" {
+		t.Errorf("got[0].Role = %q, want system", got[0].Role)
+	}
+	if got[1].Content != "u3" {
+		t.Errorf("got[1].Content = %q, want u3", got[1].Content)
+	}
+}

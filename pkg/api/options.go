@@ -110,6 +110,13 @@ type Options struct {
 	MaxTokens   int
 	MaxSessions int
 
+	// SubagentMaxDepth controls the maximum nesting depth of subagent spawns.
+	// Zero uses the default (2). Set to -1 for unlimited depth.
+	SubagentMaxDepth int
+	// SubagentMaxThreads limits concurrent subagent goroutines.
+	// Zero uses the default (8). Set to -1 for unlimited concurrency.
+	SubagentMaxThreads int
+
 	// RepeatLoopThreshold caps identical consecutive tool calls before aborting.
 	// Zero applies the agent default; negative disables detection.
 	RepeatLoopThreshold int

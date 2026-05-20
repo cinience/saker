@@ -7,6 +7,7 @@ import (
 
 	"github.com/saker-ai/saker/pkg/agent"
 	"github.com/saker-ai/saker/pkg/config"
+	"github.com/saker-ai/saker/pkg/message"
 	"github.com/saker-ai/saker/pkg/runtime/skills"
 	"github.com/saker-ai/saker/pkg/runtime/subagents"
 	toolbuiltin "github.com/saker-ai/saker/pkg/tool/builtin"
@@ -1473,5 +1474,141 @@ func TestAnyToStringSubagent(t *testing.T) {
 				t.Errorf("anyToString got = %q, want %q", got, tt.want)
 			}
 		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Phase 1: Depth control + completion notification tests
+// ---------------------------------------------------------------------------
+
+func TestOnSubagentCompleteInjectsNotification(t *testing.T) {
+	t.Parallel()
+	histories := newHistoryStore(10)
+	rt := &Runtime{histories: histories}
+
+	// Non-background instance should not inject anything.
+	rt.onSubagentComplete(subagents.Instance{
+		ID:              "sub-1",
+		ParentSessionID: "parent",
+		Background:      false,
+		Status:          subagents.StatusCompleted,
+		Result:          &subagents.Result{Output: "result"},
+	})
+	hist := histories.Get("parent")
+	if hist.Len() != 0 {
+		t.Fatalf("non-background should not inject, got %d messages", hist.Len())
+	}
+
+	// Background instance should inject a notification.
+	rt.onSubagentComplete(subagents.Instance{
+		ID:              "sub-2",
+		ParentSessionID: "parent",
+		Background:      true,
+		Status:          subagents.StatusCompleted,
+		Result:          &subagents.Result{Output: "task done"},
+	})
+	if hist.Len() != 1 {
+		t.Fatalf("expected 1 notification, got %d", hist.Len())
+	}
+	msgs := hist.All()
+	if msgs[0].Role != "user" {
+		t.Errorf("notification role = %q, want user", msgs[0].Role)
+	}
+	if !strings.Contains(msgs[0].Content, "sub-2") {
+		t.Errorf("notification should contain agent ID, got: %s", msgs[0].Content)
+	}
+	if !strings.Contains(msgs[0].Content, "task done") {
+		t.Errorf("notification should contain output summary, got: %s", msgs[0].Content)
+	}
+}
+
+func TestOnSubagentCompleteNoParentSession(t *testing.T) {
+	t.Parallel()
+	histories := newHistoryStore(10)
+	rt := &Runtime{histories: histories}
+
+	// Empty ParentSessionID should be a no-op.
+	rt.onSubagentComplete(subagents.Instance{
+		ID:              "sub-1",
+		ParentSessionID: "",
+		Background:      true,
+		Status:          subagents.StatusCompleted,
+		Result:          &subagents.Result{Output: "result"},
+	})
+}
+
+func TestOnSubagentCompleteWithError(t *testing.T) {
+	t.Parallel()
+	histories := newHistoryStore(10)
+	rt := &Runtime{histories: histories}
+
+	rt.onSubagentComplete(subagents.Instance{
+		ID:              "sub-err",
+		ParentSessionID: "parent",
+		Background:      true,
+		Status:          subagents.StatusFailed,
+		Error:           "timeout exceeded",
+		Result:          &subagents.Result{Output: "partial"},
+	})
+	hist := histories.Get("parent")
+	msgs := hist.All()
+	if len(msgs) != 1 {
+		t.Fatalf("expected 1 notification, got %d", len(msgs))
+	}
+	if !strings.Contains(msgs[0].Content, "timeout exceeded") {
+		t.Errorf("notification should contain error, got: %s", msgs[0].Content)
+	}
+}
+
+func TestSubagentToolDenylistForDepth(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name       string
+		depth      int
+		maxDepth   int
+		wantAgent  bool
+		wantTask   bool
+		wantAskUsr bool
+	}{
+		{"depth 0, max 2: agent/task allowed", 0, 2, false, false, true},
+		{"depth 1, max 2: agent/task denied (at limit)", 1, 2, true, true, true},
+		{"depth 0, max 1: agent/task denied", 0, 1, true, true, true},
+		{"depth 0, max 0 (unlimited): agent/task allowed", 0, 0, false, false, true},
+		{"depth 5, max 0 (unlimited): agent/task allowed", 5, 0, false, false, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			denylist := subagentToolDenylistForDepth(tt.depth, tt.maxDepth)
+			set := map[string]bool{}
+			for _, s := range denylist {
+				set[s] = true
+			}
+			if set["agent"] != tt.wantAgent {
+				t.Errorf("agent denied = %v, want %v", set["agent"], tt.wantAgent)
+			}
+			if set["task"] != tt.wantTask {
+				t.Errorf("task denied = %v, want %v", set["task"], tt.wantTask)
+			}
+			if set["ask_user"] != tt.wantAskUsr {
+				t.Errorf("ask_user denied = %v, want %v", set["ask_user"], tt.wantAskUsr)
+			}
+		})
+	}
+}
+
+func TestHistoryAppendNotification(t *testing.T) {
+	t.Parallel()
+	h := message.NewHistory()
+	h.AppendNotification("test notification")
+	msgs := h.All()
+	if len(msgs) != 1 {
+		t.Fatalf("expected 1 message, got %d", len(msgs))
+	}
+	if msgs[0].Role != "user" {
+		t.Errorf("role = %q, want user", msgs[0].Role)
+	}
+	if msgs[0].Content != "test notification" {
+		t.Errorf("content = %q, want %q", msgs[0].Content, "test notification")
 	}
 }

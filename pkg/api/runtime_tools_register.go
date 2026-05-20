@@ -80,6 +80,21 @@ func registerTools(registry *tool.Registry, opts Options, settings *config.Setti
 			if t, ok := impl.(*toolbuiltin.TaskTool); ok {
 				refs.taskTool = t
 			}
+			if t, ok := impl.(*toolbuiltin.SpawnAgentTool); ok {
+				refs.spawnAgentTool = t
+			}
+			if t, ok := impl.(*toolbuiltin.SendInputTool); ok {
+				refs.sendInputTool = t
+			}
+			if t, ok := impl.(*toolbuiltin.WaitAgentTool); ok {
+				refs.waitAgentTool = t
+			}
+			if t, ok := impl.(*toolbuiltin.CloseAgentTool); ok {
+				refs.closeAgentTool = t
+			}
+			if t, ok := impl.(*toolbuiltin.SpawnAgentsBatchTool); ok {
+				refs.spawnAgentsBatchTool = t
+			}
 			if t, ok := impl.(*toolbuiltin.StreamMonitorTool); ok {
 				refs.streamMonitor = t
 			}

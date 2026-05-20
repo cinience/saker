@@ -219,6 +219,17 @@ func defaultSubagentToolDenylist() []string {
 	return normalizeStrings(out)
 }
 
+// subagentToolDenylistForDepth returns a depth-aware denylist. Tools that
+// enable spawning (agent, task) are only denied at the deepest allowed level;
+// interaction tools (enter_plan, ask_user*) are always denied.
+func subagentToolDenylistForDepth(depth, maxDepth int) []string {
+	always := []string{"enter_plan", "ask_user", "ask_user_question"}
+	if maxDepth > 0 && depth >= maxDepth-1 {
+		always = append(always, "agent", "task")
+	}
+	return normalizeStrings(always)
+}
+
 func mergeToolLists(a, b []string) []string {
 	if len(a) == 0 {
 		return normalizeStrings(b)

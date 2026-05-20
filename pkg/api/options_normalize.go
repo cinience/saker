@@ -65,6 +65,12 @@ func (o Options) withDefaults() Options {
 	if o.MaxSessions <= 0 {
 		o.MaxSessions = defaultMaxSessions
 	}
+	if o.SubagentMaxDepth == 0 {
+		o.SubagentMaxDepth = 2
+	}
+	if o.SubagentMaxThreads == 0 {
+		o.SubagentMaxThreads = 8
+	}
 
 	// Layered MaxIterations defaults — picked per surface so a long-running
 	// platform service isn't constrained by a CLI one-shot's safety cap. Set

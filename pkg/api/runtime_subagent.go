@@ -11,6 +11,7 @@ import (
 	acpclient "github.com/saker-ai/saker/pkg/acp/client"
 	"github.com/saker-ai/saker/pkg/agent"
 	"github.com/saker-ai/saker/pkg/config"
+	"github.com/saker-ai/saker/pkg/message"
 	"github.com/saker-ai/saker/pkg/model"
 	"github.com/saker-ai/saker/pkg/runtime/skills"
 	"github.com/saker-ai/saker/pkg/runtime/subagents"
@@ -164,7 +165,7 @@ func (r runtimeSubagentRunner) runTraditional(ctx context.Context, req subagents
 		Mode:           r.rt.mode,
 	}
 	subCtx := req.ParentContext.Clone()
-	subCtx.ToolDenylist = mergeToolLists(subCtx.ToolDenylist, defaultSubagentToolDenylist())
+	subCtx.ToolDenylist = mergeToolLists(subCtx.ToolDenylist, subagentToolDenylistForDepth(subCtx.Depth, r.rt.opts.SubagentMaxDepth))
 	ctx = subagents.WithContext(ctx, subCtx)
 
 	// Extract model tier from metadata (set by runTaskInvocation).
@@ -204,9 +205,21 @@ func (r runtimeSubagentRunner) runTraditional(ctx context.Context, req subagents
 	history := r.rt.histories.Get(sessionID)
 	recorder := defaultHookRecorder()
 	whitelist := combineToolWhitelists(normalized.ToolWhitelist, nil)
+
+	// Build prompt: only inject the no-spawn directive at the deepest allowed
+	// level so intermediate subagents can still spawn children.
+	promptPrefix := subagentEnhancement
+	currentDepth := 0
+	if subCtx, ok := subagents.FromContext(ctx); ok {
+		currentDepth = subCtx.Depth
+	}
+	if r.rt.opts.SubagentMaxDepth > 0 && currentDepth >= r.rt.opts.SubagentMaxDepth-1 {
+		promptPrefix = subagentNoSpawnDirective + "\n\n" + promptPrefix
+	}
+
 	prep := preparedRun{
 		ctx:           ctx,
-		prompt:        subagentNoSpawnDirective + "\n\n" + subagentEnhancement + "\n\n" + strings.TrimSpace(req.Instruction),
+		prompt:        promptPrefix + "\n\n" + strings.TrimSpace(req.Instruction),
 		history:       history,
 		normalized:    normalized,
 		recorder:      recorder,
@@ -220,6 +233,15 @@ func (r runtimeSubagentRunner) runTraditional(ctx context.Context, req subagents
 		maxIterationsOverride: subagentMaxIterations(r.rt.opts.MaxIterations),
 	}
 	defer r.rt.persistHistory(sessionID, history)
+
+	// Start mailbox draining: inject external messages into history so the
+	// agent loop picks them up on its next iteration.
+	mailboxDone := make(chan struct{})
+	go func() {
+		defer close(mailboxDone)
+		r.drainMailbox(ctx, req.InstanceID, history)
+	}()
+	defer func() { <-mailboxDone }()
 
 	runRes, err := r.rt.runAgentWithMiddleware(prep)
 	if err != nil {
@@ -259,6 +281,11 @@ func (r runtimeSubagentRunner) runFork(ctx context.Context, req subagents.RunReq
 			Subagent: subagents.ForkSubagentType,
 			Error:    "cannot fork from within a fork child",
 		}, errors.New("api: cannot fork from within a fork child")
+	}
+
+	// Optionally truncate parent history to the last N turns for smaller context.
+	if req.ParentContext.ForkTurns > 0 {
+		parentMsgs = subagents.TruncateToLastNTurns(parentMsgs, req.ParentContext.ForkTurns)
 	}
 
 	// Create child history and copy parent messages for cache sharing.
@@ -339,9 +366,82 @@ func (rt *Runtime) ensureSubagentExecutor() *subagents.Executor {
 		rt.subStore = subagents.NewMemoryStore()
 	}
 	if rt.subExec == nil {
-		rt.subExec = subagents.NewExecutor(rt.subMgr, rt.subStore, rt.buildSubagentRunner())
+		var opts []subagents.ExecutorOption
+		if rt.opts.SubagentMaxThreads > 0 {
+			opts = append(opts, subagents.WithMaxConcurrency(rt.opts.SubagentMaxThreads))
+		}
+		if rt.opts.SubagentMaxDepth > 0 {
+			opts = append(opts, subagents.WithMaxDepth(rt.opts.SubagentMaxDepth))
+		}
+		rt.subExec = subagents.NewExecutor(rt.subMgr, rt.subStore, rt.buildSubagentRunner(), opts...)
+		rt.subExec.SetOnComplete(rt.onSubagentComplete)
 	}
 	return rt.subExec
+}
+
+// onSubagentComplete is called when any subagent finishes. For background
+// subagents, it injects a completion notification into the parent session history.
+func (rt *Runtime) onSubagentComplete(inst subagents.Instance) {
+	if !inst.Background {
+		return
+	}
+	parentSession := inst.ParentSessionID
+	if parentSession == "" {
+		return
+	}
+	history := rt.histories.Get(parentSession)
+	if history == nil {
+		return
+	}
+	var summary string
+	if inst.Result != nil {
+		summary = fmt.Sprintf("%v", inst.Result.Output)
+		if len(summary) > 500 {
+			summary = summary[:500] + "..."
+		}
+	}
+	status := string(inst.Status)
+	if inst.Error != "" {
+		status += ": " + inst.Error
+	}
+	notification := fmt.Sprintf("[Subagent %s completed (%s)] %s", inst.ID, status, summary)
+	history.AppendNotification(notification)
+}
+
+// drainMailbox reads from the instance's mailbox and appends messages to
+// history until the context is cancelled (agent loop finished).
+func (r runtimeSubagentRunner) drainMailbox(ctx context.Context, instanceID string, history *message.History) {
+	if r.rt == nil || r.rt.subExec == nil || instanceID == "" {
+		return
+	}
+	inst, err := r.rt.subExec.Get(ctx, instanceID)
+	if err != nil {
+		return
+	}
+	mbox := inst.Mailbox()
+	if mbox == nil {
+		return
+	}
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case msg, ok := <-mbox:
+			if !ok {
+				return
+			}
+			history.AppendNotification(fmt.Sprintf("[Inter-agent message] %s", msg))
+		}
+	}
+}
+
+// sendInputToSubagent delivers a message to a running subagent. Used by tools.
+func (rt *Runtime) sendInputToSubagent(ctx context.Context, id string, msg string) error {
+	exec := rt.ensureSubagentExecutor()
+	if exec == nil {
+		return errors.New("api: subagent executor is not configured")
+	}
+	return exec.SendInput(id, msg)
 }
 
 func (rt *Runtime) spawnSubagent(ctx context.Context, prompt string, activation skills.ActivationContext, req *Request) (subagents.SpawnHandle, error) {
@@ -378,6 +478,11 @@ func (rt *Runtime) spawnSubagent(ctx context.Context, prompt string, activation 
 			parentCtx.SessionID = strings.TrimSpace(req.SessionID)
 		}
 	}
+	// Propagate depth: inherit from the current context and increment.
+	if currentCtx, ok := subagents.FromContext(ctx); ok {
+		parentCtx.Depth = currentCtx.Depth + 1
+	}
+
 	// Check background flag from metadata.
 	background := false
 	if bg, ok := meta["task.background"]; ok {
@@ -543,4 +648,172 @@ func (rt *Runtime) selectModelForSubagent(subagentType string, requestTier Model
 
 	// Priority 3: Default model
 	return rt.opts.Model, ""
+}
+
+// ---------------------------------------------------------------------------
+// AgentRunner adapter — bridges the tool interface to the runtime executor
+// ---------------------------------------------------------------------------
+
+type runtimeAgentRunner struct {
+	rt *Runtime
+}
+
+func (rt *Runtime) agentRunnerAdapter() toolbuiltin.AgentRunner {
+	return &runtimeAgentRunner{rt: rt}
+}
+
+func (r *runtimeAgentRunner) SpawnAgent(ctx context.Context, req toolbuiltin.SpawnAgentRequest) (*toolbuiltin.SpawnAgentResult, error) {
+	exec := r.rt.ensureSubagentExecutor()
+	if exec == nil {
+		return nil, errors.New("api: subagent executor is not configured")
+	}
+	sessionID := defaultSessionID(r.rt.mode.EntryPoint)
+	parentCtx := subagents.Context{SessionID: sessionID}
+	if req.ForkContext {
+		parentCtx.IsFork = true
+		parentCtx.ParentSystemPrompt = r.rt.opts.SystemPrompt
+		parentCtx.ForkTurns = req.ForkTurns
+	}
+	if currentCtx, ok := subagents.FromContext(ctx); ok {
+		parentCtx.Depth = currentCtx.Depth + 1
+		if parentCtx.SessionID == "" {
+			parentCtx.SessionID = currentCtx.SessionID
+		}
+	}
+
+	meta := map[string]any{}
+	if req.Model != "" {
+		meta["task.model"] = req.Model
+	}
+	if req.Background {
+		meta["task.background"] = true
+	}
+
+	target := req.SubagentType
+	if req.ForkContext && target == "" {
+		target = subagents.ForkSubagentType
+	}
+
+	handle, err := exec.Spawn(subagents.WithTaskDispatch(ctx), subagents.SpawnRequest{
+		Target:        target,
+		Instruction:   req.Prompt,
+		Metadata:      meta,
+		ParentContext: parentCtx,
+		Background:    req.Background,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	// Generate a nickname and store it in metadata.
+	existingNicks := r.collectNicknames()
+	nick := subagents.GenerateNickname(existingNicks, handle.ID)
+	_ = exec.Store().Update(handle.ID, func(inst *subagents.Instance) error {
+		if inst.Metadata == nil {
+			inst.Metadata = map[string]any{}
+		}
+		inst.Metadata["nickname"] = nick
+		return nil
+	})
+
+	return &toolbuiltin.SpawnAgentResult{
+		AgentID:  handle.ID,
+		Nickname: nick,
+	}, nil
+}
+
+func (r *runtimeAgentRunner) SendInput(ctx context.Context, agentID string, msg string) error {
+	exec := r.rt.ensureSubagentExecutor()
+	if exec == nil {
+		return errors.New("api: subagent executor is not configured")
+	}
+	resolved, err := subagents.ResolveAgentID(exec.Store(), agentID)
+	if err != nil {
+		return err
+	}
+	return exec.SendInput(resolved, msg)
+}
+
+func (r *runtimeAgentRunner) WaitAgent(ctx context.Context, agentID string, timeout time.Duration) (*toolbuiltin.WaitAgentResult, error) {
+	exec := r.rt.ensureSubagentExecutor()
+	if exec == nil {
+		return nil, errors.New("api: subagent executor is not configured")
+	}
+	resolved, err := subagents.ResolveAgentID(exec.Store(), agentID)
+	if err != nil {
+		return nil, err
+	}
+	waited, err := exec.Wait(ctx, subagents.WaitRequest{ID: resolved, Timeout: timeout})
+	if err != nil {
+		return nil, err
+	}
+	result := &toolbuiltin.WaitAgentResult{
+		AgentID:  resolved,
+		TimedOut: waited.TimedOut,
+		Status:   string(waited.Instance.Status),
+	}
+	if waited.Instance.Result != nil {
+		result.Output = fmt.Sprint(waited.Instance.Result.Output)
+	}
+	return result, nil
+}
+
+func (r *runtimeAgentRunner) CloseAgent(ctx context.Context, agentID string) (*toolbuiltin.CloseAgentResult, error) {
+	exec := r.rt.ensureSubagentExecutor()
+	if exec == nil {
+		return nil, errors.New("api: subagent executor is not configured")
+	}
+	resolved, err := subagents.ResolveAgentID(exec.Store(), agentID)
+	if err != nil {
+		return nil, err
+	}
+	if cancelErr := exec.Cancel(resolved); cancelErr != nil {
+		return nil, cancelErr
+	}
+	inst, _ := exec.Get(ctx, resolved)
+	result := &toolbuiltin.CloseAgentResult{
+		AgentID: resolved,
+		Status:  string(inst.Status),
+	}
+	if inst.Result != nil {
+		result.Output = fmt.Sprint(inst.Result.Output)
+	}
+	return result, nil
+}
+
+func (r *runtimeAgentRunner) ListAgents(ctx context.Context, parentSession string) ([]toolbuiltin.AgentInfo, error) {
+	exec := r.rt.ensureSubagentExecutor()
+	if exec == nil {
+		return nil, errors.New("api: subagent executor is not configured")
+	}
+	instances := exec.Store().ListBySession(parentSession)
+	out := make([]toolbuiltin.AgentInfo, 0, len(instances))
+	for _, inst := range instances {
+		nick := ""
+		if n, ok := inst.Metadata["nickname"].(string); ok {
+			nick = n
+		}
+		out = append(out, toolbuiltin.AgentInfo{
+			ID:       inst.ID,
+			Nickname: nick,
+			Profile:  inst.Profile,
+			Status:   string(inst.Status),
+		})
+	}
+	return out, nil
+}
+
+func (r *runtimeAgentRunner) collectNicknames() []string {
+	exec := r.rt.ensureSubagentExecutor()
+	if exec == nil {
+		return nil
+	}
+	all := exec.Store().ListAll()
+	nicks := make([]string, 0, len(all))
+	for _, inst := range all {
+		if n, ok := inst.Metadata["nickname"].(string); ok && n != "" {
+			nicks = append(nicks, n)
+		}
+	}
+	return nicks
 }

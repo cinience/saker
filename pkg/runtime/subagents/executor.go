@@ -12,23 +12,50 @@ import (
 type OnCompleteFunc func(Instance)
 
 type Executor struct {
-	profiles   *Manager
-	store      Store
-	runner     Runner
-	now        func() time.Time
-	seq        atomic.Uint64
-	onComplete OnCompleteFunc
+	profiles       *Manager
+	store          Store
+	runner         Runner
+	now            func() time.Time
+	seq            atomic.Uint64
+	onComplete     OnCompleteFunc
+	sem            chan struct{} // concurrency semaphore; nil means unlimited
+	maxDepth       int          // max nesting depth; <=0 means unlimited
 }
 
-func NewExecutor(profiles *Manager, store Store, runner Runner) *Executor {
+// NewExecutor creates a subagent executor. Use options to configure limits.
+func NewExecutor(profiles *Manager, store Store, runner Runner, opts ...ExecutorOption) *Executor {
 	if store == nil {
 		store = NewMemoryStore()
 	}
-	return &Executor{
+	e := &Executor{
 		profiles: profiles,
 		store:    store,
 		runner:   runner,
 		now:      time.Now,
+	}
+	for _, opt := range opts {
+		opt(e)
+	}
+	return e
+}
+
+// ExecutorOption configures an Executor.
+type ExecutorOption func(*Executor)
+
+// WithMaxConcurrency sets the maximum number of concurrent subagent goroutines.
+// Values <= 0 disable the limit.
+func WithMaxConcurrency(n int) ExecutorOption {
+	return func(e *Executor) {
+		if n > 0 {
+			e.sem = make(chan struct{}, n)
+		}
+	}
+}
+
+// WithMaxDepth sets the maximum nesting depth for subagent spawns.
+func WithMaxDepth(n int) ExecutorOption {
+	return func(e *Executor) {
+		e.maxDepth = n
 	}
 }
 
@@ -41,6 +68,12 @@ func (e *Executor) Store() Store {
 	return e.store
 }
 
+// ErrDepthLimitReached is returned when a subagent spawn exceeds the configured max depth.
+var ErrDepthLimitReached = fmt.Errorf("subagents: agent depth limit reached")
+
+// ErrConcurrencyLimitReached is returned when all concurrency slots are occupied.
+var ErrConcurrencyLimitReached = fmt.Errorf("subagents: concurrency limit reached")
+
 func (e *Executor) Spawn(ctx context.Context, req SpawnRequest) (SpawnHandle, error) {
 	if e == nil || e.profiles == nil {
 		return SpawnHandle{}, ErrUnknownSubagent
@@ -51,6 +84,12 @@ func (e *Executor) Spawn(ctx context.Context, req SpawnRequest) (SpawnHandle, er
 	if dispatchSource(ctx) != DispatchSourceTaskTool {
 		return SpawnHandle{}, ErrDispatchUnauthorized
 	}
+
+	// Depth limit enforcement.
+	if e.maxDepth > 0 && req.ParentContext.Depth >= e.maxDepth {
+		return SpawnHandle{}, ErrDepthLimitReached
+	}
+
 	instruction := req.Instruction
 
 	// Fork path: skip profile lookup since fork agents are synthetic
@@ -78,9 +117,27 @@ func (e *Executor) Spawn(ctx context.Context, req SpawnRequest) (SpawnHandle, er
 		CreatedAt:       now,
 		Metadata:        cloneMetadata(req.Metadata),
 		Background:      req.Background,
+		mailbox:         make(chan string, 10),
 	}
 	if err := e.store.Create(inst); err != nil {
 		return SpawnHandle{}, err
+	}
+
+	// Acquire concurrency semaphore (non-blocking: fail fast if full).
+	if e.sem != nil {
+		select {
+		case e.sem <- struct{}{}:
+		default:
+			// Mark instance as failed since we cannot run it.
+			_ = e.store.Update(id, func(inst *Instance) error {
+				inst.Status = StatusFailed
+				inst.Error = ErrConcurrencyLimitReached.Error()
+				n := e.now()
+				inst.FinishedAt = &n
+				return nil
+			})
+			return SpawnHandle{}, ErrConcurrencyLimitReached
+		}
 	}
 
 	go e.run(ctx, id, RunRequest{
@@ -104,6 +161,11 @@ func cloneMetadata(meta map[string]any) map[string]any {
 }
 
 func (e *Executor) run(parentCtx context.Context, id string, req RunRequest) {
+	// Release concurrency semaphore on exit.
+	if e.sem != nil {
+		defer func() { <-e.sem }()
+	}
+
 	ctx, cancel := context.WithCancel(parentCtx)
 	defer cancel()
 
@@ -164,6 +226,20 @@ func (e *Executor) Cancel(id string) error {
 			inst.FinishedAt = &now
 		}
 		return nil
+	})
+}
+
+// SendInput delivers a message to a running subagent's mailbox.
+// The message can be consumed by the subagent's agent loop.
+func (e *Executor) SendInput(id string, msg string) error {
+	if e == nil || e.store == nil {
+		return ErrUnknownInstance
+	}
+	return e.store.Update(id, func(inst *Instance) error {
+		if inst.Status != StatusRunning && inst.Status != StatusQueued {
+			return fmt.Errorf("subagents: cannot send to %s instance", inst.Status)
+		}
+		return inst.SendMessage(msg)
 	})
 }
 
