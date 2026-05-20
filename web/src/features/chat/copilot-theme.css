@@ -333,6 +333,65 @@ cpk-web-inspector {
   color: inherit !important;
 }
 
+/* ── Activity Indicator ── */
+.activity-indicator {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+  font-size: 12px;
+  color: var(--text-muted, #64748b);
+}
+.activity-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.activity-dot--running {
+  background: var(--accent, #6366f1);
+  animation: pulse-dot 1.2s ease-in-out infinite;
+}
+.activity-dot--completed {
+  background: var(--success, #81c995);
+}
+.activity-dot--error {
+  background: var(--danger, #ef4444);
+}
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+.activity-tool {
+  font-family: var(--font-mono);
+  font-weight: 500;
+  color: var(--text-secondary, #cbd5e1);
+}
+.activity-status {
+  color: var(--text-muted, #64748b);
+}
+.activity-step {
+  color: var(--text-secondary, #cbd5e1);
+}
+
+/* ── Reasoning Message ── */
+.saker-copilot-chat [data-copilotkit-reasoning] {
+  border-left: 2px solid var(--accent, #6366f1);
+  padding-left: 10px;
+  margin: 4px 0;
+}
+.saker-copilot-chat [data-copilotkit-reasoning] button {
+  color: var(--text-muted, #64748b);
+  font-size: 12px;
+  cursor: pointer;
+  background: none;
+  border: none;
+  padding: 2px 0;
+}
+.saker-copilot-chat [data-copilotkit-reasoning] button:hover {
+  color: var(--accent, #6366f1);
+}
+
 /* ── Tool Call Progress ── */
 .tool-call-progress {
   background: var(--bg-tertiary, #2a2a3e);

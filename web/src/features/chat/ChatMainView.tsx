@@ -1,6 +1,6 @@
 
 import { useEffect, useRef, useState } from "react";
-import { useAgent, UseAgentUpdate, CopilotChat, useDefaultRenderTool } from "@copilotkit/react-core/v2";
+import { useAgent, UseAgentUpdate, CopilotChat, useDefaultRenderTool, useConfigureSuggestions } from "@copilotkit/react-core/v2";
 import "@copilotkit/react-core/v2/styles.css";
 import { ThreadPanel } from "./ThreadPanel";
 import { EmptyState } from "./EmptyState";
@@ -46,6 +46,13 @@ function CopilotChatArea({
   const wsHealthy = wsConnected || !wsHasBeenConnected;
 
   useAguiHitlActions();
+  useConfigureSuggestions({
+    suggestions: [
+      { title: "生成一张图片", message: "帮我生成一张赛博朋克风格的城市图片" },
+      { title: "文字转语音", message: "把下面的文字转成语音：你好世界" },
+      { title: "分析视频内容", message: "分析这个视频的内容" },
+    ],
+  });
   useDefaultRenderTool({
     render: ({ name, status, result }) => {
       const media = extractMediaResultFromToolResult(name, result);
@@ -67,7 +74,10 @@ function CopilotChatArea({
       );
     },
   });
-  const { agent } = useAgent({ updates: [UseAgentUpdate.OnRunStatusChanged, UseAgentUpdate.OnStateChanged] });
+  const { agent } = useAgent({
+    updates: [UseAgentUpdate.OnRunStatusChanged, UseAgentUpdate.OnStateChanged, UseAgentUpdate.OnMessagesChanged],
+    throttleMs: 100,
+  });
 
   // Inject media artifacts into the last assistant message when a run completes.
   // CopilotKit's Streamdown strips <img> and markdown images, so we inject after render.
@@ -205,6 +215,7 @@ function CopilotChatArea({
         labels={{
           chatInputPlaceholder: t("composer.placeholder"),
         }}
+        messageView={{ assistantMessage: { onRegenerate: () => {} } }}
       />
     </>
   );
