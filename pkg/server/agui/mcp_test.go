@@ -1,6 +1,7 @@
 package agui
 
 import (
+	"fmt"
 	"testing"
 )
 
@@ -111,6 +112,40 @@ func TestValidateMCPAllowList_Denied(t *testing.T) {
 	allowList := []string{"https://mcp.example.com/*"}
 	if err := validateMCPAllowList(servers, allowList); err == nil {
 		t.Fatal("should deny server not in allow-list")
+	}
+}
+
+func TestValidateMCPSecurity_MaxServers(t *testing.T) {
+	servers := make([]ClientMCPServer, 6)
+	for i := range servers {
+		servers[i] = ClientMCPServer{Name: fmt.Sprintf("srv%d", i), Type: "http", URL: fmt.Sprintf("https://s%d.com", i)}
+	}
+	// Default limit is 5.
+	if err := validateMCPSecurity(servers, Options{}); err == nil {
+		t.Fatal("expected error for 6 servers exceeding default limit of 5")
+	}
+	// Custom limit.
+	if err := validateMCPSecurity(servers, Options{MaxMCPServersPerSession: 10}); err != nil {
+		t.Fatalf("should allow 6 servers with limit 10: %v", err)
+	}
+}
+
+func TestValidateMCPSecurity_StdioBlocked(t *testing.T) {
+	servers := []ClientMCPServer{{Name: "local", Type: "stdio", Command: "mcp-server"}}
+	// Default: stdio not allowed.
+	if err := validateMCPSecurity(servers, Options{}); err == nil {
+		t.Fatal("expected error for stdio server when AllowMCPStdio is false")
+	}
+	// Explicitly allowed.
+	if err := validateMCPSecurity(servers, Options{AllowMCPStdio: true}); err != nil {
+		t.Fatalf("should allow stdio when AllowMCPStdio is true: %v", err)
+	}
+}
+
+func TestValidateMCPSecurity_HTTPAllowed(t *testing.T) {
+	servers := []ClientMCPServer{{Name: "remote", Type: "http", URL: "https://mcp.example.com"}}
+	if err := validateMCPSecurity(servers, Options{}); err != nil {
+		t.Fatalf("http servers should always be allowed: %v", err)
 	}
 }
 

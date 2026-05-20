@@ -9,3 +9,10 @@ type DynamicToolSource interface {
 	LookupTool(name string) (Tool, bool)
 	ListToolDefs() []model.ToolDefinition
 }
+
+// DynamicInstructionSource is an optional interface that a DynamicToolSource
+// can implement to provide MCP server instructions for injection into the
+// system prompt. The runtime checks for this via type assertion.
+type DynamicInstructionSource interface {
+	MCPInstructions() map[string]string
+}

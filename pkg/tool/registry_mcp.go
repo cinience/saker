@@ -325,6 +325,27 @@ func (r *Registry) MCPServerInstructions() map[string]string {
 	return result
 }
 
+// PingMCP pings all connected MCP sessions. Returns the first error encountered,
+// or nil if all sessions respond successfully.
+func (r *Registry) PingMCP(ctx context.Context) error {
+	if r == nil {
+		return nil
+	}
+	r.mu.RLock()
+	sessions := append([]*mcpSessionInfo(nil), r.mcpSessions...)
+	r.mu.RUnlock()
+
+	for _, info := range sessions {
+		if info == nil || info.session == nil {
+			continue
+		}
+		if err := info.session.Ping(ctx, nil); err != nil {
+			return fmt.Errorf("ping MCP server %q: %w", info.serverName, err)
+		}
+	}
+	return nil
+}
+
 func nonNilContext(ctx context.Context) context.Context {
 	if ctx != nil {
 		return ctx

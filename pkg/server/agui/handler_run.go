@@ -222,9 +222,27 @@ func (g *Gateway) handleNewRun(c *gin.Context, input aguitypes.RunAgentInput, ru
 				}})
 				return
 			}
-			mcpReg = newSessionMCPRegistry(g.deps.Logger)
+			if secErr := validateMCPSecurity(mcpServers, g.deps.Options); secErr != nil {
+				baseCancel()
+				finishRun()
+				c.JSON(http.StatusForbidden, gin.H{"error": gin.H{
+					"message": secErr.Error(),
+					"type":    "permission_error",
+				}})
+				return
+			}
+			// Try to reuse a cached registry for this thread (cross-turn reuse).
+			mcpReg = g.mcpCache.get(threadID)
+			if mcpReg == nil {
+				reg := newSessionMCPRegistry(g.deps.Logger)
+				if t := g.deps.Options.MCPConnectTimeout; t > 0 {
+					reg.connectTimeout = t
+				}
+				mcpReg = reg
+			}
 			if connErr := mcpReg.EnsureServers(runtimeCtx, mcpServers, nil); connErr != nil {
 				mcpReg.Close()
+				g.mcpCache.remove(threadID)
 				baseCancel()
 				finishRun()
 				c.JSON(http.StatusBadGateway, gin.H{"error": gin.H{

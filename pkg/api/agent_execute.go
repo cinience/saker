@@ -16,6 +16,7 @@ import (
 	"github.com/saker-ai/saker/pkg/middleware"
 	"github.com/saker-ai/saker/pkg/model"
 	"github.com/saker-ai/saker/pkg/runtime/skills"
+	"github.com/saker-ai/saker/pkg/tool"
 )
 
 const repeatWarningInjection = `You have called the same tool repeatedly.
@@ -129,6 +130,19 @@ func (rt *Runtime) runAgentWithMiddleware(prep preparedRun, extras ...middleware
 		for _, dd := range dynDefs {
 			if _, ok := existing[dd.Name]; !ok {
 				toolDefs = append(toolDefs, dd)
+			}
+		}
+
+		// Inject dynamic MCP server instructions into system prompt.
+		if instrSrc, ok := prep.normalized.DynamicExecutor.(tool.DynamicInstructionSource); ok {
+			if instrs := instrSrc.MCPInstructions(); len(instrs) > 0 {
+				var servers []MCPServerInfo
+				for name, instr := range instrs {
+					servers = append(servers, MCPServerInfo{Name: name, Instructions: instr})
+				}
+				if section := BuildMCPInstructionsSection(servers); section != "" {
+					sysBlocks = append(sysBlocks, section)
+				}
 			}
 		}
 	}

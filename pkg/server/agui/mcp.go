@@ -65,6 +65,27 @@ func extractMCPServers(props map[string]any) ([]ClientMCPServer, error) {
 	return servers, nil
 }
 
+// validateMCPSecurity enforces operator security limits on MCP server configs.
+func validateMCPSecurity(servers []ClientMCPServer, opts Options) error {
+	maxServers := opts.MaxMCPServersPerSession
+	if maxServers == 0 {
+		maxServers = 5
+	}
+	if len(servers) > maxServers {
+		return fmt.Errorf("too many MCP servers: %d exceeds limit of %d", len(servers), maxServers)
+	}
+
+	if !opts.AllowMCPStdio {
+		for _, s := range servers {
+			if s.Type == "stdio" {
+				return fmt.Errorf("mcp server %q: stdio transport is not permitted", s.Name)
+			}
+		}
+	}
+
+	return nil
+}
+
 // validateMCPAllowList checks whether the given servers are permitted by the
 // operator's allow-list patterns. An empty allowList permits everything.
 func validateMCPAllowList(servers []ClientMCPServer, allowList []string) error {

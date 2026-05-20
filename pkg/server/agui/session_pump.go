@@ -21,7 +21,9 @@ func (s *runSession) pump(finishRun func()) {
 		finishRun()
 		s.gateway.clearThreadRun(s.threadID, s.runID)
 		if s.mcpRegistry != nil {
-			s.mcpRegistry.Close()
+			// Return registry to thread-level cache for cross-turn reuse
+			// instead of closing it immediately.
+			s.gateway.mcpCache.put(s.threadID, s.mcpRegistry)
 		}
 		// Grace period: keep session alive so late reconnects can still replay.
 		time.AfterFunc(sessionGracePeriod, func() {

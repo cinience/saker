@@ -52,6 +52,11 @@ type Options struct {
 	TurnTimeout      time.Duration // Max run duration (default: server.DefaultTurnTimeout)
 	DetachTimeout    time.Duration // How long a detached session survives before cancellation (default 30s)
 	AllowedMCPPatterns []string    // Optional: restrict which MCP server URLs clients may connect to
+
+	// MCP security settings
+	MaxMCPServersPerSession int           // Max MCP servers per session (default 5, 0 = unlimited)
+	AllowMCPStdio           bool          // Whether stdio-type MCP servers are permitted (default false)
+	MCPConnectTimeout       time.Duration // Timeout for connecting to MCP servers (default 10s)
 }
 
 // Gateway carries the runtime dependencies for AG-UI HTTP handlers.
@@ -69,6 +74,8 @@ type Gateway struct {
 	artifactCache artifactCache
 	// sessions manages active run sessions for SSE reconnect support.
 	sessions *runSessionManager
+	// mcpCache caches per-thread MCP registries across turns.
+	mcpCache *threadMCPCache
 }
 
 // RegisterAGUIGateway mounts the AG-UI protocol endpoints on the supplied
@@ -107,6 +114,7 @@ func RegisterAGUIGateway(engine *gin.Engine, deps Deps) (*Gateway, error) {
 		artifactCache:      newArtifactCache(),
 		rateLimiterCleanup: rateLimiterCleanup,
 		sessions:           newRunSessionManager(),
+		mcpCache:           newThreadMCPCache(deps.Logger),
 	}
 
 	agents := engine.Group("/v1/agents")
@@ -214,5 +222,8 @@ func (g *Gateway) Shutdown() {
 func (g *Gateway) cleanup() {
 	if g.rateLimiterCleanup != nil {
 		g.rateLimiterCleanup()
+	}
+	if g.mcpCache != nil {
+		g.mcpCache.closeAll()
 	}
 }
