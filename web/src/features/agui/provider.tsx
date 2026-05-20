@@ -3,6 +3,7 @@ import { useMemo, type ReactNode } from "react";
 import { CopilotKit } from "@copilotkit/react-core/v2";
 import { MediaPreview } from "@/features/chat/MessageItem";
 import type { ThreadItemArtifact } from "@/features/rpc/types";
+import { activityRenderers } from "./activityRenderers";
 
 function resolveRuntimeUrl(): string {
   if (typeof window === "undefined") return "/v1/agents/run";
@@ -71,6 +72,7 @@ export function SakerCopilotProvider({ children }: SakerCopilotProviderProps) {
       showDevConsole={true}
       useSingleEndpoint={true}
       renderCustomMessages={renderCustomMessages}
+      renderActivityMessages={activityRenderers}
     >
       {children}
     </CopilotKit>
