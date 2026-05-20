@@ -44,8 +44,21 @@ export function ApprovalCard({ approval, onRespond }: Props) {
     }
   };
 
+  if (submitted) {
+    return (
+      <div className="approval-card approval-card--submitted">
+        <div className="approval-result">
+          <span className="approval-result-tool">{approval.tool_name}</span>
+          <span className={`approval-result-decision approval-result-decision--${submitted}`}>
+            {submitted === "allow" ? t("approval.allowed") : t("approval.denied")}
+          </span>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className={`approval-card${submitted ? " approval-card--submitted" : ""}`}>
+    <div className="approval-card">
       <div className="tool-info">
         <strong>{approval.tool_name}</strong> {t("approval.requiresApproval")}
       </div>

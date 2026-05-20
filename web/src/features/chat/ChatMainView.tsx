@@ -163,10 +163,17 @@ function CopilotChatArea({
       if (threadId) {
         const msgs = agentAny.messages as Array<{ role: string; content: unknown }> | undefined;
         const userMsg = msgs?.find((m) => m.role === "user");
-        const content = userMsg?.content;
-        const title = typeof content === "string" && content
-          ? generateTitle(content)
-          : "New Chat";
+        const raw = userMsg?.content;
+        let text = "";
+        if (typeof raw === "string") {
+          text = raw;
+        } else if (Array.isArray(raw)) {
+          text = (raw as Array<Record<string, unknown>>)
+            .filter((p) => p?.type === "text" && typeof p.text === "string")
+            .map((p) => p.text as string)
+            .join("\n");
+        }
+        const title = text ? generateTitle(text) : "New Chat";
         pendingThreadRef.current = { id: threadId, title };
         onThreadStarted(threadId, title);
       }

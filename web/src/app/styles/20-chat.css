@@ -1123,12 +1123,37 @@
 .approval-card--submitted,
 .question-card--submitted {
   border-color: var(--success);
+  padding: 8px 12px;
 }
-.card-response-status {
-  color: var(--success);
+.question-result {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
   font-size: 12px;
+  padding: 2px 0;
+}
+.question-result-q {
+  color: var(--text-muted);
+}
+.question-result-a {
+  color: var(--success);
   font-weight: 600;
 }
+.approval-result {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+.approval-result-tool {
+  font-family: var(--font-mono);
+  color: var(--text);
+}
+.approval-result-decision {
+  font-weight: 600;
+}
+.approval-result-decision--allow { color: var(--success); }
+.approval-result-decision--deny { color: var(--danger); }
 .btn-allow { background: var(--success); color: white; }
 .btn-deny { background: var(--danger); color: white; }
 
