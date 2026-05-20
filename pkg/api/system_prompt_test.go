@@ -175,8 +175,8 @@ func TestSectionEnvironment(t *testing.T) {
 	if !strings.Contains(s, "linux") {
 		t.Error("should contain platform")
 	}
-	if !strings.Contains(s, "claude-sonnet-4-5") {
-		t.Error("should contain model name")
+	if strings.Contains(s, "claude-sonnet-4-5") {
+		t.Error("should not leak model name in environment section")
 	}
 	if !strings.Contains(s, "Current date") {
 		t.Error("should contain current date")

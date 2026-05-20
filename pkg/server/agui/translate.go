@@ -67,11 +67,10 @@ func newStreamState(threadID, runID string) *streamState {
 }
 
 // currentTextMsgID returns the message ID for the current text segment.
+// All text segments within a single run share the same message ID so that
+// CopilotKit associates tool calls and state with the visible message.
 func (s *streamState) currentTextMsgID() string {
-	if s.textMsgSeq <= 1 {
-		return s.msgID
-	}
-	return fmt.Sprintf("%s_%d", s.msgID, s.textMsgSeq)
+	return s.msgID
 }
 
 // writeEvent emits an AG-UI event with a monotonic SSE id for resumability.
@@ -326,6 +325,7 @@ func (s *streamState) translateEvent(ctx context.Context, w io.Writer, sseW sseW
 	return nil, nil
 }
 
+
 // finalize emits closing events for any open tool calls, text message,
 // steps, and the RUN_FINISHED event with appropriate outcome.
 func (s *streamState) finalize(ctx context.Context, w io.Writer, sseW sseWriter, filter textFilter) error {
@@ -361,6 +361,29 @@ func (s *streamState) finalize(ctx context.Context, w io.Writer, sseW sseWriter,
 		}
 		if err := s.writeEvent(ctx, w, sseW, aguievents.NewTextMessageContentEvent(s.currentTextMsgID(), tail)); err != nil {
 			return err
+		}
+	}
+	if len(s.artifacts) > 0 {
+		if !s.textStarted {
+			s.textStarted = true
+			s.textMsgSeq++
+			if err := s.writeEvent(ctx, w, sseW, aguievents.NewTextMessageStartEvent(s.currentTextMsgID(), aguievents.WithRole("assistant"))); err != nil {
+				return err
+			}
+		}
+		for _, a := range s.artifacts {
+			var html string
+			switch a.Type {
+			case "video":
+				html = fmt.Sprintf("\n\n<video src=\"%s\" controls style=\"max-width:100%%;border-radius:8px\"></video>\n\n", a.URL)
+			case "audio":
+				html = fmt.Sprintf("\n\n<audio src=\"%s\" controls></audio>\n\n", a.URL)
+			default:
+				html = fmt.Sprintf("\n\n<img src=\"%s\" alt=\"%s\" style=\"max-width:100%%;border-radius:8px\" />\n\n", a.URL, a.Name)
+			}
+			if err := s.writeEvent(ctx, w, sseW, aguievents.NewTextMessageContentEvent(s.currentTextMsgID(), html)); err != nil {
+				return err
+			}
 		}
 	}
 	if s.textStarted {

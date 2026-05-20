@@ -145,3 +145,8 @@ pkg/project/memdb_*
 
 # Accidental data dumps (search results, exports, etc.)
 text_*.json
+
+# Temporary scratch files
+demo.py
+hello.py
+test.txt

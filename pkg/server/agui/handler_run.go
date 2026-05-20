@@ -356,11 +356,13 @@ func (g *Gateway) streamSSE(c *gin.Context, ctx context.Context, eventCh <-chan 
 			}
 			if len(newArtifacts) > 0 {
 				cacher := g.deps.MediaCacher
+				var cachedArtifacts []server.Artifact
 				for _, a := range newArtifacts {
 					cached := a
 					if cacher != nil && (strings.HasPrefix(a.URL, "http://") || strings.HasPrefix(a.URL, "https://")) {
 						cached = cacher.CacheArtifactMedia(ctx, a)
 					}
+					cachedArtifacts = append(cachedArtifacts, cached)
 					delta := []aguievents.JSONPatchOperation{
 						{
 							Op:   "add",
@@ -381,6 +383,11 @@ func (g *Gateway) streamSSE(c *gin.Context, ctx context.Context, eventCh <-chan 
 						)
 						return
 					}
+				}
+				// Replace raw artifacts with cached versions so finalize uses accessible URLs.
+				tail := len(state.artifacts)
+				for i, ca := range cachedArtifacts {
+					state.artifacts[tail-len(cachedArtifacts)+i] = ca
 				}
 			}
 			flushSSE()

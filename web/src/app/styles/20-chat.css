@@ -800,16 +800,19 @@
 .message-content th { background: var(--bg-secondary); }
 
 .message-content img {
-  max-width: 400px;
-  max-height: 280px;
+  max-width: 200px;
+  max-height: 140px;
   object-fit: cover;
   border-radius: var(--radius);
-  border: none;
+  border: 1px solid var(--border);
   background: color-mix(in srgb, var(--bg-secondary) 80%, transparent);
   cursor: zoom-in;
-  transition: opacity 0.2s;
+  transition: filter 0.2s, opacity 0.2s;
 }
-.message-content img:hover { opacity: 0.93; }
+.message-content img:hover {
+  filter: brightness(0.85);
+  opacity: 0.95;
+}
 
 .message-content video {
   max-width: 400px;
@@ -1016,25 +1019,52 @@
 
 .tool-media {
   display: inline-flex;
+  position: relative;
   width: fit-content;
-  max-width: min(100%, 520px);
-  padding: 6px;
+  max-width: min(100%, 220px);
+  padding: 4px;
   border-top: none;
-  background: color-mix(in srgb, var(--bg) 10%, transparent);
-  border-radius: 14px;
+  background: color-mix(in srgb, var(--bg-secondary) 60%, transparent);
+  border: 1px solid var(--border);
+  border-radius: 10px;
   margin: 0 10px 10px;
   overflow: hidden;
+  cursor: zoom-in;
+}
+.tool-media:hover .media-zoom-hint {
+  opacity: 1;
 }
 
 .tool-media img {
   max-width: 100%;
   height: auto;
-  max-height: 360px;
-  border-radius: var(--radius);
-  object-fit: contain;
+  max-height: 150px;
+  border-radius: var(--radius-sm);
+  object-fit: cover;
   border: none;
   display: block;
   cursor: zoom-in;
+  transition: filter 0.2s;
+}
+.tool-media:hover img {
+  filter: brightness(0.82);
+}
+
+.media-zoom-hint {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+.media-zoom-hint svg {
+  width: 28px;
+  height: 28px;
+  color: white;
+  filter: drop-shadow(0 1px 3px rgba(0,0,0,0.5));
 }
 
 .tool-media video {
