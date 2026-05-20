@@ -253,7 +253,6 @@ func isInEnabledList(enabled []string, canon string) bool {
 	return false
 }
 
-
 func effectiveEntryPoint(opts Options) EntryPoint {
 	entry := opts.EntryPoint
 	if entry == "" {

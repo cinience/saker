@@ -507,6 +507,7 @@ func (rt *Runtime) waitSubagent(ctx context.Context, id string, timeout time.Dur
 	return exec.Wait(ctx, subagents.WaitRequest{ID: id, Timeout: timeout})
 }
 
+
 // selectModelForSubagent returns the appropriate model for the given subagent type.
 // Priority: 1) Request.Model override, 2) SubagentModelMapping, 3) default Model.
 // Returns the selected model and the tier used (empty string if default).

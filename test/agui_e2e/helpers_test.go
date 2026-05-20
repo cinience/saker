@@ -242,15 +242,19 @@ func assertRunLifecycle(t *testing.T, events []ParsedEvent) {
 	if len(events) == 0 {
 		t.Fatal("no events received")
 	}
+	// RUN_STARTED should appear within the first few events (ACTIVITY_SNAPSHOT may precede it).
 	foundStart := false
-	for _, e := range events {
+	for i, e := range events {
 		if e.Type == "RUN_STARTED" {
 			foundStart = true
 			break
 		}
+		if i > 3 {
+			break
+		}
 	}
 	if !foundStart {
-		t.Errorf("RUN_STARTED not found in events, got types: %v", eventTypes(events[:min(10, len(events))]))
+		t.Errorf("RUN_STARTED not found in first events, got types: %v", eventTypes(events[:min(4, len(events))]))
 	}
 	last := events[len(events)-1]
 	if last.Type != "RUN_FINISHED" && last.Type != "RUN_ERROR" {
@@ -489,69 +493,34 @@ func getJSON(t *testing.T, url string, out interface{}) {
 	}
 }
 
-// mediaLongTimeout returns a context with a 5-minute timeout for slow media tasks.
+// mediaLongTimeout returns a 5-minute context for slow media generation (video, music).
 func mediaLongTimeout(t *testing.T) (context.Context, context.CancelFunc) {
 	return context.WithTimeout(context.Background(), 5*time.Minute)
 }
 
 // ArtifactInfo holds parsed artifact data from STATE_DELTA events.
 type ArtifactInfo struct {
-	Type string
-	URL  string
-	Name string
+	Type string `json:"type"`
+	URL  string `json:"url"`
+	Name string `json:"name"`
 }
 
-// extractArtifacts parses STATE_DELTA events for artifact information.
-// STATE_DELTA raw format: {"type":"STATE_DELTA","timestamp":...,"delta":[{json patch ops}]}
+// extractArtifacts parses STATE_DELTA events for artifact additions.
 func extractArtifacts(events []ParsedEvent) []ArtifactInfo {
 	var artifacts []ArtifactInfo
 	for _, e := range events {
 		if e.Type != "STATE_DELTA" {
 			continue
 		}
-		// Try wrapped format first: {"type":"STATE_DELTA","delta":[...]}
-		var wrapper struct {
-			Delta json.RawMessage `json:"delta"`
-		}
-		if json.Unmarshal(e.Raw, &wrapper) == nil && len(wrapper.Delta) > 0 {
-			var patches []struct {
-				Op    string          `json:"op"`
-				Path  string          `json:"path"`
-				Value json.RawMessage `json:"value"`
-			}
-			if json.Unmarshal(wrapper.Delta, &patches) == nil {
-				for _, p := range patches {
-					if strings.Contains(p.Path, "artifact") {
-						var art struct {
-							Type string `json:"type"`
-							URL  string `json:"url"`
-							Name string `json:"name"`
-						}
-						if json.Unmarshal(p.Value, &art) == nil && art.Type != "" {
-							artifacts = append(artifacts, ArtifactInfo{Type: art.Type, URL: art.URL, Name: art.Name})
-						}
-					}
-				}
-				continue
-			}
-		}
-		// Fallback: try raw as direct JSON Patch array.
 		var patches []struct {
-			Op    string          `json:"op"`
-			Path  string          `json:"path"`
-			Value json.RawMessage `json:"value"`
+			Op    string       `json:"op"`
+			Path  string       `json:"path"`
+			Value ArtifactInfo `json:"value"`
 		}
 		if json.Unmarshal(e.Raw, &patches) == nil {
 			for _, p := range patches {
-				if strings.Contains(p.Path, "artifact") {
-					var art struct {
-						Type string `json:"type"`
-						URL  string `json:"url"`
-						Name string `json:"name"`
-					}
-					if json.Unmarshal(p.Value, &art) == nil && art.Type != "" {
-						artifacts = append(artifacts, ArtifactInfo{Type: art.Type, URL: art.URL, Name: art.Name})
-					}
+				if p.Op == "add" && strings.Contains(p.Path, "artifacts") && p.Value.URL != "" {
+					artifacts = append(artifacts, p.Value)
 				}
 			}
 		}
@@ -559,17 +528,7 @@ func extractArtifacts(events []ParsedEvent) []ArtifactInfo {
 	return artifacts
 }
 
-// hasToolCall checks if any TOOL_CALL_START event has the given tool name.
-func hasToolCall(events []ParsedEvent, toolName string) bool {
-	for _, c := range extractToolCalls(events) {
-		if c.Name == toolName {
-			return true
-		}
-	}
-	return false
-}
-
-// doHTTP sends an HTTP request and returns status code + response body.
+// doHTTP sends an HTTP request with given method/body and returns status + response body.
 func doHTTP(t *testing.T, ctx context.Context, method, url string, body interface{}) (int, []byte) {
 	t.Helper()
 	var reqBody io.Reader
@@ -596,7 +555,7 @@ func doHTTP(t *testing.T, ctx context.Context, method, url string, body interfac
 	return resp.StatusCode, respBody
 }
 
-// doRunSSE sends a raw body to the run endpoint and returns status + body (for non-SSE error responses).
+// doRunSSE sends a raw POST with given body bytes and returns status + raw body (for non-200 tests).
 func doRunSSE(ctx context.Context, url string, body []byte) (int, []byte, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
@@ -611,4 +570,14 @@ func doRunSSE(ctx context.Context, url string, body []byte) (int, []byte, error)
 	defer resp.Body.Close()
 	respBody, _ := io.ReadAll(resp.Body)
 	return resp.StatusCode, respBody, nil
+}
+
+// hasToolCall checks if any TOOL_CALL_START has the given tool name.
+func hasToolCall(events []ParsedEvent, name string) bool {
+	for _, c := range extractToolCalls(events) {
+		if c.Name == name {
+			return true
+		}
+	}
+	return false
 }
