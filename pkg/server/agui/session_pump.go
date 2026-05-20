@@ -20,6 +20,9 @@ func (s *runSession) pump(finishRun func()) {
 	defer func() {
 		finishRun()
 		s.gateway.clearThreadRun(s.threadID, s.runID)
+		if s.mcpRegistry != nil {
+			s.mcpRegistry.Close()
+		}
 		// Grace period: keep session alive so late reconnects can still replay.
 		time.AfterFunc(sessionGracePeriod, func() {
 			s.gateway.sessions.remove(s.runID)

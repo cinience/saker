@@ -18,6 +18,10 @@ type runtimeToolExecutor struct {
 
 	permissionResolver tool.PermissionResolver
 
+	// dynamicSource provides per-request tools (e.g. AG-UI client MCP servers)
+	// that are tried when the primary registry does not contain the tool.
+	dynamicSource tool.DynamicToolSource
+
 	// tracer optionally emits a span around each tool dispatch. nil tracer
 	// is the common case (no OTLP wired up) and skips span allocation.
 	tracer Tracer

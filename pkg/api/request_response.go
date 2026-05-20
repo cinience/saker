@@ -13,6 +13,7 @@ import (
 	"github.com/saker-ai/saker/pkg/runtime/commands"
 	"github.com/saker-ai/saker/pkg/runtime/skills"
 	"github.com/saker-ai/saker/pkg/runtime/subagents"
+	"github.com/saker-ai/saker/pkg/tool"
 )
 
 // ModelOverrides bundles per-request sampling parameters that override
@@ -71,6 +72,10 @@ type Request struct {
 	// saker's internal registry tools. They are NOT registered in the
 	// tool executor — only used for model awareness.
 	ExtraTools []model.ToolDefinition
+	// DynamicExecutor provides an additional tool source for per-request
+	// dynamically registered tools (e.g., MCP servers from AG-UI clients).
+	// Tools from this source are both visible to the model AND executable.
+	DynamicExecutor tool.DynamicToolSource `json:"-"`
 }
 
 // Response aggregates the final agent result together with metadata emitted

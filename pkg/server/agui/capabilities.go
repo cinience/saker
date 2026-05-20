@@ -159,6 +159,11 @@ func (g *Gateway) handleCapabilities(c *gin.Context) {
 			Approvals:  true,
 			Interrupts: true,
 		},
+		Custom: map[string]any{
+			"mcpServers": map[string]any{
+				"dynamic": true,
+			},
+		},
 	}
 	c.JSON(http.StatusOK, caps)
 }

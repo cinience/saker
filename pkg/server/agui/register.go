@@ -51,6 +51,7 @@ type Options struct {
 	MaxActiveStreams  int           // Load shedding: max concurrent runs (default 100, 0 = unlimited)
 	TurnTimeout      time.Duration // Max run duration (default: server.DefaultTurnTimeout)
 	DetachTimeout    time.Duration // How long a detached session survives before cancellation (default 30s)
+	AllowedMCPPatterns []string    // Optional: restrict which MCP server URLs clients may connect to
 }
 
 // Gateway carries the runtime dependencies for AG-UI HTTP handlers.

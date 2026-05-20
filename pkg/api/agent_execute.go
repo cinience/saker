@@ -119,6 +119,20 @@ func (rt *Runtime) runAgentWithMiddleware(prep preparedRun, extras ...middleware
 		}
 	}
 
+	// Merge dynamic tool definitions (e.g. per-session MCP servers).
+	if prep.normalized.DynamicExecutor != nil {
+		dynDefs := prep.normalized.DynamicExecutor.ListToolDefs()
+		existing := make(map[string]struct{}, len(toolDefs))
+		for _, td := range toolDefs {
+			existing[td.Name] = struct{}{}
+		}
+		for _, dd := range dynDefs {
+			if _, ok := existing[dd.Name]; !ok {
+				toolDefs = append(toolDefs, dd)
+			}
+		}
+	}
+
 	modelAdapter := &conversationModel{
 		base:               selectedModel,
 		history:            prep.history,
@@ -152,6 +166,7 @@ func (rt *Runtime) runAgentWithMiddleware(prep preparedRun, extras ...middleware
 		sessionID:          prep.normalized.SessionID,
 		yolo:               rt.opts.DangerouslySkipPermissions,
 		permissionResolver: buildPermissionResolver(hookAdapter, rt.opts.PermissionRequestHandler, rt.opts.ApprovalQueue, rt.opts.ApprovalApprover, rt.opts.ApprovalWhitelistTTL, rt.opts.ApprovalWait),
+		dynamicSource:      prep.normalized.DynamicExecutor,
 		tracer:             rt.tracer,
 	}
 

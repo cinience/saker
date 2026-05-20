@@ -201,6 +201,42 @@ func (g *Gateway) handleNewRun(c *gin.Context, input aguitypes.RunAgentInput, ru
 		"_agui_permission_handler": g.makePermissionHandler(runID, sideCh),
 	})
 
+	// Per-session dynamic MCP servers from client ForwardedProps.
+	var mcpReg *sessionMCPRegistry
+	if props, ok := input.ForwardedProps.(map[string]any); ok && props != nil {
+		if mcpServers, parseErr := extractMCPServers(props); parseErr != nil {
+			baseCancel()
+			finishRun()
+			c.JSON(http.StatusBadRequest, gin.H{"error": gin.H{
+				"message": "invalid mcp_servers: " + parseErr.Error(),
+				"type":    "invalid_request_error",
+			}})
+			return
+		} else if len(mcpServers) > 0 {
+			if valErr := validateMCPAllowList(mcpServers, g.deps.Options.AllowedMCPPatterns); valErr != nil {
+				baseCancel()
+				finishRun()
+				c.JSON(http.StatusForbidden, gin.H{"error": gin.H{
+					"message": valErr.Error(),
+					"type":    "permission_error",
+				}})
+				return
+			}
+			mcpReg = newSessionMCPRegistry(g.deps.Logger)
+			if connErr := mcpReg.EnsureServers(runtimeCtx, mcpServers, nil); connErr != nil {
+				mcpReg.Close()
+				baseCancel()
+				finishRun()
+				c.JSON(http.StatusBadGateway, gin.H{"error": gin.H{
+					"message": "failed to connect MCP servers: " + connErr.Error(),
+					"type":    "mcp_connection_error",
+				}})
+				return
+			}
+			sakerReq.DynamicExecutor = mcpReg
+		}
+	}
+
 	eventCh, err := g.deps.Runtime.RunStream(runtimeCtx, sakerReq)
 	if err != nil {
 		baseCancel()
@@ -217,6 +253,7 @@ func (g *Gateway) handleNewRun(c *gin.Context, input aguitypes.RunAgentInput, ru
 	// Create session and start pump.
 	// baseCancel cancels the parent context, which propagates to runtimeCtx.
 	session := newRunSession(g, runID, threadID, turnID, projectID, eventCh, sideCh, runtimeCtx, baseCancel)
+	session.mcpRegistry = mcpReg
 	g.sessions.register(session)
 
 	go session.pump(finishRun)

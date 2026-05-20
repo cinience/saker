@@ -59,6 +59,17 @@ func (t *runtimeToolExecutor) Execute(ctx context.Context, call agent.ToolCall, 
 		return agent.ToolResult{}, appendEarlyError(fmt.Errorf("tool %s is not whitelisted", call.Name))
 	}
 
+	// Dynamic tool fallback: if the tool isn't in the primary registry but is
+	// available from a per-request dynamic source (e.g. AG-UI MCP servers),
+	// execute it directly.
+	if t.dynamicSource != nil {
+		if _, regErr := t.executor.Registry().Get(call.Name); regErr != nil {
+			if dynTool, ok := t.dynamicSource.LookupTool(call.Name); ok {
+				return t.executeDynamic(ctx, call, dynTool, appendToolResult)
+			}
+		}
+	}
+
 	// Defensive check: if tool call has empty/nil arguments but the tool requires
 	// parameters, return a diagnostic error instead of executing with missing params.
 	// This commonly happens when an API proxy strips tool_use.input (returns "input": {}).
@@ -249,4 +260,47 @@ func coreToolResultPayload(call agent.ToolCall, res *tool.CallResult, err error)
 	}
 	payload.Err = err
 	return payload
+}
+
+// executeDynamic runs a tool call against a dynamically-provided tool (from DynamicToolSource).
+func (t *runtimeToolExecutor) executeDynamic(
+	ctx context.Context,
+	call agent.ToolCall,
+	dynTool tool.Tool,
+	appendToolResult func(string, []model.ContentBlock, []artifact.ArtifactRef),
+) (agent.ToolResult, error) {
+	toolLogger := logging.From(ctx)
+	toolStart := time.Now()
+	toolLogger.Info("tool.ExecuteDynamic started", "tool", call.Name, "call_id", call.ID)
+
+	res, err := dynTool.Execute(ctx, call.Input)
+
+	toolDuration := time.Since(toolStart).Milliseconds()
+	if err != nil {
+		toolLogger.Warn("tool.ExecuteDynamic failed", "tool", call.Name, "call_id", call.ID, "error", err, "duration_ms", toolDuration)
+	} else {
+		toolLogger.Info("tool.ExecuteDynamic completed", "tool", call.Name, "call_id", call.ID, "duration_ms", toolDuration)
+	}
+
+	toolResult := agent.ToolResult{Name: call.Name}
+	meta := map[string]any{}
+	content := ""
+
+	if res != nil {
+		toolResult.Output = res.Output
+		content = res.Output
+		if res.Data != nil {
+			meta["data"] = res.Data
+		}
+	}
+	if err != nil {
+		meta["error"] = err.Error()
+		content = fmt.Sprintf(`{"error":%q}`, err.Error())
+	}
+	if len(meta) > 0 {
+		toolResult.Metadata = meta
+	}
+
+	appendToolResult(content, nil, nil)
+	return toolResult, err
 }

@@ -70,6 +70,9 @@ type runSession struct {
 	// Dependencies
 	gateway *Gateway
 	logger  *slog.Logger
+
+	// mcpRegistry holds per-session MCP connections from client ForwardedProps.
+	mcpRegistry *sessionMCPRegistry
 }
 
 func newRunSession(g *Gateway, runID, threadID, turnID, projectID string, eventCh <-chan api.StreamEvent, sideCh chan sideEvent, runtimeCtx context.Context, runtimeCancel context.CancelFunc) *runSession {
