@@ -36,6 +36,9 @@ type Deps struct {
 	Options           Options
 	SessionValidator  func(c *gin.Context) (username, role string, ok bool)
 	MediaCacher       MediaCacher
+	// CtxEnricher, when non-nil, is called to inject additional context values
+	// (e.g. object-store callbacks) into the runtime context before a run starts.
+	CtxEnricher func(context.Context) context.Context
 }
 
 // Options holds operator-configurable settings for the AG-UI gateway.
@@ -47,6 +50,7 @@ type Options struct {
 	DrainTimeout     time.Duration // Graceful shutdown drain period (default 3s)
 	MaxActiveStreams  int           // Load shedding: max concurrent runs (default 100, 0 = unlimited)
 	TurnTimeout      time.Duration // Max run duration (default: server.DefaultTurnTimeout)
+	DetachTimeout    time.Duration // How long a detached session survives before cancellation (default 30s)
 }
 
 // Gateway carries the runtime dependencies for AG-UI HTTP handlers.
@@ -62,8 +66,8 @@ type Gateway struct {
 	rateLimiterCleanup func()
 	// artifactCache stores per-thread artifacts so connect can replay them.
 	artifactCache artifactCache
-	// liveRings stores per-run event ring buffers for future reconnect support.
-	liveRings map[string]*eventRing
+	// sessions manages active run sessions for SSE reconnect support.
+	sessions *runSessionManager
 }
 
 // RegisterAGUIGateway mounts the AG-UI protocol endpoints on the supplied
@@ -101,7 +105,7 @@ func RegisterAGUIGateway(engine *gin.Engine, deps Deps) (*Gateway, error) {
 		threadRuns:         make(map[string]string),
 		artifactCache:      newArtifactCache(),
 		rateLimiterCleanup: rateLimiterCleanup,
-		liveRings:          make(map[string]*eventRing),
+		sessions:           newRunSessionManager(),
 	}
 
 	agents := engine.Group("/v1/agents")
@@ -166,6 +170,9 @@ func (g *Gateway) Shutdown() {
 	g.shuttingDown = true
 	activeCount := len(g.activeCancels)
 	g.mu.Unlock()
+
+	// Cancel all run sessions (detached ones included).
+	g.sessions.cancelAll()
 
 	if activeCount == 0 {
 		g.cleanup()

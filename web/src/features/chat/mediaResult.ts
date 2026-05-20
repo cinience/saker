@@ -9,6 +9,8 @@ const audioTools = new Set(["text_to_speech", "design_voice", "generate_music"])
 
 const httpMediaRe =
   /https?:\/\/[^\s"'<>]+\.(?:png|jpe?g|gif|webp|svg|mp4|webm|mov|mp3|wav|ogg|flac)(?:\?[^\s"'<>]*)?/i;
+const mediaStoreRe =
+  /\/media\/[^\s"'<>]+\.(?:png|jpe?g|gif|webp|svg|mp4|webm|mov|mp3|wav|ogg|flac)(?:\?[^\s"'<>]*)?/i;
 const sakerMediaPathRe =
   /(?:\/tmp\/saker-media-|\.saker\/media\/)[^\s"'<>]+\.(?:png|jpe?g|gif|webp|svg|mp4|webm|mov|mp3|wav|ogg|flac)\b/i;
 const apiFilesRe =
@@ -30,6 +32,9 @@ export function extractMediaResultFromToolResult(
 
   const httpMatch = result.match(httpMediaRe)?.[0];
   if (httpMatch) return { type, url: httpMatch };
+
+  const mediaStoreMatch = result.match(mediaStoreRe)?.[0];
+  if (mediaStoreMatch) return { type, url: mediaStoreMatch };
 
   const apiFilesMatch = result.match(apiFilesRe)?.[0];
   if (apiFilesMatch) return { type, url: apiFilesMatch };

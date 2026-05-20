@@ -301,15 +301,31 @@ func (h *Handler) cacheArtifactAsync(store *SessionStore, threadID, itemID strin
 	}
 }
 
-// migrateRemoteArtifacts scans a thread's items for remote artifact URLs
-// and caches them locally in the background. Already-cached files are
-// deduplicated by content hash so this is idempotent.
+// migrateRemoteArtifacts scans a thread's items for artifact URLs that need
+// migration and caches them in the background. Handles:
+//   - Remote http(s) URLs → download and cache to s2 (or legacy disk)
+//   - Old /api/files/.saker/ disk paths → upload to s2 when available
+//
+// Already-cached files are deduplicated by content hash so this is idempotent.
 func (h *Handler) migrateRemoteArtifacts(store *SessionStore, threadID string) {
+	objStore, objCfg := h.objectStoreSnapshot()
 	items := store.GetItems(threadID)
 	for _, item := range items {
 		for _, a := range item.Artifacts {
-			if strings.HasPrefix(a.URL, "http://") || strings.HasPrefix(a.URL, "https://") {
+			switch {
+			case strings.HasPrefix(a.URL, "http://") || strings.HasPrefix(a.URL, "https://"):
 				h.cacheArtifactAsync(store, threadID, item.ID, a)
+			case objStore != nil && strings.HasPrefix(a.URL, "/api/files/") && strings.Contains(a.URL, ".saker/"):
+				diskPath := strings.TrimPrefix(a.URL, "/api/files")
+				newURL, err := migrateDiskToStore(context.Background(), objStore, objCfg, diskPath, a.Type)
+				if err != nil {
+					continue
+				}
+				if store.UpdateItemArtifact(item.ID, a.URL, newURL) {
+					if updated, ok := store.GetItem(item.ID); ok {
+						h.notifySubscribers(threadID, "thread/item_updated", updated)
+					}
+				}
 			}
 		}
 	}

@@ -388,6 +388,35 @@ func cacheMediaToStore(ctx context.Context, st s2.Storage, cfg storagecfg.Config
 	return cfg.PublicURL(key), nil
 }
 
+// migrateDiskToStore reads a local file and uploads it to the object store,
+// returning the new /media/ URL. Used by migrateRemoteArtifacts to upgrade
+// old /api/files/.saker/ paths to s2.
+func migrateDiskToStore(ctx context.Context, st s2.Storage, cfg storagecfg.Config, diskPath, hintedType string) (string, error) {
+	data, err := os.ReadFile(diskPath)
+	if err != nil {
+		return "", err
+	}
+	mediaType := mime.TypeByExtension(filepath.Ext(diskPath))
+	if mediaType == "" {
+		mediaType = "application/octet-stream"
+	}
+	sum := sha256.Sum256(data)
+	sha := hex.EncodeToString(sum[:])
+	bucket := classifyMedia(mediaType, hintedType)
+	key := cfg.Key("_default", bucket, sha, filepath.Ext(diskPath))
+
+	exists, _ := st.Exists(ctx, key)
+	if !exists {
+		md := s2.Metadata{}
+		md.Set("Content-Type", mediaType)
+		obj := s2.NewObjectBytes(key, data, s2.WithMetadata(md))
+		if err := st.Put(ctx, obj); err != nil {
+			return "", err
+		}
+	}
+	return cfg.PublicURL(key), nil
+}
+
 // classifyMedia returns the high-level media bucket ("image" / "video" /
 // "audio" / "blob") that the cached object should be filed under. The
 // MIME type wins when present; the caller-supplied hint is the fallback.

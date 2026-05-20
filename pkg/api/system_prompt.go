@@ -312,7 +312,7 @@ func sectionLanguage(lang string) string {
 	if lang == "" {
 		lang = "English"
 	}
-	return fmt.Sprintf("# Language\nDefault to %s for responses. If the user communicates in a different language, respond in the user's language instead. Technical terms and code identifiers should remain in their original form.", lang)
+	return fmt.Sprintf("# Language\nDefault to %s for all output including reasoning/thinking process and responses. If the user communicates in a different language, match the user's language for both your internal reasoning and your replies. Technical terms and code identifiers should remain in their original form.", lang)
 }
 
 func sectionSessionGuidance(toolNames []string, entryPoint EntryPoint) string {

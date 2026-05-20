@@ -251,6 +251,8 @@ func (h *Handler) executeTurnWithBlocks(ctx context.Context, threadID, turnID, p
 	// Inject the thread ID so canvas tools (canvas_get_node, canvas_list_nodes)
 	// can default to the current thread without the LLM having to thread it.
 	ctx = toolbuiltin.WithThreadID(ctx, threadID)
+	// Inject object-store callbacks so aigo tools write media to s2.
+	ctx = h.InjectMediaStore(ctx)
 
 	// Prepend a <canvas_state> block ONLY when the prompt mentions canvas-related
 	// concepts. For unrelated chats the agent can still call canvas_list_nodes

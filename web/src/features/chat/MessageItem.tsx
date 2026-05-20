@@ -160,14 +160,22 @@ export const MediaPreview = React.memo(({
   if (type === "video") {
     return (
       <div className="tool-media">
-        <video src={url} controls preload="metadata" />
+        {error ? (
+          <div className="media-error">{t("message.mediaExpired")}</div>
+        ) : (
+          <video src={url} controls preload="metadata" onError={() => setError(true)} />
+        )}
       </div>
     );
   }
   if (type === "audio") {
     return (
       <div className="tool-media">
-        <audio src={url} controls preload="metadata" />
+        {error ? (
+          <div className="media-error">{t("message.mediaExpired")}</div>
+        ) : (
+          <audio src={url} controls preload="metadata" onError={() => setError(true)} />
+        )}
       </div>
     );
   }

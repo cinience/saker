@@ -2,15 +2,26 @@ package server
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"io"
 	"net/http"
 	"path"
 	"strings"
+	"time"
 
 	"github.com/saker-ai/saker/pkg/config"
 	storagecfg "github.com/saker-ai/saker/pkg/storage"
+	toolbuiltin "github.com/saker-ai/saker/pkg/tool/builtin"
 	"github.com/gin-gonic/gin"
+	"github.com/mojatter/s2"
 )
+
+// signedURLEntry holds a cached presigned URL with its expiration time.
+type signedURLEntry struct {
+	url     string
+	expires time.Time
+}
 
 // storageConfigFromSettings translates the JSON settings shape into the
 // runtime storage.Config consumed by storage.Open. Returns the zero Config
@@ -96,6 +107,37 @@ func (s *Server) handleMediaServe(c *gin.Context) {
 	}
 
 	ctx := r.Context()
+
+	// S3 signed URL redirect: avoid proxying bytes through the server when
+	// the backend supports presigned URLs and no CDN is configured.
+	if cfg.SignedURLRedirect {
+		// Check in-memory cache first to avoid redundant SignedURL API calls.
+		if entry, ok := s.signedURLCache.Load(key); ok {
+			e := entry.(*signedURLEntry)
+			if time.Now().Before(e.expires) {
+				w.Header().Set("Cache-Control", "private, max-age=3500")
+				http.Redirect(w, r, e.url, http.StatusTemporaryRedirect)
+				return
+			}
+			s.signedURLCache.Delete(key)
+		}
+		signed, err := store.SignedURL(ctx, s2.SignedURLOptions{
+			Name:   key,
+			Method: s2.SignedURLGet,
+			TTL:    1 * time.Hour,
+		})
+		if err == nil && signed != "" {
+			s.signedURLCache.Store(key, &signedURLEntry{
+				url:     signed,
+				expires: time.Now().Add(50 * time.Minute),
+			})
+			w.Header().Set("Cache-Control", "private, max-age=3500")
+			http.Redirect(w, r, signed, http.StatusTemporaryRedirect)
+			return
+		}
+		// Fall through to proxy mode on error (e.g. object missing, unsupported).
+	}
+
 	obj, err := store.Get(ctx, key)
 	if err != nil {
 		if storagecfg.IsNotExist(err) {
@@ -120,8 +162,6 @@ func (s *Server) handleMediaServe(c *gin.Context) {
 		}
 	}
 	if w.Header().Get("Content-Type") == "" {
-		// Best-effort guess from extension; handlers should normally have
-		// set Content-Type at upload time via cacheMediaToStore.
 		if ext := strings.ToLower(path.Ext(key)); ext != "" {
 			if ct := mimeFromExt(ext); ct != "" {
 				w.Header().Set("Content-Type", ct)
@@ -131,7 +171,6 @@ func (s *Server) handleMediaServe(c *gin.Context) {
 	w.Header().Set("Cache-Control", "private, max-age=3600")
 	w.WriteHeader(http.StatusOK)
 	_, _ = io.Copy(w, rc)
-	_ = ctx
 }
 
 // mimeFromExt returns a small fixed mapping for the extensions cacheMediaToStore
@@ -243,4 +282,69 @@ func (s *Server) embeddedHandler() http.Handler {
 		return nil
 	}
 	return emb.Handler()
+}
+
+// InjectMediaStore enriches ctx with object-store callbacks so that tool
+// execution (ResolveMediaPath, resolveLocalRef) can read/write media via s2
+// instead of the local filesystem. Returns ctx unchanged when no store is wired.
+func (h *Handler) InjectMediaStore(ctx context.Context) context.Context {
+	store, cfg := h.objectStoreSnapshot()
+	if store == nil {
+		return ctx
+	}
+	return toolbuiltin.WithMediaStore(ctx,
+		makeMediaStoreFunc(store, cfg),
+		makeMediaReadFunc(store, cfg),
+	)
+}
+
+func makeMediaStoreFunc(store s2.Storage, cfg storagecfg.Config) toolbuiltin.MediaStoreFunc {
+	return func(ctx context.Context, data []byte, filename, mediaType string) (string, error) {
+		hasher := sha256.New()
+		hasher.Write(data)
+		sha := hex.EncodeToString(hasher.Sum(nil))
+		ext := path.Ext(filename)
+		if ext == "" {
+			ext = extFromMime(mediaType)
+		}
+		bucket := classifyMedia(mediaType, "")
+		key := cfg.Key("_default", bucket, sha, ext)
+
+		exists, _ := store.Exists(ctx, key)
+		if !exists {
+			md := s2.Metadata{}
+			md.Set("Content-Type", mediaType)
+			md.Set("X-Original-Name", filename)
+			obj := s2.NewObjectBytes(key, data, s2.WithMetadata(md))
+			if err := store.Put(ctx, obj); err != nil {
+				return "", err
+			}
+		}
+		return cfg.PublicURL(key), nil
+	}
+}
+
+func makeMediaReadFunc(store s2.Storage, cfg storagecfg.Config) toolbuiltin.MediaReadFunc {
+	return func(ctx context.Context, mediaURL string) ([]byte, string, error) {
+		prefix := strings.TrimRight(cfg.PublicBaseURL, "/")
+		key := strings.TrimPrefix(mediaURL, prefix+"/")
+		obj, err := store.Get(ctx, key)
+		if err != nil {
+			return nil, "", err
+		}
+		rc, err := obj.Open()
+		if err != nil {
+			return nil, "", err
+		}
+		defer rc.Close()
+		data, err := io.ReadAll(rc)
+		if err != nil {
+			return nil, "", err
+		}
+		ct := ""
+		if md := obj.Metadata(); md != nil {
+			ct, _ = md.Get("Content-Type")
+		}
+		return data, ct, nil
+	}
 }

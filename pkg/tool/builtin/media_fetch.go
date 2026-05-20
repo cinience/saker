@@ -137,6 +137,17 @@ func ResolveMediaPath(ctx context.Context, path string) (localPath string, err e
 	}
 
 	ext := extensionForMediaType(mediaType, trimmed)
+
+	// Prefer object store when injected (server mode with s2 configured).
+	if storeFunc, _ := MediaStoreFromContext(ctx); storeFunc != nil {
+		url, storeErr := storeFunc(ctx, data, "saker-media"+ext, mediaType)
+		if storeErr == nil {
+			return url, nil
+		}
+		// Fall through to local disk on store error.
+	}
+
+	// Fallback: write to local disk (CLI mode or store unavailable).
 	hash := sha256.Sum256(data)
 	fileName := "saker-media-" + hex.EncodeToString(hash[:8]) + ext
 

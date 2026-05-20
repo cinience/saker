@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"path/filepath"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/saker-ai/saker/pkg/api"
@@ -66,7 +65,6 @@ type Server struct {
 	scheduler   *Scheduler
 	auth        *AuthManager
 	projects    *project.Store
-	uploadCount atomic.Int64
 
 	// autoSyncCancel terminates the background skillhub auto-sync goroutine.
 	// nil when no goroutine is running.
@@ -80,6 +78,10 @@ type Server struct {
 	// can replace the backend without crashing in-flight /_s3/ requests.
 	embeddedMu sync.RWMutex
 	embedded   *storagecfg.Embedded
+
+	// signedURLCache caches S3 presigned URLs to avoid redundant SignedURL
+	// API calls on high-frequency access to the same object.
+	signedURLCache sync.Map // key (string) → *signedURLEntry
 
 	// rateLimiterCleanup stops the RateLimitMiddleware background goroutine
 	// on shutdown. nil when no rate limiter is active.

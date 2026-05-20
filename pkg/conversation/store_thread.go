@@ -134,6 +134,29 @@ func (s *Store) UpdateThreadTitle(ctx context.Context, threadID, title string) e
 	return nil
 }
 
+// UpdateThreadClient updates the client field of an existing thread.
+// Used when a thread was initially created by one client (e.g. "web") but
+// is now being actively used through a different protocol (e.g. "agui").
+func (s *Store) UpdateThreadClient(ctx context.Context, threadID, client string) error {
+	if threadID == "" {
+		return errors.New("conversation.UpdateThreadClient: threadID required")
+	}
+	res := s.withCtx(ctx).
+		Model(&Thread{}).
+		Where("id = ? AND deleted_at IS NULL", threadID).
+		Updates(map[string]any{
+			"client":     client,
+			"updated_at": nowUTC(),
+		})
+	if res.Error != nil {
+		return fmt.Errorf("conversation.UpdateThreadClient: %w", res.Error)
+	}
+	if res.RowsAffected == 0 {
+		return ErrThreadNotFound
+	}
+	return nil
+}
+
 // SoftDeleteThread marks the thread as deleted. Events are kept on disk
 // — P2 may add a hard-delete worker that cascades, but P0 keeps the data
 // so a misclick is recoverable for the lifetime of the DB.

@@ -62,6 +62,38 @@ var (
 			Help:      "Client reconnect attempts with Last-Event-ID.",
 		},
 	)
+	aguiReconnectSuccessTotal = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Namespace: "saker",
+			Subsystem: "agui",
+			Name:      "reconnect_success_total",
+			Help:      "Successful reconnections with replay.",
+		},
+	)
+	aguiReconnectOverflowTotal = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Namespace: "saker",
+			Subsystem: "agui",
+			Name:      "reconnect_overflow_total",
+			Help:      "Reconnect failures due to ring buffer overflow.",
+		},
+	)
+	aguiSessionDetachedTotal = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Namespace: "saker",
+			Subsystem: "agui",
+			Name:      "session_detached_total",
+			Help:      "Sessions that entered detached state (client disconnected).",
+		},
+	)
+	aguiSessionExpiredTotal = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Namespace: "saker",
+			Subsystem: "agui",
+			Name:      "session_expired_total",
+			Help:      "Sessions that expired due to detach timeout.",
+		},
+	)
 )
 
 func init() {
@@ -72,4 +104,8 @@ func init() {
 	prometheus.MustRegister(aguiSlowClientDisconnects)
 	prometheus.MustRegister(aguiLoadShedTotal)
 	prometheus.MustRegister(aguiReconnectAttemptsTotal)
+	prometheus.MustRegister(aguiReconnectSuccessTotal)
+	prometheus.MustRegister(aguiReconnectOverflowTotal)
+	prometheus.MustRegister(aguiSessionDetachedTotal)
+	prometheus.MustRegister(aguiSessionExpiredTotal)
 }

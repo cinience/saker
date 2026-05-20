@@ -35,7 +35,7 @@ func (t *AigoTool) Execute(ctx context.Context, params map[string]interface{}) (
 		}, nil
 	}
 
-	task := buildTask(t.def.Name, params)
+	task := buildTaskCtx(ctx, t.def.Name, params)
 	slog.Debug("[aigo] task built", "tool", t.def.Name, "prompt", task.Prompt, "size", task.Size, "refs", len(task.References))
 
 	// DryRun check: surface warnings before executing.
@@ -74,7 +74,7 @@ func (t *AigoTool) StreamExecute(ctx context.Context, params map[string]interfac
 		}, nil
 	}
 
-	task := buildTask(t.def.Name, params)
+	task := buildTaskCtx(ctx, t.def.Name, params)
 
 	// For slow capabilities (video), use the SDK's native progress callback
 	// to surface real polling progress through the SSE pipeline.

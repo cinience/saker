@@ -1,6 +1,7 @@
 package agui
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -429,8 +430,9 @@ func writeSSE(ctx context.Context, w io.Writer, sseW sseWriter, event aguievents
 	return sseW.WriteEventWithType(ctx, w, event, string(event.Type()))
 }
 
-// writeSSEWithID writes an event with an SSE id: field for resumability.
-// After successful write, the serialized frame is pushed to the ring buffer.
+// writeSSEWithID writes an event with a monotonic integer SSE id: field for
+// resumability. The complete frame (including id:) is stored in the ring buffer
+// for byte-exact replay on reconnect.
 func writeSSEWithID(ctx context.Context, w io.Writer, sseW sseWriter, event aguievents.Event, state *streamState) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -440,15 +442,28 @@ func writeSSEWithID(ctx context.Context, w io.Writer, sseW sseWriter, event agui
 	}
 	aguiEventsTotal.WithLabelValues(string(event.Type())).Inc()
 	state.eventSeq++
-	if err := sseW.WriteEventWithType(ctx, w, event, string(event.Type())); err != nil {
+	seq := state.eventSeq
+
+	// Build the complete SSE frame in a buffer.
+	// We prepend our monotonic integer id: and strip the SDK's timestamp-based id.
+	var frameBuf bytes.Buffer
+	fmt.Fprintf(&frameBuf, "id: %d\n", seq)
+	stripped := &idOverrideWriter{w: &frameBuf}
+	if err := sseW.WriteEventWithType(ctx, stripped, event, string(event.Type())); err != nil {
 		return err
 	}
+	frame := frameBuf.Bytes()
+
+	// Store in ring buffer (always, before client write).
 	if state.ring != nil {
-		if frame, err := json.Marshal(event); err == nil {
-			state.ring.Push(state.eventSeq, frame)
-		}
+		cp := make([]byte, len(frame))
+		copy(cp, frame)
+		state.ring.Push(seq, cp)
 	}
-	return nil
+
+	// Write complete frame to client (may be io.Discard when detached).
+	_, err := w.Write(frame)
+	return err
 }
 
 // inputToJSON serializes a StreamEvent.Input (typed as interface{}) to a

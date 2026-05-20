@@ -5,10 +5,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -19,15 +19,14 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 
-	aguievents "github.com/ag-ui-protocol/ag-ui/sdks/community/go/pkg/core/events"
 	aguitypes "github.com/ag-ui-protocol/ag-ui/sdks/community/go/pkg/core/types"
-	aguisse "github.com/ag-ui-protocol/ag-ui/sdks/community/go/pkg/encoding/sse"
 )
 
 const keepaliveInterval = 15 * time.Second
 const slowClientWriteTimeout = 30 * time.Second
 
 // handleRun implements POST /v1/agents/run — the main AG-UI streaming endpoint.
+// It routes to either a new run or a reconnect to an existing session.
 func (g *Gateway) handleRun(c *gin.Context) {
 	body, err := readBody(c)
 	if err != nil {
@@ -82,12 +81,37 @@ func (g *Gateway) handleRun(c *gin.Context) {
 		return
 	}
 
+	lastEventID := parseAGUILastEventID(c)
+	runID := input.RunID
+	if runID == "" {
+		runID = "run_" + uuid.New().String()
+	}
+
+	// Reconnect path: client is resuming an existing session.
+	if lastEventID > 0 {
+		aguiReconnectAttemptsTotal.Inc()
+		session := g.sessions.get(runID)
+		if session != nil {
+			g.handleReconnect(c, session, lastEventID)
+			return
+		}
+		// Session not found — it expired or was never created.
+		c.JSON(http.StatusGone, gin.H{"error": gin.H{
+			"message": "session not found or expired, please start a new run",
+			"type":    "session_expired",
+		}})
+		return
+	}
+
+	// New run path.
+	g.handleNewRun(c, input, runID)
+}
+
+// handleNewRun creates a new session and starts the runtime.
+func (g *Gateway) handleNewRun(c *gin.Context, input aguitypes.RunAgentInput, runID string) {
 	// Load shedding: reject when at capacity.
 	if max := g.deps.Options.MaxActiveStreams; max > 0 {
-		g.mu.Lock()
-		active := len(g.activeCancels)
-		g.mu.Unlock()
-		if active >= max {
+		if g.sessions.count() >= max {
 			aguiLoadShedTotal.Inc()
 			c.Header("Retry-After", "5")
 			c.JSON(http.StatusServiceUnavailable, gin.H{"error": gin.H{
@@ -101,10 +125,6 @@ func (g *Gateway) handleRun(c *gin.Context) {
 	threadID := input.ThreadID
 	if threadID == "" {
 		threadID = "thread_" + uuid.New().String()
-	}
-	runID := input.RunID
-	if runID == "" {
-		runID = "run_" + uuid.New().String()
 	}
 
 	identity := identityFromContext(c.Request.Context())
@@ -136,78 +156,130 @@ func (g *Gateway) handleRun(c *gin.Context) {
 	}
 
 	requestID := c.GetString("requestID")
-	lastEventID := parseAGUILastEventID(c)
-	if lastEventID > 0 {
-		aguiReconnectAttemptsTotal.Inc()
-	}
-
-	g.deps.Logger.Info("agui run request received",
+	g.deps.Logger.Info("agui new run request",
 		"request_id", requestID,
 		"thread_id", threadID,
 		"run_id", runID,
 		"turn_id", turnID,
 		"project_id", projectID,
 		"user", identity.Username,
-		"last_event_id", lastEventID,
 		"message_count", len(input.Messages),
-		"context_count", len(input.Context),
 		"prompt_len", len(sakerReq.Prompt),
 	)
 
 	// Cancel any existing run on the same thread (mutual exclusion).
 	g.cancelThreadRun(threadID, runID)
 
-	baseCtx, timeoutCancel := context.WithTimeout(c.Request.Context(), g.effectiveTurnTimeout(input))
-	defer timeoutCancel()
-	ctx, finishRun, ok := g.runContext(baseCtx, runID)
+	// Create runtime context decoupled from HTTP connection.
+	// The runtime survives client disconnects so the session can be resumed.
+	// Chain: WithoutCancel(reqCtx) → WithTimeout → runContext(WithCancel)
+	// cancelThreadRun uses activeCancels to cancel the runContext child.
+	// session.runtimeCancel uses baseCancel which cancels the timeout parent.
+	baseCtx, baseCancel := context.WithTimeout(
+		context.WithoutCancel(c.Request.Context()),
+		g.effectiveTurnTimeout(input),
+	)
+
+	runtimeCtx, finishRun, ok := g.runContext(baseCtx, runID)
 	if !ok {
+		baseCancel()
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": gin.H{
 			"message": "agui gateway is shutting down",
 			"type":    "server_shutdown",
 		}})
 		return
 	}
-	defer func() {
-		finishRun()
-		// Safety net: normal and cancelled paths call clearThreadRun explicitly
-		// before sending terminal events. This covers early-return error paths
-		// (e.g. write failures) where no terminal event is sent.
-		g.clearThreadRun(threadID, runID)
-	}()
 
 	sideCh := make(chan sideEvent, 8)
-	ctx = toolbuiltin.WithAskQuestionFunc(ctx, g.makeAskQuestionHandler(runID, sideCh))
+	runtimeCtx = toolbuiltin.WithAskQuestionFunc(runtimeCtx, g.makeAskQuestionHandler(runID, sideCh))
+	if g.deps.CtxEnricher != nil {
+		runtimeCtx = g.deps.CtxEnricher(runtimeCtx)
+	}
 
 	sakerReq.Metadata = mergeMetadata(sakerReq.Metadata, map[string]any{
 		"_agui_run_id":             runID,
 		"_agui_permission_handler": g.makePermissionHandler(runID, sideCh),
 	})
 
-	eventCh, err := g.deps.Runtime.RunStream(ctx, sakerReq)
+	eventCh, err := g.deps.Runtime.RunStream(runtimeCtx, sakerReq)
 	if err != nil {
+		baseCancel()
+		finishRun()
 		g.deps.Logger.Error("agui runtime failed to start",
-			"thread_id", threadID,
-			"run_id", runID,
-			"turn_id", turnID,
-			"error", err,
-		)
+			"thread_id", threadID, "run_id", runID, "error", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": gin.H{
 			"message": "failed to start run: " + err.Error(),
 			"type":    "server_error",
 		}})
 		return
 	}
-	g.deps.Logger.Info("agui runtime stream started",
-		"thread_id", threadID,
-		"run_id", runID,
-		"turn_id", turnID,
-	)
 
-	g.streamSSE(c, ctx, eventCh, sideCh, threadID, runID, turnID, projectID)
+	// Create session and start pump.
+	// baseCancel cancels the parent context, which propagates to runtimeCtx.
+	session := newRunSession(g, runID, threadID, turnID, projectID, eventCh, sideCh, runtimeCtx, baseCancel)
+	g.sessions.register(session)
+
+	go session.pump(finishRun)
+
+	// Attach HTTP client to session.
+	g.attachClientToSession(c, session)
 }
 
-// streamSSE writes the AG-UI event stream to the client as SSE.
-func (g *Gateway) streamSSE(c *gin.Context, ctx context.Context, eventCh <-chan api.StreamEvent, sideCh <-chan sideEvent, threadID, runID, turnID, projectID string) {
+// handleReconnect resumes an existing session by replaying buffered events.
+func (g *Gateway) handleReconnect(c *gin.Context, session *runSession, lastEventID int) {
+	requestID := c.GetString("requestID")
+	g.deps.Logger.Info("agui reconnect attempt",
+		"request_id", requestID,
+		"run_id", session.runID,
+		"thread_id", session.threadID,
+		"last_event_id", lastEventID,
+	)
+
+	// Set up SSE response.
+	w := c.Writer
+	w.Header().Set("Content-Type", "text/event-stream; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-cache, no-store, no-transform")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("X-Accel-Buffering", "no")
+	w.WriteHeader(http.StatusOK)
+
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		return
+	}
+
+	fmt.Fprintf(w, "retry: 3000\n\n")
+	flusher.Flush()
+
+	client := &attachedClient{
+		writer:  w,
+		flusher: flusher,
+		doneCh:  make(chan struct{}),
+	}
+
+	if err := session.replayAndAttach(client, lastEventID); err != nil {
+		// Ring overflow — client must start a new run.
+		aguiReconnectOverflowTotal.Inc()
+		g.deps.Logger.Warn("agui reconnect failed: ring overflow",
+			"run_id", session.runID, "last_event_id", lastEventID, "error", err)
+		// Already started writing SSE, send error as event.
+		fmt.Fprintf(w, "event: error\ndata: {\"message\":\"reconnect failed: %s\",\"code\":\"ring_overflow\"}\n\n", err.Error())
+		flusher.Flush()
+		return
+	}
+
+	g.deps.Logger.Info("agui reconnect succeeded",
+		"run_id", session.runID,
+		"thread_id", session.threadID,
+		"last_event_id", lastEventID,
+	)
+
+	// Block until client disconnects or session finishes.
+	g.waitForClientDone(c, session, client)
+}
+
+// attachClientToSession sets up SSE headers and attaches the client to the session.
+func (g *Gateway) attachClientToSession(c *gin.Context, session *runSession) {
 	w := c.Writer
 	rc := http.NewResponseController(w)
 	writeDeadlineSupported := rc.SetWriteDeadline(time.Now().Add(slowClientWriteTimeout)) == nil
@@ -216,7 +288,7 @@ func (g *Gateway) streamSSE(c *gin.Context, ctx context.Context, eventCh <-chan 
 	w.Header().Set("Cache-Control", "no-cache, no-store, no-transform")
 	w.Header().Set("Connection", "keep-alive")
 	w.Header().Set("X-Accel-Buffering", "no")
-	if sc := trace.SpanContextFromContext(ctx); sc.TraceID().IsValid() {
+	if sc := trace.SpanContextFromContext(c.Request.Context()); sc.TraceID().IsValid() {
 		w.Header().Set("X-Trace-Id", sc.TraceID().String())
 	}
 	w.WriteHeader(http.StatusOK)
@@ -226,228 +298,50 @@ func (g *Gateway) streamSSE(c *gin.Context, ctx context.Context, eventCh <-chan 
 		return
 	}
 
-	flushSSE := func() {
-		if writeDeadlineSupported {
-			_ = rc.SetWriteDeadline(time.Now().Add(slowClientWriteTimeout))
-		}
-		flusher.Flush()
-	}
-
 	// SSE retry directive: instruct client to reconnect after 3s on disconnect.
 	fmt.Fprintf(w, "retry: 3000\n\n")
-	flushSSE()
+	flusher.Flush()
 
-	sseW := aguisse.NewSSEWriter().WithLogger(g.deps.Logger)
-	state := newStreamState(threadID, runID)
-	g.mu.Lock()
-	g.liveRings[runID] = state.ring
-	g.mu.Unlock()
-	defer func() {
-		g.mu.Lock()
-		delete(g.liveRings, runID)
-		g.mu.Unlock()
-	}()
-	filter := server.NewStreamArtifactFilter()
-	var accumulated strings.Builder
-	eventCounts := make(map[string]int)
-	streamStart := time.Now()
-	aguiActiveStreams.Inc()
-	defer func() {
-		aguiActiveStreams.Dec()
-		aguiRunDuration.Observe(time.Since(streamStart).Seconds())
-	}()
-
-	g.deps.Logger.Info("agui sse stream opened",
-		"thread_id", threadID,
-		"run_id", runID,
-		"turn_id", turnID,
-		"project_id", projectID,
-	)
-	if err := writeSSEWithID(ctx, w, sseW, aguievents.NewRunStartedEvent(threadID, runID), state); err != nil {
-		g.deps.Logger.Warn("agui sse write failed",
-			"thread_id", threadID,
-			"run_id", runID,
-			"event_type", "RUN_STARTED",
-			"error", err,
-		)
-		return
+	client := &attachedClient{
+		writer:  w,
+		flusher: flusher,
+		doneCh:  make(chan struct{}),
 	}
-	// Establish the shared state schema so CopilotKit's useCoAgent
-	// knows that state.artifacts is an array before StateDeltaEvents arrive.
-	if err := writeSSEWithID(ctx, w, sseW, aguievents.NewStateSnapshotEvent(
-		map[string]any{"artifacts": []any{}},
-	), state); err != nil {
-		g.deps.Logger.Warn("agui sse initial state snapshot failed",
-			"thread_id", threadID,
-			"run_id", runID,
-			"error", err,
-		)
-		return
+
+	// Apply write deadline refreshing via a wrapper.
+	if writeDeadlineSupported {
+		client.writer = &deadlineWriter{w: w, rc: rc, timeout: slowClientWriteTimeout}
 	}
-	flushSSE()
 
-	keepalive := time.NewTicker(keepaliveInterval)
-	defer keepalive.Stop()
+	session.attach(client)
 
-	for {
-		select {
-		case evt, ok := <-eventCh:
-			if !ok {
-				// Persist assistant message BEFORE finalizing (which sends RUN_FINISHED)
-				// so that any connect triggered by the client after RUN_FINISHED will
-				// find the complete message history in the store.
-				if len(state.artifacts) > 0 {
-					g.storeArtifacts(threadID, state.artifacts)
-				}
-				g.persistAssistantMessage(context.Background(), threadID, turnID, projectID, accumulated.String())
-				if g.deps.ConversationStore != nil {
-					_ = g.deps.ConversationStore.CloseTurn(context.Background(), turnID, "completed")
-				}
-				// Clear thread→run mapping BEFORE finalize sends RUN_FINISHED.
-				// This ensures that when the client receives RUN_FINISHED and
-				// immediately fires agent/connect, the server no longer considers
-				// this run active — so MESSAGES_SNAPSHOT is sent with full history.
-				g.clearThreadRun(threadID, runID)
-				if err := state.finalize(ctx, w, sseW, filter); err != nil {
-					g.deps.Logger.Warn("agui sse finalize failed",
-						"thread_id", threadID,
-						"run_id", runID,
-						"turn_id", turnID,
-						"error", err,
-					)
-				} else {
-					flushSSE()
-				}
-				g.deps.Logger.Info("agui runtime stream completed",
-					"thread_id", threadID,
-					"run_id", runID,
-					"turn_id", turnID,
-					"assistant_len", accumulated.Len(),
-					"event_counts", eventCounts,
-				)
-				return
-			}
-			eventCounts[string(evt.Type)]++
-			g.deps.Logger.Debug("agui runtime event received",
-				"thread_id", threadID,
-				"run_id", runID,
-				"event_type", evt.Type,
-				"tool_use_id", evt.ToolUseID,
-				"tool_name", evt.Name,
-				"delta_len", deltaTextLen(evt),
-			)
-			if evt.Type == api.EventContentBlockDelta && evt.Delta != nil && evt.Delta.Text != "" {
-				accumulated.WriteString(evt.Delta.Text)
-			}
-			newArtifacts, err := state.translateEvent(ctx, w, sseW, evt, filter)
-			if err != nil {
-				if isSlowClientErr(err) {
-					aguiSlowClientDisconnects.Inc()
-				}
-				g.deps.Logger.Warn("agui sse translate/write failed",
-					"thread_id", threadID,
-					"run_id", runID,
-					"turn_id", turnID,
-					"event_type", evt.Type,
-					"slow_client", isSlowClientErr(err),
-					"error", err,
-				)
-				return
-			}
-			if len(newArtifacts) > 0 {
-				cacher := g.deps.MediaCacher
-				var cachedArtifacts []server.Artifact
-				for _, a := range newArtifacts {
-					cached := a
-					if cacher != nil && (strings.HasPrefix(a.URL, "http://") || strings.HasPrefix(a.URL, "https://")) {
-						cached = cacher.CacheArtifactMedia(ctx, a)
-					}
-					cachedArtifacts = append(cachedArtifacts, cached)
-					delta := []aguievents.JSONPatchOperation{
-						{
-							Op:   "add",
-							Path: "/artifacts/-",
-							Value: map[string]string{
-								"type": cached.Type,
-								"url":  cached.URL,
-								"name": cached.Name,
-							},
-						},
-					}
-					if err := writeSSEWithID(ctx, w, sseW, aguievents.NewStateDeltaEvent(delta), state); err != nil {
-						g.deps.Logger.Warn("agui sse state delta write failed",
-							"thread_id", threadID,
-							"run_id", runID,
-							"artifact_url", cached.URL,
-							"error", err,
-						)
-						return
-					}
-				}
-				// Replace raw artifacts with cached versions so finalize uses accessible URLs.
-				tail := len(state.artifacts)
-				for i, ca := range cachedArtifacts {
-					state.artifacts[tail-len(cachedArtifacts)+i] = ca
-				}
-			}
-			flushSSE()
+	g.waitForClientDone(c, session, client)
+}
 
-		case se := <-sideCh:
-			if len(se.events) == 0 {
-				continue
-			}
-			sideTypes := make([]string, 0, len(se.events))
-			for _, event := range se.events {
-				if event == nil {
-					continue
-				}
-				sideTypes = append(sideTypes, string(event.Type()))
-				if err := writeSSEWithID(ctx, w, sseW, event, state); err != nil {
-					g.deps.Logger.Warn("agui side-event write failed",
-						"thread_id", threadID,
-						"run_id", runID,
-						"turn_id", turnID,
-						"event_type", event.Type(),
-						"error", err,
-					)
-					return
-				}
-			}
-			g.deps.Logger.Debug("agui side event sent",
-				"thread_id", threadID,
-				"run_id", runID,
-				"event_count", len(se.events),
-				"event_types", sideTypes,
-			)
-			flushSSE()
-
-		case <-keepalive.C:
-			if _, err := fmt.Fprintf(w, ": keepalive\n\n"); err != nil {
-				return
-			}
-			flushSSE()
-
-		case <-ctx.Done():
-			// Clear thread→run mapping before emitting RUN_ERROR for the same
-			// reason as the normal path: client may reconnect immediately.
-			g.clearThreadRun(threadID, runID)
-			aguiErrorsTotal.WithLabelValues("cancelled").Inc()
-			errCtx := context.Background()
-			_ = writeSSEWithID(errCtx, w, sseW, aguievents.NewRunErrorEvent("stream cancelled",
-				aguievents.WithRunID(runID), aguievents.WithErrorCode("cancelled")), state)
-			flushSSE()
-			g.deps.Logger.Info("agui runtime stream cancelled",
-				"thread_id", threadID,
-				"run_id", runID,
-				"turn_id", turnID,
-				"error", ctx.Err(),
-				"assistant_len", accumulated.Len(),
-				"event_counts", eventCounts,
-			)
-			return
-		}
+// waitForClientDone blocks until the HTTP client disconnects or the session finishes.
+func (g *Gateway) waitForClientDone(c *gin.Context, session *runSession, client *attachedClient) {
+	select {
+	case <-c.Request.Context().Done():
+		// Client disconnected — detach but don't cancel runtime.
+		session.detach()
+	case <-session.doneCh:
+		// Session finished (pump exited).
 	}
 }
+
+// deadlineWriter wraps an io.Writer and refreshes the write deadline on each write.
+type deadlineWriter struct {
+	w       io.Writer
+	rc      *http.ResponseController
+	timeout time.Duration
+}
+
+func (d *deadlineWriter) Write(p []byte) (int, error) {
+	_ = d.rc.SetWriteDeadline(time.Now().Add(d.timeout))
+	return d.w.Write(p)
+}
+
+// --- Helper functions (unchanged) ---
 
 func deltaTextLen(evt api.StreamEvent) int {
 	if evt.Delta == nil {

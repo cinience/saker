@@ -68,6 +68,11 @@ type Config struct {
 	PublicBaseURL string // URL prefix for object reads; defaults to "/media"
 	TenantPrefix  string // optional prefix prepended to every key (multi-instance shared bucket)
 
+	// SignedURLRedirect, when true, signals that handleMediaServe should
+	// redirect clients to a presigned URL rather than proxying the bytes.
+	// Set automatically for S3 backends without a CDN PublicBaseURL.
+	SignedURLRedirect bool
+
 	OSFS     OSFSConfig
 	Embedded EmbeddedConfig
 	S3       S3Config
@@ -215,8 +220,19 @@ func (c Config) withDefaults(dataDir string) Config {
 	if c.Backend == "" {
 		c.Backend = DefaultBackend
 	}
+	// S3 CDN domain cascades into the top-level PublicBaseURL so that upload
+	// responses return absolute CDN URLs and the client fetches directly.
+	if c.Backend == BackendS3 && c.S3.PublicBaseURL != "" && c.PublicBaseURL == "" {
+		c.PublicBaseURL = strings.TrimRight(c.S3.PublicBaseURL, "/")
+	}
 	if c.PublicBaseURL == "" {
 		c.PublicBaseURL = DefaultPublicBaseURL
+	}
+	// When the S3 backend is active and no public CDN domain is configured,
+	// enable signed URL redirects so handleMediaServe can 302 clients directly
+	// to S3 instead of proxying bytes through the server.
+	if c.Backend == BackendS3 && c.S3.PublicBaseURL == "" {
+		c.SignedURLRedirect = true
 	}
 	if c.OSFS.Root == "" {
 		c.OSFS.Root = filepath.Join(dataDir, "media")

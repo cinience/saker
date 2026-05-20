@@ -63,3 +63,28 @@ func (r *eventRing) Len() int {
 	}
 	return r.head
 }
+
+// OldestSeq returns the sequence number of the oldest entry in the ring,
+// or 0 if the ring is empty.
+func (r *eventRing) OldestSeq() int {
+	if r.head == 0 && !r.full {
+		return 0
+	}
+	if r.full {
+		return r.buf[r.head].seq
+	}
+	return r.buf[0].seq
+}
+
+// NewestSeq returns the sequence number of the newest entry in the ring,
+// or 0 if the ring is empty.
+func (r *eventRing) NewestSeq() int {
+	if r.head == 0 && !r.full {
+		return 0
+	}
+	idx := r.head - 1
+	if idx < 0 {
+		idx = r.size - 1
+	}
+	return r.buf[idx].seq
+}

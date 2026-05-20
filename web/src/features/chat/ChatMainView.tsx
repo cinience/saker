@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useAgent, UseAgentUpdate, CopilotChat, useDefaultRenderTool, useConfigureSuggestions } from "@copilotkit/react-core/v2";
 import "@copilotkit/react-core/v2/styles.css";
+import { toast } from "sonner";
 import { ThreadPanel } from "./ThreadPanel";
 import { EmptyState } from "./EmptyState";
 import { useT } from "@/features/i18n";
@@ -22,14 +23,20 @@ export interface ChatMainViewProps {
 }
 
 function generateTitle(text: string): string {
-  const firstSentence = text.split(/[。.!?！？\n]/)[0].trim();
-  if (firstSentence.length > 0 && firstSentence.length <= 40) {
+  const cleaned = text.replace(/\s+/g, " ").trim();
+  const firstSentence = cleaned.split(/[。.!?！？\n，,;；]/)[0].trim();
+  if (firstSentence.length > 0 && firstSentence.length <= 30) {
     return firstSentence;
   }
-  if (text.length <= 40) return text;
-  const truncated = text.slice(0, 40);
-  const lastSpace = truncated.lastIndexOf(" ");
-  return (lastSpace > 20 ? truncated.slice(0, lastSpace) : truncated) + "...";
+  if (cleaned.length <= 30) return cleaned;
+  const truncated = cleaned.slice(0, 30);
+  const lastBreak = Math.max(
+    truncated.lastIndexOf(" "),
+    truncated.lastIndexOf("，"),
+    truncated.lastIndexOf(","),
+    truncated.lastIndexOf("、"),
+  );
+  return (lastBreak > 10 ? truncated.slice(0, lastBreak) : truncated) + "...";
 }
 
 function CopilotChatArea({
@@ -215,7 +222,65 @@ function CopilotChatArea({
         labels={{
           chatInputPlaceholder: t("composer.placeholder"),
         }}
-        messageView={{ assistantMessage: { onRegenerate: () => {} } }}
+        attachments={{
+          enabled: true,
+          accept: "image/*,video/*,audio/*,application/pdf",
+          maxSize: 50 * 1024 * 1024,
+          onUpload: (file: File) => {
+            const base = window.location.port === "10111"
+              ? `${window.location.protocol}//${window.location.hostname}:17000`
+              : "";
+            const shortName = file.name.length > 20 ? file.name.slice(0, 18) + "…" : file.name;
+            const toastId = toast.loading(`上传中: ${shortName}`);
+
+            return new Promise((resolve, reject) => {
+              const xhr = new XMLHttpRequest();
+              xhr.open("POST", `${base}/api/upload`);
+              xhr.withCredentials = true;
+
+              xhr.upload.onprogress = (e) => {
+                if (e.lengthComputable) {
+                  const pct = Math.round((e.loaded / e.total) * 100);
+                  toast.loading(`上传中: ${shortName} (${pct}%)`, { id: toastId });
+                }
+              };
+
+              xhr.onload = () => {
+                if (xhr.status >= 200 && xhr.status < 300) {
+                  toast.dismiss(toastId);
+                  const { path, media_type } = JSON.parse(xhr.responseText);
+                  resolve({ type: "url" as const, value: path, mimeType: media_type, metadata: { filename: file.name } });
+                } else {
+                  toast.error(`上传失败: ${shortName}`, { id: toastId });
+                  reject(new Error(`Upload failed: ${xhr.statusText}`));
+                }
+              };
+
+              xhr.onerror = () => {
+                toast.error(`上传失败: ${shortName}`, { id: toastId });
+                reject(new Error("Network error"));
+              };
+
+              const form = new FormData();
+              form.append("file", file);
+              xhr.send(form);
+            });
+          },
+          onUploadFailed: (info: { reason: string; file: File; message: string }) => {
+            const name = info.file.name.length > 20 ? info.file.name.slice(0, 18) + "…" : info.file.name;
+            if (info.reason === "invalid-type") {
+              toast.error(`不支持的文件类型: ${name}`);
+            } else if (info.reason === "file-too-large") {
+              toast.error(`文件过大 (限50MB): ${name}`);
+            } else {
+              toast.error(`上传失败: ${name}`);
+            }
+          },
+        }}
+        messageView={{
+          assistantMessage: { onRegenerate: () => {} },
+          userMessage: { onEditMessage: () => {} },
+        }}
       />
     </>
   );

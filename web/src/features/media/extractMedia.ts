@@ -60,6 +60,21 @@ export function extractMedia(
           : "image";
       return { type: t, url: urlMatch[0] };
     }
+    // /media/ URLs (s2 object store) — pass through unchanged
+    const mediaStoreMatch = outText.match(
+      /\/media\/[^\s"'<>]+\.(?:png|jpe?g|gif|webp|svg|mp4|webm|mov|mp3|wav|ogg|flac)(?:\?[^\s"'<>]*)?/i
+    );
+    if (mediaStoreMatch) {
+      const ext = mediaStoreMatch[0]
+        .match(/\.(png|jpe?g|gif|webp|svg|mp4|webm|mov|mp3|wav|ogg|flac)/i)![1]
+        .toLowerCase();
+      const t = /^(mp4|webm|mov)$/.test(ext)
+        ? "video"
+        : /^(mp3|wav|ogg|flac)$/.test(ext)
+          ? "audio"
+          : "image";
+      return { type: t, url: mediaStoreMatch[0] };
+    }
     // Absolute local file paths
     const pathMatch = outText.match(
       /\/[\w/._-]+\.(png|jpe?g|gif|webp|mp4|webm|mp3|wav|ogg)\b/i

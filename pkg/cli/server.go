@@ -230,6 +230,7 @@ func (a *App) runServerMode(stdout, stderr io.Writer, opts api.Options, addr, da
 			Options:           aguigw.Options{Enabled: true, DevBypassAuth: gwFlags.DevBypassAuth},
 			SessionValidator:  sessionValidator,
 			MediaCacher:       srv.Handler(),
+			CtxEnricher:       srv.Handler().InjectMediaStore,
 		}
 		g, err := aguigw.RegisterAGUIGateway(engine, aguiDeps)
 		if err != nil {

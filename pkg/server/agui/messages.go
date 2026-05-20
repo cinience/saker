@@ -93,6 +93,8 @@ func messagesToRequest(input aguitypes.RunAgentInput, identity Identity) api.Req
 // extractMultimodalContent extracts text prompt and multimodal content blocks
 // from an AG-UI message. Uses the SDK's ContentInputContents() helper for
 // proper type handling of multimodal arrays.
+// When multiple files are attached, a manifest line is prepended to the prompt
+// so the LLM can reference files by ordinal (e.g. "第2个素材").
 func extractMultimodalContent(msg aguitypes.Message) (string, []model.ContentBlock) {
 	// Try multimodal array first ([]InputContent).
 	if parts, ok := msg.ContentInputContents(); ok {
@@ -116,12 +118,37 @@ func extractMultimodalContent(msg aguitypes.Message) (string, []model.ContentBlo
 				}
 			}
 		}
-		return strings.Join(texts, "\n"), blocks
+		prompt := strings.Join(texts, "\n")
+		if len(blocks) > 0 {
+			prompt = prependFileManifest(prompt, blocks)
+		}
+		return prompt, blocks
 	}
 
 	// Fall back to string content.
 	text := extractTextContent(msg.Content)
 	return text, nil
+}
+
+// prependFileManifest injects a concise file list at the start of the prompt
+// so the LLM knows which ordinal maps to which file.
+func prependFileManifest(prompt string, blocks []model.ContentBlock) string {
+	if len(blocks) == 0 {
+		return prompt
+	}
+	var items []string
+	for i, b := range blocks {
+		name := b.Filename
+		if name == "" {
+			name = fmt.Sprintf("%s_file", b.Type)
+		}
+		items = append(items, fmt.Sprintf("附件%d: %s (%s)", i+1, name, b.MediaType))
+	}
+	manifest := "[" + strings.Join(items, ", ") + "]"
+	if prompt == "" {
+		return manifest
+	}
+	return manifest + "\n" + prompt
 }
 
 // inputContentToBlock converts an AG-UI InputContent (binary type) into a
@@ -136,6 +163,7 @@ func inputContentToBlock(ic aguitypes.InputContent) model.ContentBlock {
 		MediaType: ic.MimeType,
 		Data:      ic.Data,
 		URL:       ic.URL,
+		Filename:  ic.Filename,
 	}
 }
 
@@ -144,6 +172,10 @@ func mimeToBlockType(mimeType string) model.ContentBlockType {
 	switch {
 	case strings.HasPrefix(mimeType, "image/"):
 		return model.ContentBlockImage
+	case strings.HasPrefix(mimeType, "video/"):
+		return model.ContentBlockVideo
+	case strings.HasPrefix(mimeType, "audio/"):
+		return model.ContentBlockAudio
 	case mimeType == "application/pdf":
 		return model.ContentBlockDocument
 	case strings.HasPrefix(mimeType, "application/"):

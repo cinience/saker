@@ -1,12 +1,7 @@
 package server
 
 import (
-	"io"
-	"log/slog"
-	"os"
-	"path/filepath"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -53,36 +48,21 @@ func TestSanitizeFilename(t *testing.T) {
 	}
 }
 
-func TestCleanupUploads_RemovesOldFiles(t *testing.T) {
-	dir := t.TempDir()
-	uploads := filepath.Join(dir, "uploads")
-	require.NoError(t, os.MkdirAll(uploads, 0o755))
-
-	old := filepath.Join(uploads, "old.bin")
-	fresh := filepath.Join(uploads, "fresh.bin")
-	subDir := filepath.Join(uploads, "subdir")
-	require.NoError(t, os.MkdirAll(subDir, 0o755))
-
-	require.NoError(t, os.WriteFile(old, []byte("a"), 0o644))
-	require.NoError(t, os.WriteFile(fresh, []byte("b"), 0o644))
-
-	yesterday := time.Now().Add(-uploadMaxAge - time.Hour)
-	require.NoError(t, os.Chtimes(old, yesterday, yesterday))
-
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	cleanupUploads(dir, logger)
-
-	_, err := os.Stat(old)
-	require.True(t, os.IsNotExist(err))
-	_, err = os.Stat(fresh)
-	require.NoError(t, err)
-	_, err = os.Stat(subDir)
-	require.NoError(t, err, "subdir should remain")
-}
-
-func TestCleanupUploads_MissingDirNoOp(t *testing.T) {
-	dir := t.TempDir()
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	// uploads dir does not exist — no panic, no error.
-	cleanupUploads(dir, logger)
+func TestExtFromMime(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		mime string
+		want string
+	}{
+		{"image/png", ".png"},
+		{"image/jpeg", ".jpg"},
+		{"video/mp4", ".mp4"},
+		{"audio/mpeg", ".mp3"},
+		{"application/pdf", ".pdf"},
+		{"text/plain", ""},
+	}
+	for _, c := range cases {
+		got := extFromMime(c.mime)
+		require.Equal(t, c.want, got, "extFromMime(%q)", c.mime)
+	}
 }

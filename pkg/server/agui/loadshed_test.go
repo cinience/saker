@@ -50,10 +50,18 @@ func TestLoadShedding_RejectsAtCapacity(t *testing.T) {
 		DevBypassAuth:   true,
 	})
 
-	// Simulate an active run occupying a slot.
-	gw.mu.Lock()
-	gw.activeCancels["existing_run"] = func() {}
-	gw.mu.Unlock()
+	// Simulate an active session occupying a slot.
+	fakeCtx, fakeCancel := context.WithCancel(context.Background())
+	defer fakeCancel()
+	fakeSession := &runSession{
+		runID:         "existing_run",
+		threadID:      "thread-existing",
+		runtimeCtx:    fakeCtx,
+		runtimeCancel: fakeCancel,
+		doneCh:        make(chan struct{}),
+	}
+	gw.sessions.register(fakeSession)
+	defer gw.sessions.remove("existing_run")
 
 	body := aguitypes.RunAgentInput{
 		ThreadID: "thread-test",
@@ -82,11 +90,6 @@ func TestLoadShedding_RejectsAtCapacity(t *testing.T) {
 			t.Errorf("error type = %q, want capacity_error", resp["error"]["type"])
 		}
 	}
-
-	// Cleanup.
-	gw.mu.Lock()
-	delete(gw.activeCancels, "existing_run")
-	gw.mu.Unlock()
 }
 
 func TestLoadShedding_AllowsUnderCapacity(t *testing.T) {

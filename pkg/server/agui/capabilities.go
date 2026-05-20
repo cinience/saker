@@ -114,6 +114,7 @@ func (g *Gateway) handleCapabilities(c *gin.Context) {
 		},
 		Transport: &TransportCapabilities{
 			Streaming: true,
+			Resumable: true,
 		},
 		Tools: &ToolsCapabilities{
 			Supported:      true,

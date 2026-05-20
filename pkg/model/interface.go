@@ -13,6 +13,8 @@ type ContentBlockType string
 const (
 	ContentBlockText     ContentBlockType = "text"
 	ContentBlockImage    ContentBlockType = "image"
+	ContentBlockVideo    ContentBlockType = "video"
+	ContentBlockAudio    ContentBlockType = "audio"
 	ContentBlockDocument ContentBlockType = "document"
 )
 
@@ -22,9 +24,10 @@ const (
 type ContentBlock struct {
 	Type      ContentBlockType `json:"type"`
 	Text      string           `json:"text,omitempty"`
-	MediaType string           `json:"media_type,omitempty"` // e.g. "image/jpeg", "application/pdf"
+	MediaType string           `json:"media_type,omitempty"` // e.g. "image/jpeg", "video/mp4"
 	Data      string           `json:"data,omitempty"`       // base64-encoded content
 	URL       string           `json:"url,omitempty"`        // URL source (alternative to Data)
+	Filename  string           `json:"filename,omitempty"`   // original filename for reference
 }
 
 // Message represents a single conversational turn.

@@ -25,8 +25,11 @@ func (g *Gateway) ensureThread(ctx context.Context, threadID string, identity Id
 	if owner == "" {
 		owner = "anonymous"
 	}
-	_, err := cs.GetThread(ctx, threadID)
+	existing, err := cs.GetThread(ctx, threadID)
 	if err == nil {
+		if existing.Client != aguiClient {
+			_ = cs.UpdateThreadClient(ctx, threadID, aguiClient)
+		}
 		return
 	}
 	if _, err := cs.CreateThreadWithID(ctx, threadID, projectID, owner, "", aguiClient); err != nil {

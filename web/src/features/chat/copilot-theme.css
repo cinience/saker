@@ -260,11 +260,45 @@ cpk-web-inspector {
   background: var(--bg-secondary, #1a1a2e);
   border: 1px solid var(--border, #2a2a3e);
   border-radius: 12px;
+  padding: 6px;
+  gap: 6px;
 }
 .saker-copilot-chat .copilotKitAttachmentQueueItem {
   background: var(--bg-tertiary, #2a2a3e);
   border: 1px solid var(--border, #2a2a3e);
   color: var(--text-secondary, #cbd5e1);
+  border-radius: 8px;
+  padding: 6px 10px;
+  font-size: 13px;
+}
+.saker-copilot-chat .copilotKitAttachmentQueueItem button {
+  color: var(--text-muted, #64748b);
+}
+.saker-copilot-chat .copilotKitAttachmentQueueItem button:hover {
+  color: var(--danger, #ef4444);
+}
+.saker-copilot-chat .copilotKitAttachmentQueueItem img {
+  border-radius: 4px;
+  max-height: 40px;
+}
+
+/* ── Attachment previews in messages ── */
+.saker-copilot-chat [data-testid="copilot-attachment"] {
+  background: var(--bg-tertiary, #2a2a3e);
+  border: 1px solid var(--border, #2a2a3e);
+  border-radius: 8px;
+  color: var(--text-secondary, #cbd5e1);
+}
+.saker-copilot-chat [data-testid="copilot-attachment"] img {
+  border-radius: 6px;
+}
+
+/* ── Drag-and-drop overlay ── */
+.saker-copilot-chat [class*="cpk:drop-zone"],
+.saker-copilot-chat [data-copilotkit-drop-zone] {
+  background: color-mix(in srgb, var(--accent, #6366f1) 8%, var(--bg, #0a0a0a));
+  border: 2px dashed var(--accent, #6366f1);
+  border-radius: 12px;
 }
 
 /* ── Error styling ── */
@@ -322,7 +356,10 @@ cpk-web-inspector {
 
 @media (max-width: 768px) {
   .saker-copilot-chat--active .copilotKitMessages::before { display: none; }
-  .saker-copilot-chat .copilotKitInput { width: calc(100% - 24px); }
+  .saker-copilot-chat .copilotKitInput { width: calc(100% - 24px); min-height: 48px; }
+  .saker-copilot-chat .copilotKitMessagesContainer { padding: 12px 16px 8px; }
+  .saker-copilot-chat .copilotKitAttachmentQueue { padding: 4px; }
+  .saker-copilot-chat .copilotKitAttachmentQueueItem { font-size: 12px; padding: 4px 8px; }
 }
 
 /* ── Fix: cpk:prose dark mode color not resolving ── */

@@ -1,6 +1,7 @@
 package aigo
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -12,6 +13,7 @@ import (
 	"strings"
 
 	sdk "github.com/godeps/aigo"
+	toolbuiltin "github.com/saker-ai/saker/pkg/tool/builtin"
 )
 
 // cameraAnglePrompts maps camera_angle enum values to natural English descriptions
@@ -29,11 +31,17 @@ var cameraAnglePrompts = map[string]string{
 
 // buildTask converts tool params into an aigo.AgentTask based on the tool name.
 func buildTask(toolName string, params map[string]interface{}) sdk.AgentTask {
+	return buildTaskCtx(context.Background(), toolName, params)
+}
+
+// buildTaskCtx is the context-aware version that allows resolveLocalRef to
+// read media from the object store when available.
+func buildTaskCtx(ctx context.Context, toolName string, params map[string]interface{}) sdk.AgentTask {
 	switch toolName {
 	case "generate_image":
-		return buildImageTask(params)
+		return buildImageTaskCtx(ctx, params)
 	case "generate_video":
-		return buildVideoTask(params)
+		return buildVideoTaskCtx(ctx, params)
 	case "text_to_speech":
 		return buildTTSTask(params)
 	case "generate_music":
@@ -41,9 +49,9 @@ func buildTask(toolName string, params map[string]interface{}) sdk.AgentTask {
 	case "design_voice":
 		return buildVoiceDesignTask(params)
 	case "edit_image":
-		return buildEditImageTask(params)
+		return buildEditImageTask(ctx, params)
 	case "edit_video":
-		return buildEditVideoTask(params)
+		return buildEditVideoTask(ctx, params)
 	case "transcribe_audio":
 		return buildTranscribeTask(params)
 	default:
@@ -52,6 +60,10 @@ func buildTask(toolName string, params map[string]interface{}) sdk.AgentTask {
 }
 
 func buildImageTask(p map[string]interface{}) sdk.AgentTask {
+	return buildImageTaskCtx(context.Background(), p)
+}
+
+func buildImageTaskCtx(ctx context.Context, p map[string]interface{}) sdk.AgentTask {
 	task := sdk.AgentTask{
 		Prompt:         stringParam(p, "prompt"),
 		NegativePrompt: stringParam(p, "negative_prompt"),
@@ -70,7 +82,6 @@ func buildImageTask(p map[string]interface{}) sdk.AgentTask {
 		task.Structured = structured
 	}
 
-	// Prepend camera angle to prompt for providers that don't support it natively.
 	if angle := stringParam(p, "camera_angle"); angle != "" {
 		if desc, ok := cameraAnglePrompts[angle]; ok {
 			task.Prompt = desc + ", " + task.Prompt
@@ -79,26 +90,28 @@ func buildImageTask(p map[string]interface{}) sdk.AgentTask {
 		}
 	}
 
-	// Reference images for image-to-image generation.
 	seenRefs := make(map[string]struct{})
 	for _, ref := range stringSliceParam(p, "reference_images") {
-		appendReferenceAsset(&task, seenRefs, sdk.ReferenceTypeImage, ref)
+		appendReferenceAsset(ctx, &task, seenRefs, sdk.ReferenceTypeImage, ref)
 	}
 	if ref := stringParam(p, "reference_image"); ref != "" {
-		appendReferenceAsset(&task, seenRefs, sdk.ReferenceTypeImage, ref)
+		appendReferenceAsset(ctx, &task, seenRefs, sdk.ReferenceTypeImage, ref)
 	}
 
 	return task
 }
 
 func buildVideoTask(p map[string]interface{}) sdk.AgentTask {
+	return buildVideoTaskCtx(context.Background(), p)
+}
+
+func buildVideoTaskCtx(ctx context.Context, p map[string]interface{}) sdk.AgentTask {
 	task := sdk.AgentTask{
 		Prompt:   stringParam(p, "prompt"),
 		Duration: intParam(p, "duration"),
 		Size:     stringParam(p, "size"),
 	}
 
-	// Structured video options.
 	structured := &sdk.AgentTaskStructured{
 		VideoDuration:    intParam(p, "duration"),
 		VideoSize:        stringParam(p, "size"),
@@ -117,21 +130,20 @@ func buildVideoTask(p map[string]interface{}) sdk.AgentTask {
 	}
 	task.Structured = structured
 
-	// Reference assets: image and/or video.
 	seenRefs := make(map[string]struct{})
 	for _, ref := range stringSliceParam(p, "reference_images") {
-		appendReferenceAsset(&task, seenRefs, sdk.ReferenceTypeImage, ref)
+		appendReferenceAsset(ctx, &task, seenRefs, sdk.ReferenceTypeImage, ref)
 	}
 	if ref := stringParam(p, "reference_image"); ref != "" {
-		appendReferenceAsset(&task, seenRefs, sdk.ReferenceTypeImage, ref)
+		appendReferenceAsset(ctx, &task, seenRefs, sdk.ReferenceTypeImage, ref)
 	}
 	if ref := stringParam(p, "reference_video"); ref != "" {
-		appendReferenceAsset(&task, seenRefs, sdk.ReferenceTypeVideo, ref)
+		appendReferenceAsset(ctx, &task, seenRefs, sdk.ReferenceTypeVideo, ref)
 	}
 	return task
 }
 
-func appendReferenceAsset(task *sdk.AgentTask, seen map[string]struct{}, refType sdk.ReferenceType, raw string) {
+func appendReferenceAsset(ctx context.Context, task *sdk.AgentTask, seen map[string]struct{}, refType sdk.ReferenceType, raw string) {
 	ref := strings.TrimSpace(raw)
 	if ref == "" {
 		return
@@ -141,7 +153,7 @@ func appendReferenceAsset(task *sdk.AgentTask, seen map[string]struct{}, refType
 		return
 	}
 	seen[key] = struct{}{}
-	task.References = append(task.References, sdk.ReferenceAsset{Type: refType, URL: resolveLocalRef(ref)})
+	task.References = append(task.References, sdk.ReferenceAsset{Type: refType, URL: resolveLocalRef(ctx, ref)})
 }
 
 func stringSliceParam(p map[string]interface{}, key string) []string {
@@ -208,36 +220,54 @@ func buildVoiceDesignTask(p map[string]interface{}) sdk.AgentTask {
 	}
 }
 
-func buildEditImageTask(p map[string]interface{}) sdk.AgentTask {
+func buildEditImageTask(ctx context.Context, p map[string]interface{}) sdk.AgentTask {
 	task := sdk.AgentTask{
 		Prompt: stringParam(p, "prompt"),
 		Size:   stringParam(p, "size"),
 	}
 	if url := stringParam(p, "image_url"); url != "" {
-		task.References = []sdk.ReferenceAsset{{Type: sdk.ReferenceTypeImage, URL: resolveLocalRef(url)}}
+		task.References = []sdk.ReferenceAsset{{Type: sdk.ReferenceTypeImage, URL: resolveLocalRef(ctx, url)}}
 	}
 	return task
 }
 
-func buildEditVideoTask(p map[string]interface{}) sdk.AgentTask {
+func buildEditVideoTask(ctx context.Context, p map[string]interface{}) sdk.AgentTask {
 	task := sdk.AgentTask{
 		Prompt:   stringParam(p, "prompt"),
 		Duration: intParam(p, "duration"),
 		Size:     stringParam(p, "size"),
 	}
 	if url := stringParam(p, "video_url"); url != "" {
-		task.References = append(task.References, sdk.ReferenceAsset{Type: sdk.ReferenceTypeVideo, URL: resolveLocalRef(url)})
+		task.References = append(task.References, sdk.ReferenceAsset{Type: sdk.ReferenceTypeVideo, URL: resolveLocalRef(ctx, url)})
 	}
 	if url := stringParam(p, "reference_image"); url != "" {
-		task.References = append(task.References, sdk.ReferenceAsset{Type: sdk.ReferenceTypeImage, URL: resolveLocalRef(url)})
+		task.References = append(task.References, sdk.ReferenceAsset{Type: sdk.ReferenceTypeImage, URL: resolveLocalRef(ctx, url)})
 	}
 	return task
 }
 
-// resolveLocalRef converts a local /api/files/ path to a base64 data URI
-// so that external APIs (e.g. aliyun) can consume it. Public URLs and
-// data URIs are returned as-is.
-func resolveLocalRef(rawURL string) string {
+// resolveLocalRef converts a local /api/files/ or /media/ path to a base64
+// data URI so that external APIs (e.g. aliyun) can consume it. Public URLs
+// and data URIs are returned as-is.
+func resolveLocalRef(ctx context.Context, rawURL string) string {
+	// Handle /media/ URLs via object store.
+	if strings.HasPrefix(rawURL, "/media/") {
+		_, readFunc := toolbuiltin.MediaStoreFromContext(ctx)
+		if readFunc != nil {
+			data, mimeType, err := readFunc(ctx, rawURL)
+			if err == nil && len(data) > 0 {
+				if mimeType == "" {
+					mimeType = "application/octet-stream"
+				}
+				encoded := base64.StdEncoding.EncodeToString(data)
+				slog.Info("[aigo] resolveLocalRef: converted media object to data URI", "url", rawURL, "mime", mimeType, "size", len(data))
+				return fmt.Sprintf("data:%s;base64,%s", mimeType, encoded)
+			}
+			slog.Warn("[aigo] resolveLocalRef: media read failed", "url", rawURL, "error", err)
+		}
+		return rawURL
+	}
+
 	if !strings.HasPrefix(rawURL, "/api/files/") {
 		return rawURL
 	}
@@ -253,7 +283,7 @@ func resolveLocalRef(rawURL string) string {
 	data, err := os.ReadFile(diskPath)
 	if err != nil {
 		slog.Warn("[aigo] resolveLocalRef: cannot read file", "path", diskPath, "error", err)
-		return rawURL // fall back to original URL
+		return rawURL
 	}
 
 	mimeType := mime.TypeByExtension(filepath.Ext(diskPath))

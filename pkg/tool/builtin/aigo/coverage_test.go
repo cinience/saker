@@ -279,7 +279,7 @@ func TestResolveLocalRefPassThroughURL(t *testing.T) {
 		"blob:something",
 		"",
 	} {
-		if got := resolveLocalRef(in); got != in {
+		if got := resolveLocalRef(context.Background(), in); got != in {
 			t.Errorf("input %q: got %q", in, got)
 		}
 	}
@@ -298,7 +298,7 @@ func TestResolveLocalRefReadsFile(t *testing.T) {
 	// PathEscape would percent-escape slashes too; rebuild manually.
 	rest := strings.TrimPrefix(file, "/")
 	apiURL := "/api/files/" + rest
-	got := resolveLocalRef(apiURL)
+	got := resolveLocalRef(context.Background(), apiURL)
 	if !strings.HasPrefix(got, "data:") {
 		t.Errorf("expected data URI, got %q (encoded=%q)", got, encoded)
 	}
@@ -310,7 +310,7 @@ func TestResolveLocalRefReadsFile(t *testing.T) {
 func TestResolveLocalRefMissingFile(t *testing.T) {
 	apiURL := "/api/files/nonexistent/file/zzz.png"
 	// Falls back to original URL on read error.
-	got := resolveLocalRef(apiURL)
+	got := resolveLocalRef(context.Background(), apiURL)
 	if got != apiURL {
 		t.Errorf("expected fallback to original URL, got %q", got)
 	}
