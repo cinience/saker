@@ -1,6 +1,6 @@
 
 import React, { useMemo, useEffect, useRef, useState, useCallback } from "react";
-import { User, Copy, Brain } from "lucide-react";
+import { User, Copy, Brain, ZoomIn } from "lucide-react";
 import DOMPurify from "dompurify";
 import type { ThreadItem } from "@/features/rpc/types";
 import { renderMarkdown } from "./markdown";
@@ -132,22 +132,27 @@ export const MediaPreview = React.memo(({
 
   if (type === "image") {
     return (
-      <div className="tool-media">
+      <div className="tool-media" onClick={() => loaded && onImageClick?.(url)}>
         {!loaded && !error && <div className="media-skeleton" />}
         {error ? (
           <div className="media-error">{t("message.imageFailedToLoad")}</div>
         ) : (
-          <img
-            src={url}
-            alt={t("message.generatedImage")}
-            onLoad={() => setLoaded(true)}
-            onError={() => setError(true)}
-            onClick={() => onImageClick?.(url)}
-            style={{
-              display: loaded ? "block" : "none",
-              cursor: onImageClick ? "zoom-in" : undefined,
-            }}
-          />
+          <>
+            <img
+              src={url}
+              alt={t("message.generatedImage")}
+              onLoad={() => setLoaded(true)}
+              onError={() => setError(true)}
+              style={{
+                display: loaded ? "block" : "none",
+              }}
+            />
+            {loaded && (
+              <div className="media-zoom-hint">
+                <ZoomIn />
+              </div>
+            )}
+          </>
         )}
       </div>
     );

@@ -236,6 +236,39 @@ func sectionMultimodal(toolNames []string) string {
 	return sb.String()
 }
 
+func sectionCreativeTools(toolNames []string) string {
+	toolSet := toolNameSet(toolNames)
+	hasImage := toolSet["generate_image"] || toolSet["edit_image"]
+	hasVideo := toolSet["generate_video"] || toolSet["edit_video"]
+	hasAudio := toolSet["text_to_speech"] || toolSet["generate_music"]
+	has3D := toolSet["generate_3d"]
+	if !hasImage && !hasVideo && !hasAudio && !has3D {
+		return ""
+	}
+
+	var sb strings.Builder
+	sb.WriteString("# Creative tools\nYou have access to AI media generation tools.")
+
+	if hasImage {
+		sb.WriteString("\n - Write detailed image prompts: describe subject, style, composition, lighting, and mood. Use negative_prompt to exclude unwanted elements.")
+		if toolSet["edit_image"] {
+			sb.WriteString("\n - For iterative refinement, generate an image first, then use edit_image to modify specific aspects.")
+		}
+	}
+	if hasVideo {
+		sb.WriteString("\n - For best video results, generate a reference image first with generate_image, then pass its URL as reference_image to generate_video.")
+	}
+	if hasAudio && toolSet["text_to_speech"] {
+		sb.WriteString("\n - Use the instructions parameter in text_to_speech to control speaking style, speed, and emotion.")
+	}
+	if has3D {
+		sb.WriteString("\n - For 3D generation, provide exactly one input: a text prompt, a single image URL, or multiple view images.")
+	}
+	sb.WriteString("\n - Present generated media URLs to the user. Do NOT fabricate or guess URLs — only use URLs returned by the tools.")
+
+	return sb.String()
+}
+
 func sectionAgentTool(toolNames []string) string {
 	toolSet := toolNameSet(toolNames)
 	if !toolSet["agent"] && !toolSet["task"] && !toolSet["task_create"] {
@@ -323,6 +356,7 @@ func buildDefaultSystemPrompt(opts Options, env environmentInfo, toolNames []str
 		sectionActions(),
 		sectionUsingTools(toolNames),
 		sectionMultimodal(toolNames),
+		sectionCreativeTools(toolNames),
 		sectionToneAndStyle(),
 		sectionOutputEfficiency(),
 		sectionAgentTool(toolNames),
@@ -353,6 +387,7 @@ func buildSystemPromptBlocks(opts Options, env environmentInfo, toolNames []stri
 		sectionActions(),
 		sectionUsingTools(toolNames),
 		sectionMultimodal(toolNames),
+		sectionCreativeTools(toolNames),
 		sectionToneAndStyle(),
 		sectionOutputEfficiency(),
 		sectionAgentTool(toolNames),
