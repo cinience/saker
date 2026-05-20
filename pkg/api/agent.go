@@ -362,9 +362,7 @@ func New(ctx context.Context, opts Options) (*Runtime, error) {
 	if rt.subMgr == nil && taskTool != nil {
 		rt.subMgr = subagents.NewManager()
 	}
-	if rt.subMgr != nil {
-		rt.subExec = subagents.NewExecutor(rt.subMgr, rt.subStore, rt.buildSubagentRunner())
-	}
+	rt.ensureSubagentExecutor()
 	rt.sessionGate = newSessionGate()
 
 	if taskTool != nil {
@@ -372,6 +370,23 @@ func New(ctx context.Context, opts Options) (*Runtime, error) {
 		if desc := buildACPAgentDescriptions(opts.ACPAgents); desc != "" {
 			taskTool.AppendAgentDescriptions(desc)
 		}
+	}
+	// Wire the new agent management tools.
+	agentRunner := rt.agentRunnerAdapter()
+	if toolRefs.spawnAgentTool != nil {
+		toolRefs.spawnAgentTool.SetRunner(agentRunner)
+	}
+	if toolRefs.sendInputTool != nil {
+		toolRefs.sendInputTool.SetRunner(agentRunner)
+	}
+	if toolRefs.waitAgentTool != nil {
+		toolRefs.waitAgentTool.SetRunner(agentRunner)
+	}
+	if toolRefs.closeAgentTool != nil {
+		toolRefs.closeAgentTool.SetRunner(agentRunner)
+	}
+	if toolRefs.spawnAgentsBatchTool != nil {
+		toolRefs.spawnAgentsBatchTool.SetRunner(agentRunner)
 	}
 	return rt, nil
 }
