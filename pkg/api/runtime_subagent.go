@@ -639,6 +639,13 @@ func (r *runtimeAgentRunner) WaitAgent(ctx context.Context, agentID string, time
 		AgentID:  resolved,
 		TimedOut: waited.TimedOut,
 		Status:   string(waited.Instance.Status),
+		Profile:  waited.Instance.Profile,
+	}
+	if m, ok := waited.Instance.Metadata["task.model"].(string); ok {
+		result.Model = m
+	}
+	if waited.Instance.StartedAt != nil && waited.Instance.FinishedAt != nil {
+		result.Elapsed = waited.Instance.FinishedAt.Sub(*waited.Instance.StartedAt)
 	}
 	if waited.Instance.Result != nil {
 		result.Output = fmt.Sprint(waited.Instance.Result.Output)

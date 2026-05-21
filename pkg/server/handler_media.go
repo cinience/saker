@@ -92,11 +92,7 @@ func extractArtifacts(toolName string, output interface{}) []Artifact {
 				} else if strings.HasPrefix(mime, "audio/") {
 					artType = "audio"
 				}
-				url := "/api/files/" + filePath
-				if strings.HasPrefix(filePath, "/") {
-					url = "/api/files" + filePath
-				}
-				return []Artifact{{Type: artType, URL: url, Name: toolName}}
+				return []Artifact{{Type: artType, URL: textutil.MediaURLFromPath(filePath), Name: toolName}}
 			}
 		}
 	}
@@ -113,25 +109,16 @@ func extractArtifacts(toolName string, output interface{}) []Artifact {
 			}
 			seen[match] = true
 			ext := strings.ToLower(filepath.Ext(strings.SplitN(match, "?", 2)[0]))
-			artType := "image"
-			if videoExts[ext] {
-				artType = "video"
-			} else if audioExts[ext] {
-				artType = "audio"
+			artType := textutil.ClassifyMediaExt(ext)
+			if artType == "" {
+				artType = "image"
 			}
 			artifacts = append(artifacts, Artifact{Type: artType, URL: match, Name: toolName})
 		}
 
 		// 3b: local file paths (absolute or relative).
 		for _, filePath := range detectMediaPaths(out) {
-			var url string
-			if strings.HasPrefix(filePath.path, "/media/") {
-				url = filePath.path
-			} else if strings.HasPrefix(filePath.path, "/") {
-				url = "/api/files" + filePath.path
-			} else {
-				url = "/api/files/" + filePath.path
-			}
+			url := textutil.MediaURLFromPath(filePath.path)
 			if seen[url] {
 				continue
 			}
@@ -165,61 +152,32 @@ var relativeMediaPathRe = regexp.MustCompile(`(?:^|[\s"'=])([\w.][\w./_-]*/[\w./
 // including optional query strings (e.g. signed URLs with ?Expires=...&Signature=...).
 var mediaURLRe = regexp.MustCompile(`https?://[^\s"']+\.(?:png|jpe?g|gif|webp|svg|mp4|webm|mov|mp3|wav|ogg)(?:\?[^\s"']*)?`)
 
-// imageExts, videoExts, audioExts classify media extensions.
-var (
-	imageExts = map[string]bool{".png": true, ".jpg": true, ".jpeg": true, ".gif": true, ".webp": true, ".svg": true}
-	videoExts = map[string]bool{".mp4": true, ".webm": true, ".mov": true}
-	audioExts = map[string]bool{".mp3": true, ".wav": true, ".ogg": true, ".flac": true}
-)
+// collectMediaPaths extracts paths from regex matches, classifies them,
+// and appends to results. Shared by both absolute and relative regex passes
+// in detectMediaPaths to avoid duplicating the classify+dedup logic.
+func collectMediaPaths(seen map[string]bool, results []mediaPathResult, matches [][]string) []mediaPathResult {
+	for _, match := range matches {
+		if len(match) < 2 || seen[match[1]] {
+			continue
+		}
+		p := match[1]
+		mediaType := textutil.ClassifyMediaExt(filepath.Ext(p))
+		if mediaType == "" {
+			continue
+		}
+		seen[p] = true
+		results = append(results, mediaPathResult{path: p, mediaType: mediaType})
+	}
+	return results
+}
 
 // detectMediaPaths scans text for all file paths (absolute or relative) with known media extensions.
 func detectMediaPaths(text string) []mediaPathResult {
 	seen := make(map[string]bool)
 	var results []mediaPathResult
 
-	// Find all absolute paths.
-	for _, match := range mediaPathRe.FindAllStringSubmatch(text, -1) {
-		if len(match) < 2 || seen[match[1]] {
-			continue
-		}
-		p := match[1]
-		ext := strings.ToLower(filepath.Ext(p))
-		var mediaType string
-		switch {
-		case imageExts[ext]:
-			mediaType = "image"
-		case videoExts[ext]:
-			mediaType = "video"
-		case audioExts[ext]:
-			mediaType = "audio"
-		default:
-			continue
-		}
-		seen[p] = true
-		results = append(results, mediaPathResult{path: p, mediaType: mediaType})
-	}
-
-	// Find all relative paths.
-	for _, match := range relativeMediaPathRe.FindAllStringSubmatch(text, -1) {
-		if len(match) < 2 || seen[match[1]] {
-			continue
-		}
-		p := match[1]
-		ext := strings.ToLower(filepath.Ext(p))
-		var mediaType string
-		switch {
-		case imageExts[ext]:
-			mediaType = "image"
-		case videoExts[ext]:
-			mediaType = "video"
-		case audioExts[ext]:
-			mediaType = "audio"
-		default:
-			continue
-		}
-		seen[p] = true
-		results = append(results, mediaPathResult{path: p, mediaType: mediaType})
-	}
+	results = collectMediaPaths(seen, results, mediaPathRe.FindAllStringSubmatch(text, -1))
+	results = collectMediaPaths(seen, results, relativeMediaPathRe.FindAllStringSubmatch(text, -1))
 
 	return results
 }

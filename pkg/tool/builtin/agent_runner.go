@@ -34,6 +34,9 @@ type WaitAgentResult struct {
 	Output   string
 	Status   string
 	TimedOut bool
+	Profile  string        // subagent type (e.g. "general-purpose", "explore")
+	Model    string        // model tier requested
+	Elapsed  time.Duration // wall-clock from start to finish
 }
 
 type CloseAgentResult struct {

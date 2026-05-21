@@ -212,7 +212,7 @@ func TestPersistToConversation_RoleMapping(t *testing.T) {
 }
 
 // TestPersistToConversation_ToolResultPaired verifies the positional
-// matching in pairToolResultsToCalls — a "tool" message immediately
+// matching in pairToolResults — a "tool" message immediately
 // after an assistant with ToolCalls picks up the next call's id.
 func TestPersistToConversation_ToolResultPaired(t *testing.T) {
 	rt := newRuntimeWithConvStore(t)

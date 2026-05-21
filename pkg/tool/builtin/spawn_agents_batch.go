@@ -6,10 +6,14 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/saker-ai/saker/pkg/tool"
 )
+
+// Compile-time check: SpawnAgentsBatchTool implements StreamingTool.
+var _ tool.StreamingTool = (*SpawnAgentsBatchTool)(nil)
 
 var spawnAgentsBatchSchema = &tool.JSONSchema{
 	Type: "object",
@@ -43,6 +47,10 @@ var spawnAgentsBatchSchema = &tool.JSONSchema{
 			"type":        "integer",
 			"description": "Total timeout for the batch in seconds (default: 1800)",
 		},
+		"max_output_chars": map[string]interface{}{
+			"type":        "integer",
+			"description": "Max characters per item output (default: 2000)",
+		},
 	},
 	Required: []string{"items"},
 }
@@ -54,11 +62,11 @@ type SpawnAgentsBatchTool struct {
 
 func NewSpawnAgentsBatchTool() *SpawnAgentsBatchTool { return &SpawnAgentsBatchTool{} }
 
-func (t *SpawnAgentsBatchTool) Name() string             { return "spawn_agents_batch" }
-func (t *SpawnAgentsBatchTool) Schema() *tool.JSONSchema  { return spawnAgentsBatchSchema }
+func (t *SpawnAgentsBatchTool) Name() string            { return "spawn_agents_batch" }
+func (t *SpawnAgentsBatchTool) Schema() *tool.JSONSchema { return spawnAgentsBatchSchema }
 
 func (t *SpawnAgentsBatchTool) Description() string {
-	return `Spawn multiple agents in parallel to process a batch of items. Each item gets its own agent instance. Returns aggregated results when all agents complete or the timeout is reached.
+	return `Spawn multiple agents in parallel to process a batch of items. Each item gets its own agent instance. Returns aggregated results with per-agent timing and metadata when all agents complete or the timeout is reached.
 
 Use this for embarrassingly parallel tasks: processing multiple files, analyzing multiple inputs, or running the same operation across many targets.`
 }
@@ -81,12 +89,25 @@ type batchItem struct {
 }
 
 type batchResult struct {
-	ID     string `json:"id"`
-	Output string `json:"output,omitempty"`
-	Error  string `json:"error,omitempty"`
+	ID      string        `json:"id"`
+	Output  string        `json:"output,omitempty"`
+	Error   string        `json:"error,omitempty"`
+	Profile string        `json:"profile,omitempty"`
+	Model   string        `json:"model,omitempty"`
+	Elapsed time.Duration `json:"elapsed_ms,omitempty"`
 }
 
+// Execute implements tool.Tool (non-streaming fallback).
 func (t *SpawnAgentsBatchTool) Execute(ctx context.Context, params map[string]interface{}) (*tool.ToolResult, error) {
+	return t.run(ctx, params, nil)
+}
+
+// StreamExecute implements tool.StreamingTool with progress reporting.
+func (t *SpawnAgentsBatchTool) StreamExecute(ctx context.Context, params map[string]interface{}, emit func(chunk string, isStderr bool)) (*tool.ToolResult, error) {
+	return t.run(ctx, params, emit)
+}
+
+func (t *SpawnAgentsBatchTool) run(ctx context.Context, params map[string]interface{}, emit func(string, bool)) (*tool.ToolResult, error) {
 	runner := t.getRunner()
 	if runner == nil {
 		return nil, errors.New("spawn_agents_batch: runner not configured")
@@ -117,6 +138,11 @@ func (t *SpawnAgentsBatchTool) Execute(ctx context.Context, params map[string]in
 		maxConc = 32
 	}
 
+	maxOutputChars := 2000
+	if v, ok := params["max_output_chars"].(float64); ok && v > 0 {
+		maxOutputChars = int(v)
+	}
+
 	timeout := 1800 * time.Second
 	if v, ok := params["timeout_seconds"].(float64); ok && v > 0 {
 		timeout = time.Duration(v) * time.Second
@@ -125,9 +151,34 @@ func (t *SpawnAgentsBatchTool) Execute(ctx context.Context, params map[string]in
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
+	batchStart := time.Now()
+
+	// Emit startup summary.
+	if emit != nil {
+		var sb strings.Builder
+		agentType := subagentType
+		if agentType == "" {
+			agentType = "default"
+		}
+		sb.WriteString(fmt.Sprintf("[batch] Spawning %d agents (type: %s", len(items), agentType))
+		if model != "" {
+			sb.WriteString(fmt.Sprintf(", model: %s", model))
+		}
+		sb.WriteString(fmt.Sprintf(", concurrency: %d)\n", maxConc))
+		for _, it := range items {
+			instr := it.Instruction
+			if len(instr) > 80 {
+				instr = instr[:77] + "..."
+			}
+			sb.WriteString(fmt.Sprintf("  • [%s] %s\n", it.ID, instr))
+		}
+		emit(sb.String(), false)
+	}
+
 	results := make([]batchResult, len(items))
 	sem := make(chan struct{}, maxConc)
 	var wg sync.WaitGroup
+	var completed atomic.Int32
 
 	for i, item := range items {
 		wg.Add(1)
@@ -148,44 +199,75 @@ func (t *SpawnAgentsBatchTool) Execute(ctx context.Context, params map[string]in
 			})
 			if err != nil {
 				results[idx] = batchResult{ID: it.ID, Error: err.Error()}
+				n := completed.Add(1)
+				if emit != nil {
+					emit(fmt.Sprintf("[progress] %d/%d done — [%s] ERROR: %s\n",
+						n, len(items), it.ID, err.Error()), false)
+				}
 				return
 			}
 
 			waited, err := runner.WaitAgent(ctx, res.AgentID, timeout)
 			if err != nil {
 				results[idx] = batchResult{ID: it.ID, Error: err.Error()}
+				n := completed.Add(1)
+				if emit != nil {
+					emit(fmt.Sprintf("[progress] %d/%d done — [%s] ERROR: %s\n",
+						n, len(items), it.ID, err.Error()), false)
+				}
 				return
 			}
 			if waited.TimedOut {
-				results[idx] = batchResult{ID: it.ID, Error: "agent timed out"}
+				results[idx] = batchResult{ID: it.ID, Error: "agent timed out", Profile: waited.Profile, Model: waited.Model, Elapsed: waited.Elapsed}
+				n := completed.Add(1)
+				if emit != nil {
+					emit(fmt.Sprintf("[progress] %d/%d done — [%s] TIMEOUT (%s)\n",
+						n, len(items), it.ID, formatDuration(waited.Elapsed)), false)
+				}
 				return
 			}
-			results[idx] = batchResult{ID: it.ID, Output: waited.Output}
+
+			results[idx] = batchResult{
+				ID:      it.ID,
+				Output:  waited.Output,
+				Profile: waited.Profile,
+				Model:   waited.Model,
+				Elapsed: waited.Elapsed,
+			}
+			n := completed.Add(1)
+			if emit != nil {
+				emit(fmt.Sprintf("[progress] %d/%d done — [%s] completed (%s)\n",
+					n, len(items), it.ID, formatDuration(waited.Elapsed)), false)
+			}
 		}(i, item)
 	}
 
 	wg.Wait()
+	totalElapsed := time.Since(batchStart)
 
-	completed, failed := 0, 0
+	succeeded, failed := 0, 0
 	for _, r := range results {
 		if r.Error != "" {
 			failed++
 		} else {
-			completed++
+			succeeded++
 		}
 	}
 
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Batch complete: %d/%d succeeded, %d failed\n\n", completed, len(items), failed))
+	sb.WriteString(fmt.Sprintf("Batch complete: %d/%d succeeded, %d failed (total: %s)\n\n",
+		succeeded, len(items), failed, formatDuration(totalElapsed)))
+
 	for _, r := range results {
+		meta := formatMeta(r.Profile, r.Elapsed)
 		if r.Error != "" {
-			sb.WriteString(fmt.Sprintf("[%s] ERROR: %s\n", r.ID, r.Error))
+			sb.WriteString(fmt.Sprintf("[%s] %sERROR: %s\n", r.ID, meta, r.Error))
 		} else {
 			output := r.Output
-			if len(output) > 300 {
-				output = output[:300] + "..."
+			if len(output) > maxOutputChars {
+				output = output[:maxOutputChars] + "..."
 			}
-			sb.WriteString(fmt.Sprintf("[%s] %s\n", r.ID, output))
+			sb.WriteString(fmt.Sprintf("[%s] %s%s\n", r.ID, meta, output))
 		}
 	}
 
@@ -193,10 +275,11 @@ func (t *SpawnAgentsBatchTool) Execute(ctx context.Context, params map[string]in
 		Success: failed == 0,
 		Output:  sb.String(),
 		Data: map[string]any{
-			"total":     len(items),
-			"completed": completed,
-			"failed":    failed,
-			"results":   results,
+			"total":         len(items),
+			"completed":     succeeded,
+			"failed":        failed,
+			"total_elapsed": totalElapsed.Milliseconds(),
+			"results":       results,
 		},
 	}, nil
 }
@@ -220,4 +303,28 @@ func parseBatchItems(raw interface{}) ([]batchItem, error) {
 		items = append(items, batchItem{ID: id, Instruction: instruction})
 	}
 	return items, nil
+}
+
+func formatDuration(d time.Duration) string {
+	if d == 0 {
+		return "—"
+	}
+	if d < time.Second {
+		return fmt.Sprintf("%dms", d.Milliseconds())
+	}
+	return fmt.Sprintf("%.1fs", d.Seconds())
+}
+
+func formatMeta(profile string, elapsed time.Duration) string {
+	if profile == "" && elapsed == 0 {
+		return ""
+	}
+	parts := make([]string, 0, 2)
+	if profile != "" {
+		parts = append(parts, profile)
+	}
+	if elapsed > 0 {
+		parts = append(parts, formatDuration(elapsed))
+	}
+	return "(" + strings.Join(parts, ", ") + ") "
 }

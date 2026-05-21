@@ -98,6 +98,8 @@ func (s *streamState) translateEvent(ctx context.Context, w io.Writer, sseW sseW
 		return s.translateContentDelta(ctx, w, sseW, evt, filter)
 	case api.EventToolExecutionStart:
 		return s.translateToolStart(ctx, w, sseW, evt, filter)
+	case api.EventToolExecutionOutput:
+		return s.translateToolOutput(ctx, w, sseW, evt)
 	case api.EventToolExecutionResult:
 		return s.translateToolResult(ctx, w, sseW, evt)
 	case api.EventIterationStart:
@@ -216,6 +218,23 @@ func (s *streamState) translateToolStart(ctx context.Context, w io.Writer, sseW 
 		return nil, s.writeEvent(ctx, w, sseW, aguievents.NewToolCallArgsEvent(toolID, args))
 	}
 	return nil, nil
+}
+
+func (s *streamState) translateToolOutput(ctx context.Context, w io.Writer, sseW sseWriter, evt api.StreamEvent) ([]server.Artifact, error) {
+	toolID := evt.ToolUseID
+	if toolID == "" {
+		toolID = s.lastToolID
+	}
+	if s.suppressedToolCalls[toolID] {
+		return nil, nil
+	}
+	if evt.Output == "" {
+		return nil, nil
+	}
+	return nil, s.writeEvent(ctx, w, sseW, aguievents.NewCustomEvent("tool_call_output", aguievents.WithValue(map[string]any{
+		"tool_call_id": toolID,
+		"output":       evt.Output,
+	})))
 }
 
 func (s *streamState) translateToolResult(ctx context.Context, w io.Writer, sseW sseWriter, evt api.StreamEvent) ([]server.Artifact, error) {

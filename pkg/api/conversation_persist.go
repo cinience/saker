@@ -138,8 +138,7 @@ func (rt *Runtime) persistToConversation(sessionID string, history *message.Hist
 	// recover by positional matching: each assistant message enqueues
 	// its ToolCalls.ID values, each subsequent tool message dequeues
 	// the next id. Mirrors how providers stream them.
-	toolCallIDs := pairToolResultsToCalls(tail)
-	toolNames := pairToolNamesToResults(tail)
+	toolCallIDs, toolNames := pairToolResults(tail)
 
 	emitted := 0
 	for i, msg := range tail {
@@ -278,7 +277,7 @@ func (rt *Runtime) ensureConversationThread(ctx context.Context, sessionID strin
 // results to the right call later.
 //
 // toolCallID is non-empty only for "tool" / "function" rows, supplied
-// by pairToolResultsToCalls so the P1 projection can link the result
+// by pairToolResults so the P1 projection can link the result
 // back to its assistant call.
 func (rt *Runtime) appendMessageEvents(ctx context.Context, threadID, turnID string, msg message.Message, toolCallID, toolName string, id persistIdentity) error {
 	role := strings.ToLower(strings.TrimSpace(msg.Role))
@@ -350,13 +349,7 @@ func (rt *Runtime) appendMessageEvents(ctx context.Context, threadID, turnID str
 			for _, ref := range msg.Artifacts {
 				url := ref.URL
 				if url == "" && ref.Path != "" {
-					if strings.HasPrefix(ref.Path, "/media/") {
-						url = ref.Path
-					} else if strings.HasPrefix(ref.Path, "/") {
-						url = "/api/files" + ref.Path
-					} else {
-						url = "/api/files/" + ref.Path
-					}
+					url = textutil.MediaURLFromPath(ref.Path)
 				}
 				if url == "" {
 					continue
@@ -423,61 +416,41 @@ func conversationTitleFromTail(tail []message.Message) string {
 	return "CLI session"
 }
 
-// pairToolResultsToCalls returns a slice (one entry per message in tail)
-// holding the tool_call_id each "tool"/"function" message answers, or ""
-// for non-tool messages. It walks the tail in order, enqueuing every
-// assistant message's ToolCalls.ID values and dequeueing the next id when
-// a tool message lands. Calls with empty IDs are skipped (some legacy
-// providers emit untyped tool_calls).
+// pairToolResults walks tail in order and returns two parallel slices (one
+// entry per message): the tool_call_id and tool name each "tool"/"function"
+// message answers, or "" for non-tool messages.
+//
+// Assistant messages enqueue their ToolCalls (ID, Name) pairs; subsequent
+// tool messages dequeue the next pair. Calls with empty IDs are skipped
+// (some legacy providers emit untyped tool_calls).
 //
 // This is positional matching — the same heuristic the OpenAI / Anthropic
 // streaming protocols rely on. It breaks if the agent loop reorders tool
 // results, but pkg/api never does that.
-func pairToolResultsToCalls(tail []message.Message) []string {
-	out := make([]string, len(tail))
-	var pending []string
+func pairToolResults(tail []message.Message) (callIDs, names []string) {
+	callIDs = make([]string, len(tail))
+	names = make([]string, len(tail))
+	var pendingIDs, pendingNames []string
 	for i, msg := range tail {
 		role := strings.ToLower(strings.TrimSpace(msg.Role))
 		switch role {
 		case "assistant":
 			for _, tc := range msg.ToolCalls {
 				if tc.ID != "" {
-					pending = append(pending, tc.ID)
+					pendingIDs = append(pendingIDs, tc.ID)
+					pendingNames = append(pendingNames, tc.Name)
 				}
 			}
 		case "tool", "function":
-			if len(pending) > 0 {
-				out[i] = pending[0]
-				pending = pending[1:]
+			if len(pendingIDs) > 0 {
+				callIDs[i] = pendingIDs[0]
+				names[i] = pendingNames[0]
+				pendingIDs = pendingIDs[1:]
+				pendingNames = pendingNames[1:]
 			}
 		}
 	}
-	return out
-}
-
-// pairToolNamesToResults returns a slice (one entry per message in tail)
-// holding the tool name each "tool"/"function" message answers, or "" for
-// non-tool messages. Mirrors pairToolResultsToCalls but collects names.
-func pairToolNamesToResults(tail []message.Message) []string {
-	out := make([]string, len(tail))
-	var pending []string
-	for i, msg := range tail {
-		role := strings.ToLower(strings.TrimSpace(msg.Role))
-		switch role {
-		case "assistant":
-			for _, tc := range msg.ToolCalls {
-				if tc.ID != "" {
-					pending = append(pending, tc.Name)
-				}
-			}
-		case "tool", "function":
-			if len(pending) > 0 {
-				out[i] = pending[0]
-				pending = pending[1:]
-			}
-		}
-	}
-	return out
+	return callIDs, names
 }
 
 // contentBlocksJSON returns the marshalled blocks payload, or nil when
