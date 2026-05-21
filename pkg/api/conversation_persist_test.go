@@ -354,6 +354,82 @@ func TestPersistToConversation_MultiSessionCursorIsolation(t *testing.T) {
 	require.Len(t, eventsB, 2)
 }
 
+// TestPersistToConversation_ToolResultContentFallback verifies that when a
+// tool message has empty Content (the normal case from runtime_tools_execute),
+// the persistence layer falls back to ToolCalls[0].Result for ContentText.
+func TestPersistToConversation_ToolResultContentFallback(t *testing.T) {
+	rt := newRuntimeWithConvStore(t)
+	hist := message.NewHistory()
+	hist.Append(message.Message{Role: "user", Content: "generate an image"})
+	hist.Append(message.Message{
+		Role: "assistant",
+		ToolCalls: []message.ToolCall{
+			{ID: "call-img", Name: "generate_image", Arguments: map[string]any{"prompt": "cat"}},
+		},
+	})
+	hist.Append(message.Message{
+		Role:    "tool",
+		Content: "", // empty — this is the bug scenario
+		ToolCalls: []message.ToolCall{
+			{ID: "call-img", Name: "generate_image", Result: "Image generated: https://example.com/cat.png"},
+		},
+	})
+
+	rt.persistToConversation("sess-fallback-tool", hist, defaultPersistIdentity)
+
+	events, err := rt.conversationStore.GetEvents(context.Background(), "sess-fallback-tool", conversation.GetEventsOpts{Limit: 100})
+	require.NoError(t, err)
+
+	// Find the tool_result event.
+	var toolEvent *conversation.Event
+	for i := range events {
+		if events[i].Kind == string(conversation.EventKindToolResult) {
+			toolEvent = &events[i]
+			break
+		}
+	}
+	require.NotNil(t, toolEvent, "expected a tool_result event")
+	require.Equal(t, "Image generated: https://example.com/cat.png", toolEvent.ContentText,
+		"ContentText should fall back to ToolCalls[0].Result when Content is empty")
+}
+
+// TestPersistToConversation_ToolResultContentPreferred verifies that when
+// msg.Content IS set (future-proofing), it takes precedence over ToolCalls.
+func TestPersistToConversation_ToolResultContentPreferred(t *testing.T) {
+	rt := newRuntimeWithConvStore(t)
+	hist := message.NewHistory()
+	hist.Append(message.Message{Role: "user", Content: "do something"})
+	hist.Append(message.Message{
+		Role: "assistant",
+		ToolCalls: []message.ToolCall{
+			{ID: "call-x", Name: "my_tool", Arguments: map[string]any{}},
+		},
+	})
+	hist.Append(message.Message{
+		Role:    "tool",
+		Content: "explicit content",
+		ToolCalls: []message.ToolCall{
+			{ID: "call-x", Name: "my_tool", Result: "fallback content"},
+		},
+	})
+
+	rt.persistToConversation("sess-content-preferred", hist, defaultPersistIdentity)
+
+	events, err := rt.conversationStore.GetEvents(context.Background(), "sess-content-preferred", conversation.GetEventsOpts{Limit: 100})
+	require.NoError(t, err)
+
+	var toolEvent *conversation.Event
+	for i := range events {
+		if events[i].Kind == string(conversation.EventKindToolResult) {
+			toolEvent = &events[i]
+			break
+		}
+	}
+	require.NotNil(t, toolEvent)
+	require.Equal(t, "explicit content", toolEvent.ContentText,
+		"msg.Content should take precedence when set")
+}
+
 // toolCallIDFromEvent / toolCallNameFromEvent decode the tool-call payload
 // embedded in events[].ContentJSON. The events table doesn't store
 // tool_call_id / tool_call_name as separate columns (those land in the P1

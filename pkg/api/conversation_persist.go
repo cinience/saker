@@ -372,13 +372,17 @@ func (rt *Runtime) appendMessageEvents(ctx context.Context, threadID, turnID str
 				contentJSON = map[string]any{"artifacts": arts}
 			}
 		}
+		contentText := msg.Content
+		if contentText == "" && len(msg.ToolCalls) > 0 && msg.ToolCalls[0].Result != "" {
+			contentText = msg.ToolCalls[0].Result
+		}
 		_, err := rt.conversationStore.AppendEvent(ctx, conversation.AppendEventInput{
 			ThreadID:    threadID,
 			ProjectID:   id.ProjectID,
 			TurnID:      turnID,
 			Kind:        kind,
 			Role:        "tool",
-			ContentText: msg.Content,
+			ContentText: contentText,
 			ContentJSON: contentJSON,
 			ToolCallID:  toolCallID,
 		})
