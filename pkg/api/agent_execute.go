@@ -19,9 +19,13 @@ import (
 	"github.com/saker-ai/saker/pkg/tool"
 )
 
-const repeatWarningInjection = `You have called the same tool repeatedly.
-If a tool was denied or failed, do NOT retry with slight variations.
-Try a fundamentally different approach or ask for guidance.`
+const repeatWarningInjection = `[SYSTEM: loop detection]
+You have called the same tool many times in a row.
+If the tool was denied or returned errors, do NOT retry with slight variations.
+
+Decide:
+- If you are making genuine progress (each call produces meaningful new results), you may continue — but state WHY briefly in your next text output before the tool call.
+- If you are stuck or retrying the same failed operation, STOP and try a fundamentally different approach, or ask the user for guidance.`
 
 func (rt *Runtime) runAgent(prep preparedRun) (runResult, error) {
 	return rt.runAgentWithMiddleware(prep)

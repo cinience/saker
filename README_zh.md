@@ -101,7 +101,7 @@ make web-editor-dev               # 剪辑器开发服务器
 |---|---|
 | 主循环 | 迭代上限、超时、分类的 `StopReason`（`completed` / `max_iterations` / `max_budget` / `max_tokens` / `repeat_loop` / abort 系列 / `model_error` / `tool_passthrough`）|
 | 预算守护 | 累计成本或 token 触顶即中断 |
-| 死循环检测 | 双层检测：完全相同参数阈值（默认 5 次）+ 同工具硬阈值（默认 30 次）。高频工具（`bash`、`read`、`edit`、`grep` 等）豁免同工具阈值，通过 `SameToolExempt` 可配。中断前可触发自我纠正 hook。|
+| 死循环检测 | 三层检测：(1) 完全相同参数阈值（默认 5 次）立即中断；(2) 同工具硬阈值（默认 30 次）+ 缓刑期 — 注入自评 prompt 并给模型额外 3 次迭代打破模式，否则中断；(3) 高频工具（`bash`、`read`、`edit`、`grep` 等）通过 `SameToolExempt` 豁免。LLM 参与决策：注入的 prompt 要求模型说明是否在进展或应切换策略。|
 | SSE 流 | 兼容 Anthropic SSE 协议，附 agent 专属事件扩展 |
 | 会话历史 | 内存环形缓冲，默认 1000 轮，可配；支持 PreloadHistory 实现 worker 故障转移 |
 | 上下文压缩 | `compact` 与 `microcompact` 两种策略，prompt 摘要 + 历史裁剪 |

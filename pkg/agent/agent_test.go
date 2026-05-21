@@ -496,8 +496,9 @@ func TestAgent_SameToolDifferentInputAbortsAtHardThreshold(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "same tool called 4+ times") {
 		t.Fatalf("expected same-tool loop error, got %v", err)
 	}
-	if len(tools.calls) != 4 {
-		t.Fatalf("expected 4 tool calls before abort, got %d", len(tools.calls))
+	// 4 calls to hit threshold + 3 grace period iterations = 7 total.
+	if len(tools.calls) != 7 {
+		t.Fatalf("expected 7 tool calls (4 threshold + 3 grace), got %d", len(tools.calls))
 	}
 }
 

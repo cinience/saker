@@ -180,6 +180,14 @@ func (a *Agent) Run(ctx context.Context, c *Context) (*ModelOutput, error) {
 	threshold := a.opts.RepeatLoopThreshold
 	sameToolWarned := map[string]bool{}
 
+	// Grace period: when the hard threshold fires, instead of immediately
+	// aborting we inject a warning and give the model a few more iterations
+	// to break the pattern. If it calls a different tool or emits text-only,
+	// the grace resets. If it exhausts the grace, we abort.
+	const sameToolGracePeriod = 3
+	var graceToolName string
+	var graceRemaining int
+
 	for {
 		if err := ctx.Err(); err != nil {
 			annotateContextErr(last, err)
@@ -329,9 +337,28 @@ func (a *Agent) Run(ctx context.Context, c *Context) (*ModelOutput, error) {
 			count := sameToolRepeatCount(recentCalls)
 			lastToolName := recentCalls[len(recentCalls)-1].name
 			exempt := a.opts.SameToolExempt[lastToolName]
-			if !exempt && count >= a.opts.SameToolHardThreshold {
-				annotate(last, StopReasonRepeatLoop)
-				return last, fmt.Errorf("agent: detected repeated tool call loop (same tool called %d+ times with varying parameters)", a.opts.SameToolHardThreshold)
+
+			// Grace period tracking: if model breaks the pattern, reset.
+			if graceRemaining > 0 {
+				if lastToolName != graceToolName {
+					graceRemaining = 0
+					graceToolName = ""
+				} else {
+					graceRemaining--
+					if graceRemaining <= 0 {
+						annotate(last, StopReasonRepeatLoop)
+						return last, fmt.Errorf("agent: detected repeated tool call loop (same tool called %d+ times with varying parameters; did not break pattern after warning)", a.opts.SameToolHardThreshold)
+					}
+				}
+			}
+
+			if !exempt && graceRemaining == 0 && count >= a.opts.SameToolHardThreshold {
+				// Enter grace period: inject warning and give model a chance.
+				graceToolName = lastToolName
+				graceRemaining = sameToolGracePeriod
+				if a.opts.OnRepeatWarning != nil {
+					a.opts.OnRepeatWarning(ctx, ToolCall{Name: lastToolName}, count)
+				}
 			}
 			if !exempt && a.opts.SameToolSoftThreshold > 0 && count >= a.opts.SameToolSoftThreshold && a.opts.OnRepeatWarning != nil {
 				sig := recentCalls[len(recentCalls)-1]

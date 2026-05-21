@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -74,16 +75,86 @@ func (r *Registry) ToolSource(name string) string {
 	return "builtin"
 }
 
-// Get fetches a tool by name.
+// Get fetches a tool by name. When the tool is not found, the error
+// includes suggestions of similar registered tools so the model can
+// self-correct on the next iteration.
 func (r *Registry) Get(name string) (Tool, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
 	tool, exists := r.tools[name]
 	if !exists {
+		suggestions := r.suggestSimilar(name)
+		if suggestions != "" {
+			return nil, fmt.Errorf("tool %s not found. Did you mean: %s", name, suggestions)
+		}
 		return nil, fmt.Errorf("tool %s not found", name)
 	}
 	return tool, nil
+}
+
+// suggestSimilar returns a comma-separated list of registered tool names
+// that share a keyword with the requested name. Caller holds r.mu.
+func (r *Registry) suggestSimilar(name string) string {
+	lower := strings.ToLower(name)
+	var matches []string
+	for registered := range r.tools {
+		if fuzzyToolMatch(lower, strings.ToLower(registered)) {
+			matches = append(matches, registered)
+			if len(matches) >= 5 {
+				break
+			}
+		}
+	}
+	if len(matches) == 0 {
+		return ""
+	}
+	sort.Strings(matches)
+	return strings.Join(matches, ", ")
+}
+
+// fuzzyToolMatch checks if two tool names share enough similarity to suggest.
+func fuzzyToolMatch(query, candidate string) bool {
+	// Substring match in either direction.
+	if strings.Contains(candidate, query) || strings.Contains(query, candidate) {
+		return true
+	}
+	// Split on common delimiters and check keyword overlap.
+	qParts := splitToolName(query)
+	cParts := splitToolName(candidate)
+	for _, qp := range qParts {
+		if len(qp) < 3 {
+			continue
+		}
+		for _, cp := range cParts {
+			if qp == cp {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func splitToolName(name string) []string {
+	// Split on _ and camelCase boundaries.
+	var parts []string
+	for _, p := range strings.Split(name, "_") {
+		parts = append(parts, splitCamel(p)...)
+	}
+	return parts
+}
+
+func splitCamel(s string) []string {
+	var parts []string
+	start := 0
+	for i := 1; i < len(s); i++ {
+		if s[i] >= 'A' && s[i] <= 'Z' {
+			parts = append(parts, strings.ToLower(s[start:i]))
+			start = i
+		}
+	}
+	parts = append(parts, strings.ToLower(s[start:]))
+	return parts
 }
 
 // List produces a snapshot of all registered tools, sorted by name for stable ordering.

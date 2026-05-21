@@ -318,11 +318,16 @@ func TestAgent_SameToolSoftThresholdWarning(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "same tool called 6+ times") {
 		t.Fatalf("expected hard threshold error, got %v", err)
 	}
-	if len(fires) != 1 {
-		t.Fatalf("soft warning should fire once, got %d", len(fires))
+	// Hook fires at soft threshold (count=3) and again at hard threshold
+	// grace entry (count=6).
+	if len(fires) != 2 {
+		t.Fatalf("warning should fire twice (soft + grace), got %d: %v", len(fires), fires)
 	}
 	if fires[0] != 3 {
 		t.Fatalf("soft warning should fire at count=3, got %d", fires[0])
+	}
+	if fires[1] != 6 {
+		t.Fatalf("grace warning should fire at count=6, got %d", fires[1])
 	}
 }
 
