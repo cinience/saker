@@ -10,18 +10,18 @@ import (
 
 // Compile-time interface satisfaction checks.
 var (
-	_ tool.DynamicToolSource        = (*sessionMCPRegistry)(nil)
-	_ tool.DynamicInstructionSource = (*sessionMCPRegistry)(nil)
+	_ tool.DynamicToolSource        = (*SessionMCPRegistry)(nil)
+	_ tool.DynamicInstructionSource = (*SessionMCPRegistry)(nil)
 )
 
 func TestSessionMCPRegistry_CloseIdempotent(t *testing.T) {
-	reg := newSessionMCPRegistry(slog.Default())
+	reg := NewSessionMCPRegistry(slog.Default())
 	reg.Close()
 	reg.Close() // should not panic
 }
 
 func TestSessionMCPRegistry_LookupAfterClose(t *testing.T) {
-	reg := newSessionMCPRegistry(slog.Default())
+	reg := NewSessionMCPRegistry(slog.Default())
 	reg.Close()
 
 	_, ok := reg.LookupTool("anything")
@@ -31,7 +31,7 @@ func TestSessionMCPRegistry_LookupAfterClose(t *testing.T) {
 }
 
 func TestSessionMCPRegistry_ListToolDefsAfterClose(t *testing.T) {
-	reg := newSessionMCPRegistry(slog.Default())
+	reg := NewSessionMCPRegistry(slog.Default())
 	reg.Close()
 
 	defs := reg.ListToolDefs()
@@ -41,7 +41,7 @@ func TestSessionMCPRegistry_ListToolDefsAfterClose(t *testing.T) {
 }
 
 func TestSessionMCPRegistry_EnsureServersAfterClose(t *testing.T) {
-	reg := newSessionMCPRegistry(slog.Default())
+	reg := NewSessionMCPRegistry(slog.Default())
 	reg.Close()
 
 	err := reg.EnsureServers(context.Background(), []ClientMCPServer{
@@ -53,7 +53,7 @@ func TestSessionMCPRegistry_EnsureServersAfterClose(t *testing.T) {
 }
 
 func TestSessionMCPRegistry_ServerNames(t *testing.T) {
-	reg := newSessionMCPRegistry(slog.Default())
+	reg := NewSessionMCPRegistry(slog.Default())
 
 	// Manually inject entries to test ServerNames without real connections.
 	reg.entries["beta"] = &mcpEntry{
@@ -77,7 +77,7 @@ func TestSessionMCPRegistry_ServerNames(t *testing.T) {
 }
 
 func TestSessionMCPRegistry_IncrementalDiff_NoChange(t *testing.T) {
-	reg := newSessionMCPRegistry(slog.Default())
+	reg := NewSessionMCPRegistry(slog.Default())
 
 	// Pre-populate an entry.
 	srv := ClientMCPServer{Name: "srv1", Type: "http", URL: "https://example.com/mcp"}
@@ -98,7 +98,7 @@ func TestSessionMCPRegistry_IncrementalDiff_NoChange(t *testing.T) {
 }
 
 func TestSessionMCPRegistry_IncrementalDiff_RemoveOnly(t *testing.T) {
-	reg := newSessionMCPRegistry(slog.Default())
+	reg := NewSessionMCPRegistry(slog.Default())
 
 	// Pre-populate entries.
 	reg.entries["keep"] = &mcpEntry{
@@ -127,7 +127,7 @@ func TestSessionMCPRegistry_IncrementalDiff_RemoveOnly(t *testing.T) {
 }
 
 func TestSessionMCPRegistry_MCPInstructions_Empty(t *testing.T) {
-	reg := newSessionMCPRegistry(slog.Default())
+	reg := NewSessionMCPRegistry(slog.Default())
 	reg.entries["srv"] = &mcpEntry{
 		server:   ClientMCPServer{Name: "srv"},
 		registry: tool.NewRegistry(), // no MCP sessions → no instructions
@@ -142,7 +142,7 @@ func TestSessionMCPRegistry_MCPInstructions_Empty(t *testing.T) {
 }
 
 func TestSessionMCPRegistry_PingAll_Empty(t *testing.T) {
-	reg := newSessionMCPRegistry(slog.Default())
+	reg := NewSessionMCPRegistry(slog.Default())
 
 	failed := reg.PingAll(context.Background())
 	if len(failed) != 0 {

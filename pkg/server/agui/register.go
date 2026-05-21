@@ -81,7 +81,7 @@ type Gateway struct {
 	// sessions manages active run sessions for SSE reconnect support.
 	sessions *runSessionManager
 	// mcpCache caches per-thread MCP registries across turns.
-	mcpCache *threadMCPCache
+	mcpCache *ThreadMCPCache
 }
 
 // RegisterAGUIGateway mounts the AG-UI protocol endpoints on the supplied
@@ -120,7 +120,7 @@ func RegisterAGUIGateway(engine *gin.Engine, deps Deps) (*Gateway, error) {
 		artifactCache:      newArtifactCache(),
 		rateLimiterCleanup: rateLimiterCleanup,
 		sessions:           newRunSessionManager(),
-		mcpCache:           newThreadMCPCache(deps.Logger),
+		mcpCache:           NewThreadMCPCache(deps.Logger),
 	}
 
 	agents := engine.Group("/v1/agents")
@@ -230,6 +230,6 @@ func (g *Gateway) cleanup() {
 		g.rateLimiterCleanup()
 	}
 	if g.mcpCache != nil {
-		g.mcpCache.closeAll()
+		g.mcpCache.CloseAll()
 	}
 }

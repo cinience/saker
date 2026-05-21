@@ -14,22 +14,22 @@ const (
 
 // mcpCacheEntry holds a cached MCP registry for a thread.
 type mcpCacheEntry struct {
-	registry   *sessionMCPRegistry
+	registry   *SessionMCPRegistry
 	lastAccess time.Time
 }
 
-// threadMCPCache provides thread-level caching of MCP registries so that
+// ThreadMCPCache provides thread-level caching of MCP registries so that
 // consecutive turns on the same thread reuse existing connections rather than
 // reconnecting each time.
-type threadMCPCache struct {
+type ThreadMCPCache struct {
 	mu      sync.Mutex
 	entries map[string]*mcpCacheEntry
 	logger  *slog.Logger
 	stopCh  chan struct{}
 }
 
-func newThreadMCPCache(logger *slog.Logger) *threadMCPCache {
-	c := &threadMCPCache{
+func NewThreadMCPCache(logger *slog.Logger) *ThreadMCPCache {
+	c := &ThreadMCPCache{
 		entries: make(map[string]*mcpCacheEntry),
 		logger:  logger,
 		stopCh:  make(chan struct{}),
@@ -38,7 +38,7 @@ func newThreadMCPCache(logger *slog.Logger) *threadMCPCache {
 	return c
 }
 
-func (c *threadMCPCache) cleanupLoop() {
+func (c *ThreadMCPCache) cleanupLoop() {
 	ticker := time.NewTicker(mcpCacheCleanupInterval)
 	defer ticker.Stop()
 	for {
@@ -51,7 +51,7 @@ func (c *threadMCPCache) cleanupLoop() {
 	}
 }
 
-func (c *threadMCPCache) evictExpired() {
+func (c *ThreadMCPCache) evictExpired() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	now := time.Now()
@@ -64,8 +64,8 @@ func (c *threadMCPCache) evictExpired() {
 	}
 }
 
-// get returns the cached registry for a thread, or nil if not cached / expired.
-func (c *threadMCPCache) get(threadID string) *sessionMCPRegistry {
+// Get returns the cached registry for a thread, or nil if not cached / expired.
+func (c *ThreadMCPCache) Get(threadID string) *SessionMCPRegistry {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -82,8 +82,8 @@ func (c *threadMCPCache) get(threadID string) *sessionMCPRegistry {
 	return entry.registry
 }
 
-// put stores a registry in the cache, evicting stale entries if needed.
-func (c *threadMCPCache) put(threadID string, reg *sessionMCPRegistry) {
+// Put stores a registry in the cache, evicting stale entries if needed.
+func (c *ThreadMCPCache) Put(threadID string, reg *SessionMCPRegistry) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -102,8 +102,8 @@ func (c *threadMCPCache) put(threadID string, reg *sessionMCPRegistry) {
 	}
 }
 
-// remove removes and closes the registry for a thread.
-func (c *threadMCPCache) remove(threadID string) {
+// Remove removes and closes the registry for a thread.
+func (c *ThreadMCPCache) Remove(threadID string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if entry, ok := c.entries[threadID]; ok {
@@ -112,8 +112,8 @@ func (c *threadMCPCache) remove(threadID string) {
 	}
 }
 
-// getServerNames returns the connected server names for a thread, or nil.
-func (c *threadMCPCache) getServerNames(threadID string) []string {
+// GetServerNames returns the connected server names for a thread, or nil.
+func (c *ThreadMCPCache) GetServerNames(threadID string) []string {
 	c.mu.Lock()
 	entry, ok := c.entries[threadID]
 	if !ok {
@@ -125,27 +125,35 @@ func (c *threadMCPCache) getServerNames(threadID string) []string {
 	return reg.ServerNames()
 }
 
-// closeAll stops the cleanup goroutine and closes all cached registries.
-func (c *threadMCPCache) closeAll() {
-	close(c.stopCh)
-
+// CloseAll stops the cleanup goroutine and closes all cached registries.
+// Safe to call multiple times.
+func (c *ThreadMCPCache) CloseAll() {
 	c.mu.Lock()
-	defer c.mu.Unlock()
-
+	if c.entries == nil {
+		c.mu.Unlock()
+		return
+	}
+	select {
+	case <-c.stopCh:
+	default:
+		close(c.stopCh)
+	}
 	for id, entry := range c.entries {
 		entry.registry.Close()
 		delete(c.entries, id)
 	}
+	c.entries = nil
+	c.mu.Unlock()
 }
 
-// size returns the number of cached entries.
-func (c *threadMCPCache) size() int {
+// Size returns the number of cached entries.
+func (c *ThreadMCPCache) Size() int {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return len(c.entries)
 }
 
-func (c *threadMCPCache) evictOverflowLocked() {
+func (c *ThreadMCPCache) evictOverflowLocked() {
 	now := time.Now()
 	// First pass: remove expired entries.
 	for id, entry := range c.entries {

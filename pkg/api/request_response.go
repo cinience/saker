@@ -87,9 +87,10 @@ type Request struct {
 	// SystemPromptOverride provides a per-request system prompt override.
 	// When non-nil, applied according to Mode (prepend/append/replace).
 	SystemPromptOverride *SystemPromptOverride
-	// ModelEndpoint specifies a client-provided LLM endpoint parsed from model_uri.
-	// When non-nil, the runtime creates a model instance from this entry.
-	ModelEndpoint *config.FailoverModelEntry
+	// ModelEndpoint specifies client-provided LLM endpoints parsed from model_uri.
+	// The first entry is the primary model; subsequent entries form an ordered
+	// failover chain (auto-fallback on failure via Bifrost).
+	ModelEndpoint []config.FailoverModelEntry
 	// ExtraTools are additional tool definitions injected by the caller
 	// (e.g. CopilotKit HITL tools) that are sent to the LLM alongside
 	// saker's internal registry tools. They are NOT registered in the

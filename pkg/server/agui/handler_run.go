@@ -205,7 +205,7 @@ func (g *Gateway) handleNewRun(c *gin.Context, input aguitypes.RunAgentInput, ru
 	}
 
 	// Per-session dynamic MCP servers from client ForwardedProps.
-	var mcpReg *sessionMCPRegistry
+	var mcpReg *SessionMCPRegistry
 	if props, ok := input.ForwardedProps.(map[string]any); ok && props != nil {
 		if mcpServers, parseErr := extractMCPServers(props); parseErr != nil {
 			baseCancel()
@@ -216,7 +216,7 @@ func (g *Gateway) handleNewRun(c *gin.Context, input aguitypes.RunAgentInput, ru
 			}})
 			return
 		} else if len(mcpServers) > 0 {
-			if valErr := validateMCPAllowList(mcpServers, g.deps.Options.AllowedMCPPatterns); valErr != nil {
+			if valErr := ValidateMCPAllowList(mcpServers, g.deps.Options.AllowedMCPPatterns); valErr != nil {
 				baseCancel()
 				finishRun()
 				c.JSON(http.StatusForbidden, gin.H{"error": gin.H{
@@ -225,7 +225,7 @@ func (g *Gateway) handleNewRun(c *gin.Context, input aguitypes.RunAgentInput, ru
 				}})
 				return
 			}
-			if secErr := validateMCPSecurity(mcpServers, g.deps.Options); secErr != nil {
+			if secErr := ValidateMCPSecurity(mcpServers, g.deps.Options.MaxMCPServersPerSession, g.deps.Options.AllowMCPStdio); secErr != nil {
 				baseCancel()
 				finishRun()
 				c.JSON(http.StatusForbidden, gin.H{"error": gin.H{
@@ -235,20 +235,20 @@ func (g *Gateway) handleNewRun(c *gin.Context, input aguitypes.RunAgentInput, ru
 				return
 			}
 			// Try to reuse a cached registry for this thread (cross-turn reuse).
-			mcpReg = g.mcpCache.get(threadID)
+			mcpReg = g.mcpCache.Get(threadID)
 			if mcpReg != nil {
 				aguiMCPCacheHits.Inc()
 			} else {
 				aguiMCPCacheMisses.Inc()
-				reg := newSessionMCPRegistry(g.deps.Logger)
+				reg := NewSessionMCPRegistry(g.deps.Logger)
 				if t := g.deps.Options.MCPConnectTimeout; t > 0 {
-					reg.connectTimeout = t
+					reg.SetConnectTimeout(t)
 				}
 				mcpReg = reg
 			}
 			if connErr := mcpReg.EnsureServers(runtimeCtx, mcpServers, nil); connErr != nil {
 				mcpReg.Close()
-				g.mcpCache.remove(threadID)
+				g.mcpCache.Remove(threadID)
 				baseCancel()
 				finishRun()
 				c.JSON(http.StatusBadGateway, gin.H{"error": gin.H{

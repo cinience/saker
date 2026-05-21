@@ -11,6 +11,7 @@ import (
 	"github.com/saker-ai/saker/pkg/project"
 	"github.com/saker-ai/saker/pkg/runhub"
 	"github.com/saker-ai/saker/pkg/runhub/store"
+	"github.com/saker-ai/saker/pkg/server/agui"
 	"github.com/gin-gonic/gin"
 )
 
@@ -61,6 +62,7 @@ type Gateway struct {
 	hub         runhub.Hub
 	rateLimiter *rateLimiter
 	pendingAsks *pendingAskRegistry
+	mcpCache    *agui.ThreadMCPCache
 }
 
 // Runtime returns the saker agent runtime backing this gateway.
@@ -124,7 +126,12 @@ func RegisterOpenAIGateway(engine *gin.Engine, deps Deps) (*Gateway, error) {
 		return nil, err
 	}
 
-	g := &Gateway{deps: deps, hub: hub, pendingAsks: newPendingAskRegistry()}
+	g := &Gateway{
+		deps:        deps,
+		hub:         hub,
+		pendingAsks: newPendingAskRegistry(),
+		mcpCache:    agui.NewThreadMCPCache(deps.Logger),
+	}
 
 	// Start hub GC. Caller can stop it via Gateway.Shutdown.
 	hub.StartGC(context.Background())
@@ -216,6 +223,9 @@ func (g *Gateway) Shutdown() {
 		return
 	}
 	g.rateLimiter.Close()
+	if g.mcpCache != nil {
+		g.mcpCache.CloseAll()
+	}
 	if g.hub != nil {
 		g.hub.Shutdown()
 	}

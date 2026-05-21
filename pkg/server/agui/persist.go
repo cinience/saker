@@ -22,15 +22,35 @@ func (g *Gateway) loadArtifactsFromDB(ctx context.Context, threadID string) []se
 		return nil
 	}
 	var arts []server.Artifact
+	seen := make(map[string]bool)
 	for _, evt := range events {
-		if (evt.Kind != string(conversation.EventKindAssistantText) && evt.Kind != string(conversation.EventKindToolResult)) || len(evt.ContentJSON) == 0 {
+		if evt.Kind != string(conversation.EventKindAssistantText) && evt.Kind != string(conversation.EventKindToolResult) {
 			continue
 		}
-		var payload struct {
-			Artifacts []server.Artifact `json:"artifacts"`
+		// Path 1: structured artifacts in ContentJSON.
+		if len(evt.ContentJSON) > 0 {
+			var payload struct {
+				Artifacts []server.Artifact `json:"artifacts"`
+			}
+			if json.Unmarshal(evt.ContentJSON, &payload) == nil && len(payload.Artifacts) > 0 {
+				for _, a := range payload.Artifacts {
+					if !seen[a.URL] {
+						seen[a.URL] = true
+						arts = append(arts, a)
+					}
+				}
+				continue
+			}
 		}
-		if json.Unmarshal(evt.ContentJSON, &payload) == nil && len(payload.Artifacts) > 0 {
-			arts = append(arts, payload.Artifacts...)
+		// Path 2: extract media URLs from plain-text tool results.
+		if evt.Kind == string(conversation.EventKindToolResult) && evt.ContentText != "" {
+			extracted := server.ExtractArtifacts("", map[string]any{"output": evt.ContentText})
+			for _, a := range extracted {
+				if !seen[a.URL] {
+					seen[a.URL] = true
+					arts = append(arts, a)
+				}
+			}
 		}
 	}
 	return arts

@@ -16,20 +16,26 @@ import (
 // the AG-UI ForwardedProps map and applies them to the saker request.
 // Security switches in opts control which overrides are honored.
 func applyForwardedProps(props map[string]any, req *api.Request, opts Options) error {
-	// --- Model endpoint (URI) ---
+	// --- Model endpoint (URI string or []string for failover) ---
 	if !opts.DenyModelEndpoint {
 		if raw, ok := props["model_uri"]; ok {
-			uri, ok := raw.(string)
-			if !ok {
-				return fmt.Errorf("model_uri: expected string")
-			}
-			entry, overrides, err := parseModelURI(uri)
+			uris, err := CoerceModelURIs(raw)
 			if err != nil {
 				return fmt.Errorf("model_uri: %w", err)
 			}
-			req.ModelEndpoint = entry
-			if overrides != nil {
-				req.ModelOverrides = overrides
+			var entries []config.FailoverModelEntry
+			for i, uri := range uris {
+				entry, overrides, err := ParseModelURI(uri)
+				if err != nil {
+					return fmt.Errorf("model_uri[%d]: %w", i, err)
+				}
+				entries = append(entries, *entry)
+				if i == 0 && overrides != nil {
+					req.ModelOverrides = overrides
+				}
+			}
+			if len(entries) > 0 {
+				req.ModelEndpoint = entries
 			}
 		}
 	}
@@ -83,7 +89,7 @@ func applyForwardedProps(props map[string]any, req *api.Request, opts Options) e
 //   - openai://sk-xxx@api.openai.com/v1?model=gpt-4o&temperature=0.7
 //   - anthropic://sk-ant-xxx@api.anthropic.com?model=claude-sonnet-4-20250514
 //   - openai://ollama@localhost:11434/v1?model=llama3
-func parseModelURI(raw string) (*config.FailoverModelEntry, *api.ModelOverrides, error) {
+func ParseModelURI(raw string) (*config.FailoverModelEntry, *api.ModelOverrides, error) {
 	u, err := url.Parse(raw)
 	if err != nil {
 		return nil, nil, fmt.Errorf("invalid URI: %w", err)
@@ -197,6 +203,39 @@ func parseModelOverrides(query url.Values) *api.ModelOverrides {
 		return nil
 	}
 	return &ov
+}
+
+// coerceModelURIs accepts a string or []string (or []any of strings) for model_uri.
+func CoerceModelURIs(raw any) ([]string, error) {
+	switch v := raw.(type) {
+	case string:
+		if v == "" {
+			return nil, fmt.Errorf("empty URI")
+		}
+		return []string{v}, nil
+	case []any:
+		out := make([]string, 0, len(v))
+		for _, item := range v {
+			s, ok := item.(string)
+			if !ok {
+				return nil, fmt.Errorf("expected string array, got %T element", item)
+			}
+			if s != "" {
+				out = append(out, s)
+			}
+		}
+		if len(out) == 0 {
+			return nil, fmt.Errorf("empty URI array")
+		}
+		return out, nil
+	case []string:
+		if len(v) == 0 {
+			return nil, fmt.Errorf("empty URI array")
+		}
+		return v, nil
+	default:
+		return nil, fmt.Errorf("expected string or string array, got %T", raw)
+	}
 }
 
 // coerceStringSlice converts an any value (expected []any or []string from JSON) to []string.

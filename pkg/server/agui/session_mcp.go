@@ -17,10 +17,10 @@ import (
 	"github.com/saker-ai/saker/pkg/tool"
 )
 
-// sessionMCPRegistry manages per-session MCP server connections at per-server
+// SessionMCPRegistry manages per-session MCP server connections at per-server
 // granularity. It implements tool.DynamicToolSource so the runtime can look up
 // and execute dynamic tools.
-type sessionMCPRegistry struct {
+type SessionMCPRegistry struct {
 	mu      sync.Mutex
 	entries map[string]*mcpEntry // keyed by server name
 	closed  bool
@@ -36,11 +36,16 @@ type mcpEntry struct {
 	registry *tool.Registry
 }
 
-func newSessionMCPRegistry(logger *slog.Logger) *sessionMCPRegistry {
-	return &sessionMCPRegistry{
+func NewSessionMCPRegistry(logger *slog.Logger) *SessionMCPRegistry {
+	return &SessionMCPRegistry{
 		entries: make(map[string]*mcpEntry),
 		logger:  logger,
 	}
+}
+
+// SetConnectTimeout sets the per-server connect timeout.
+func (s *SessionMCPRegistry) SetConnectTimeout(d time.Duration) {
+	s.connectTimeout = d
 }
 
 // EnsureServers performs an incremental diff against the current server set:
@@ -49,7 +54,7 @@ func newSessionMCPRegistry(logger *slog.Logger) *sessionMCPRegistry {
 //   - Added servers are connected in parallel.
 //
 // If the server list is identical to what was previously registered, this is a no-op.
-func (s *sessionMCPRegistry) EnsureServers(ctx context.Context, servers []ClientMCPServer, _ *sandbox.Manager) error {
+func (s *SessionMCPRegistry) EnsureServers(ctx context.Context, servers []ClientMCPServer, _ *sandbox.Manager) error {
 	s.mu.Lock()
 	if s.closed {
 		s.mu.Unlock()
@@ -129,7 +134,7 @@ func (s *sessionMCPRegistry) EnsureServers(ctx context.Context, servers []Client
 }
 
 // connectServers connects multiple MCP servers concurrently using errgroup.
-func (s *sessionMCPRegistry) connectServers(ctx context.Context, servers []ClientMCPServer) error {
+func (s *SessionMCPRegistry) connectServers(ctx context.Context, servers []ClientMCPServer) error {
 	start := time.Now()
 	defer func() {
 		aguiMCPConnectDuration.Observe(time.Since(start).Seconds())
@@ -208,7 +213,7 @@ func (s *sessionMCPRegistry) connectServers(ctx context.Context, servers []Clien
 }
 
 // connectOneServer connects a single MCP server with retry and exponential backoff.
-func (s *sessionMCPRegistry) connectOneServer(ctx context.Context, srv ClientMCPServer, timeout time.Duration) (*tool.Registry, error) {
+func (s *SessionMCPRegistry) connectOneServer(ctx context.Context, srv ClientMCPServer, timeout time.Duration) (*tool.Registry, error) {
 	const maxRetries = 2
 	backoff := 250 * time.Millisecond
 
@@ -244,7 +249,7 @@ func (s *sessionMCPRegistry) connectOneServer(ctx context.Context, srv ClientMCP
 // LookupTool finds a tool by name across all connected MCP server registries.
 // It supports both raw names and prefixed names (serverName__toolName) for
 // conflict-resolved tools.
-func (s *sessionMCPRegistry) LookupTool(name string) (tool.Tool, bool) {
+func (s *SessionMCPRegistry) LookupTool(name string) (tool.Tool, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -273,7 +278,7 @@ func (s *sessionMCPRegistry) LookupTool(name string) (tool.Tool, bool) {
 // ListToolDefs returns tool definitions aggregated from all connected MCP servers.
 // When multiple servers expose the same tool name, conflicting names are prefixed
 // with serverName__ to disambiguate (matching the main registry convention).
-func (s *sessionMCPRegistry) ListToolDefs() []model.ToolDefinition {
+func (s *SessionMCPRegistry) ListToolDefs() []model.ToolDefinition {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -317,7 +322,7 @@ func (s *sessionMCPRegistry) ListToolDefs() []model.ToolDefinition {
 
 // MCPInstructions returns server name → instructions for all connected servers
 // that provided instructions in their InitializeResult.
-func (s *sessionMCPRegistry) MCPInstructions() map[string]string {
+func (s *SessionMCPRegistry) MCPInstructions() map[string]string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -343,7 +348,7 @@ func (s *sessionMCPRegistry) MCPInstructions() map[string]string {
 
 // PingAll pings all connected MCP servers and returns the names of those that
 // failed. Useful for health checking before reuse from cache.
-func (s *sessionMCPRegistry) PingAll(ctx context.Context) []string {
+func (s *SessionMCPRegistry) PingAll(ctx context.Context) []string {
 	s.mu.Lock()
 	if s.closed {
 		s.mu.Unlock()
@@ -381,7 +386,7 @@ func (s *sessionMCPRegistry) PingAll(ctx context.Context) []string {
 }
 
 // ServerNames returns the names of currently connected servers.
-func (s *sessionMCPRegistry) ServerNames() []string {
+func (s *SessionMCPRegistry) ServerNames() []string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	names := make([]string, 0, len(s.entries))
@@ -393,7 +398,7 @@ func (s *sessionMCPRegistry) ServerNames() []string {
 }
 
 // Close shuts down all MCP connections managed by this session registry.
-func (s *sessionMCPRegistry) Close() {
+func (s *SessionMCPRegistry) Close() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 

@@ -153,6 +153,32 @@ type Options struct {
 	// restart (operator opt-in for fail-fast envs); default 30s.
 	RunHubSinkBreakerCooldown time.Duration
 
+	// AllowedMCPPatterns restricts which MCP server URLs clients may connect
+	// to via extra_body.mcp_servers. Each entry is an exact URL, a server
+	// name, or a prefix glob (e.g. "https://mcp.example.com/*"). Empty
+	// means any URL is permitted.
+	AllowedMCPPatterns []string
+
+	// MaxMCPServersPerSession caps how many MCP servers a single request
+	// may declare via extra_body.mcp_servers. Zero falls back to 5.
+	MaxMCPServersPerSession int
+
+	// AllowMCPStdio controls whether stdio-type MCP servers are permitted.
+	// Default false — only http/sse transports are allowed.
+	AllowMCPStdio bool
+
+	// MCPConnectTimeout is the per-server timeout for connecting to MCP
+	// servers declared by the client. Zero falls back to 10s.
+	MCPConnectTimeout time.Duration
+
+	// DenyModelEndpoint blocks clients from specifying a custom LLM
+	// endpoint via extra_body.model_uri. Default false (allowed).
+	DenyModelEndpoint bool
+
+	// DenyMCPServers blocks clients from specifying MCP servers via
+	// extra_body.mcp_servers. Default false (allowed).
+	DenyMCPServers bool
+
 	// RunHubPGCopyThreshold gates the postgres-only COPY-based bulk
 	// insert path. When the runtime driver is postgres AND a single
 	// InsertEventsBatch carries at least this many rows, the call goes

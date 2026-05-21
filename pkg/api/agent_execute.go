@@ -81,10 +81,25 @@ func (rt *Runtime) runAgentWithMiddleware(prep preparedRun, extras ...middleware
 		}
 	}
 
-	// Override model when client specifies a model_uri endpoint.
-	if ep := prep.normalized.ModelEndpoint; ep != nil {
-		if m, err := rt.createModelFromEntry(*ep); err == nil {
+	// Override model when client specifies model_uri endpoint(s).
+	if entries := prep.normalized.ModelEndpoint; len(entries) > 0 {
+		if m, err := rt.createModelFromEntry(entries[0]); err == nil {
 			selectedModel = m
+			if len(entries) > 1 {
+				var specs []model.BifrostFallbackSpec
+				for _, e := range entries[1:] {
+					if spec, err := buildFallbackSpec(e); err == nil {
+						specs = append(specs, spec)
+					}
+				}
+				if len(specs) > 0 {
+					if rebuilder, ok := selectedModel.(model.BifrostRebuilder); ok {
+						if rebuilt, err := rebuilder.RebuildWithFallbacks(specs, nil); err == nil {
+							selectedModel = rebuilt
+						}
+					}
+				}
+			}
 		} else {
 			logger.Warn("client model_uri override failed", "error", err)
 		}

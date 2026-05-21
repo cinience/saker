@@ -415,14 +415,18 @@ func (a *App) dismissSidePanel() tea.Cmd {
 }
 
 // checkContextNotification pushes a notification when token usage is high.
+// Uses the most recent turn's input tokens (which reflects actual context
+// window fill) rather than cumulative totals across all turns.
 func (a *App) checkContextNotification() {
-	total := a.status.inputTokens + a.status.outputTokens
-	if total == 0 {
+	last := a.status.lastInputTokens
+	if last == 0 {
 		return
 	}
-	// Assume 200k context window; warn at 80% and 95%.
-	const maxContext = 200_000
-	pct := float64(total) / maxContext
+	maxContext := a.status.contextWindow
+	if maxContext <= 0 {
+		maxContext = 200_000
+	}
+	pct := float64(last) / float64(maxContext)
 	if pct >= 0.95 {
 		a.notifications.Push(Notification{
 			Key:      "context",

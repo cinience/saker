@@ -11,9 +11,11 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/saker-ai/saker/pkg/config"
 	"github.com/saker-ai/saker/pkg/model"
 	"github.com/saker-ai/saker/pkg/runhub"
 	"github.com/saker-ai/saker/pkg/server"
+	"github.com/saker-ai/saker/pkg/server/agui"
 	toolbuiltin "github.com/saker-ai/saker/pkg/tool/builtin"
 	"go.opentelemetry.io/otel/trace"
 )
@@ -99,6 +101,76 @@ func (g *Gateway) handleChatCompletions(c *gin.Context) {
 	// agent runtime. Provider adapters that don't consume a given field
 	// silently ignore it, so this is safe to attach unconditionally.
 	sakerReq.ModelOverrides = buildModelOverrides(req)
+
+	// Apply model_uri from extra_body (client-specified LLM endpoint with failover).
+	if !g.deps.Options.DenyModelEndpoint {
+		if raw, ok := req.ExtraBody["model_uri"]; ok {
+			uris, err := agui.CoerceModelURIs(raw)
+			if err != nil {
+				InvalidRequest(c, "extra_body.model_uri: "+err.Error())
+				return
+			}
+			var entries []config.FailoverModelEntry
+			for i, uri := range uris {
+				entry, overrides, err := agui.ParseModelURI(uri)
+				if err != nil {
+					InvalidRequest(c, fmt.Sprintf("extra_body.model_uri[%d]: %s", i, err.Error()))
+					return
+				}
+				entries = append(entries, *entry)
+				if i == 0 && overrides != nil {
+					sakerReq.ModelOverrides = overrides
+				}
+			}
+			sakerReq.ModelEndpoint = entries
+		}
+	}
+
+	// Apply mcp_servers from extra_body (client-specified MCP server connections).
+	var mcpReg *agui.SessionMCPRegistry
+	if !g.deps.Options.DenyMCPServers {
+		if raw, ok := req.ExtraBody["mcp_servers"]; ok {
+			mcpServers, err := agui.ParseMCPServersRaw(raw)
+			if err != nil {
+				InvalidRequest(c, "extra_body.mcp_servers: "+err.Error())
+				return
+			}
+			if len(mcpServers) > 0 {
+				if err := agui.ValidateMCPAllowList(mcpServers, g.deps.Options.AllowedMCPPatterns); err != nil {
+					c.JSON(http.StatusForbidden, gin.H{"error": gin.H{
+						"message": err.Error(),
+						"type":    "permission_error",
+					}})
+					return
+				}
+				if err := agui.ValidateMCPSecurity(mcpServers, g.deps.Options.MaxMCPServersPerSession, g.deps.Options.AllowMCPStdio); err != nil {
+					c.JSON(http.StatusForbidden, gin.H{"error": gin.H{
+						"message": err.Error(),
+						"type":    "permission_error",
+					}})
+					return
+				}
+				sessionID := sakerReq.SessionID
+				mcpReg = g.mcpCache.Get(sessionID)
+				if mcpReg == nil {
+					mcpReg = agui.NewSessionMCPRegistry(g.deps.Logger)
+					if t := g.deps.Options.MCPConnectTimeout; t > 0 {
+						mcpReg.SetConnectTimeout(t)
+					}
+				}
+				if err := mcpReg.EnsureServers(c.Request.Context(), mcpServers, nil); err != nil {
+					mcpReg.Close()
+					g.mcpCache.Remove(sessionID)
+					c.JSON(http.StatusBadGateway, gin.H{"error": gin.H{
+						"message": "failed to connect MCP servers: " + err.Error(),
+						"type":    "mcp_connection_error",
+					}})
+					return
+				}
+				sakerReq.DynamicExecutor = mcpReg
+			}
+		}
+	}
 
 	identity := IdentityFromContext(c.Request.Context())
 	if identity.Username != "" {
@@ -226,7 +298,12 @@ func (g *Gateway) handleChatCompletions(c *gin.Context) {
 
 	includeUsage := req.Stream && parseIncludeUsage(req.StreamOptions)
 
-	go g.runChatProducer(eventCh, hubRun, producerCancel, chunkID, req.Model, extra.ExposeToolCalls, includeUsage)
+	go func() {
+		g.runChatProducer(eventCh, hubRun, producerCancel, chunkID, req.Model, extra.ExposeToolCalls, includeUsage)
+		if mcpReg != nil && sakerReq.SessionID != "" {
+			g.mcpCache.Put(sakerReq.SessionID, mcpReg)
+		}
+	}()
 
 	var pauseNotify <-chan struct{}
 	if ps != nil {

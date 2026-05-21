@@ -31,7 +31,8 @@ func (t *runtimeToolExecutor) Execute(ctx context.Context, call agent.ToolCall, 
 	appendToolResult := func(content string, blocks []model.ContentBlock, artifacts []artifact.ArtifactRef) {
 		if t.history != nil {
 			msg := message.Message{
-				Role: "tool",
+				Role:    "tool",
+				Content: content,
 				ToolCalls: []message.ToolCall{{
 					ID:     call.ID,
 					Name:   call.Name,

@@ -1,14 +1,125 @@
-# AG-UI 动态 MCP 服务器集成
+# AG-UI ForwardedProps — 客户端配置协议
 
-本文档描述 AG-UI 客户端如何在每次会话中动态连接 MCP（Model Context
-Protocol）服务器，使 agent 能够在运行期间使用客户端提供的工具。
+本文档描述 AG-UI 客户端如何通过 `RunAgentInput` 中的 `ForwardedProps`
+配置 agent 运行时行为。
 
-## 概述
+支持的能力：
+- **动态 MCP 服务器** — 每会话连接外部工具提供者
+- **LLM 端点覆盖** — 选择模型、提供商、自定义 base URL，支持有序 failover
+- **系统提示词注入** — 前置、追加或完全替换内置提示词
+- **工具控制** — 内置工具白名单、透传工具声明
 
-AG-UI 协议允许客户端通过 `RunAgentInput` 负载中的
-`ForwardedProps.mcp_servers` 转发 MCP 服务器配置。网关会建立到这些服务器的
-连接，将其工具注册为 `DynamicToolSource`，并将服务器提供的指令注入系统提示。
-连接在 thread 级别缓存，支持跨 turn 复用。
+## 快速参考
+
+```json
+{
+  "threadId": "thread_abc",
+  "messages": [{"role": "user", "content": "..."}],
+  "forwardedProps": {
+    "model_uri": [
+      "openai://sk-xxx@api.openai.com/v1?model=gpt-4o&temperature=0.7",
+      "anthropic://sk-ant-xxx@api.anthropic.com?model=claude-sonnet-4-20250514"
+    ],
+    "system_prompt": "你是一个专门做数据分析的助手。",
+    "system_prompt_mode": "replace",
+    "allowed_tools": ["bash", "file_read", "file_write", "web_search"],
+    "passthrough_tools": ["custom_ui_action"],
+    "mcp_servers": [
+      "https://mcp.example.com/tools?name=weather&timeout=30",
+      {"name": "local-db", "type": "stdio", "command": "mcp-server-sqlite", "args": ["db.sqlite"]}
+    ],
+    "timeout_seconds": 120
+  }
+}
+```
+
+---
+
+## 模型端点 (`model_uri`)
+
+指定 agent 使用的 LLM 后端。支持单个 URI 字符串或有序数组实现自动 failover。
+
+### URI 格式
+
+```
+provider://api_key@host[:port]/path?model=name&temperature=0.7&max_tokens=4096&...
+```
+
+| 组件 | 映射目标 | 示例 |
+|------|---------|------|
+| scheme | 提供商 | `openai`、`anthropic`、`dashscope` |
+| userinfo | API 密钥 | `sk-xxx` |
+| host+path | Base URL | `api.openai.com/v1` |
+| `?model=` | 模型名称（必填） | `gpt-4o` |
+| `?temperature=` | 采样温度 | `0.7` |
+| `?top_p=` | Top-P | `0.9` |
+| `?max_tokens=` | 最大输出 token | `4096` |
+| `?stop=` | 停止序列（逗号分隔） | `END,STOP` |
+| `?seed=` | 随机种子 | `42` |
+| `?tool_choice=` | 工具选择策略 | `auto` |
+| `?parallel_tool_calls=` | 并行工具调用 | `true` |
+
+### Failover 链
+
+当 `model_uri` 为数组时，第一个条目为主模型。后续条目组成有序 failover 链 ——
+当主模型调用失败时，runtime 通过 Bifrost SDK 自动降级到下一个模型。
+
+```json
+"model_uri": [
+  "openai://sk-primary@api.openai.com/v1?model=gpt-4o&temperature=0.7",
+  "anthropic://sk-backup@api.anthropic.com?model=claude-sonnet-4-20250514",
+  "openai://sk-china@dashscope.aliyuncs.com/compatible-mode/v1?model=qwen-max"
+]
+```
+
+采样参数（temperature、top_p 等）仅从第一个 URI 提取，对整个 failover 链生效。
+
+### Localhost 检测
+
+目标为 `localhost` 或 `127.x.x.x` 的 URI 自动使用 `http://` 而非 `https://`：
+
+```
+openai://ollama@localhost:11434/v1?model=llama3
+→ base_url: http://localhost:11434/v1
+```
+
+---
+
+## 系统提示词 (`system_prompt`, `system_prompt_mode`)
+
+注入自定义系统提示词，与内置 agent 提示词组合。
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `system_prompt` | string | 要注入的提示词文本 |
+| `system_prompt_mode` | string | 组合模式：`"prepend"`（默认）、`"append"` 或 `"replace"` |
+
+模式说明：
+- **prepend** — 将客户端文本插入到内置系统提示词**之前**
+- **append** — 将客户端文本插入到内置系统提示词**之后**
+- **replace** — 用客户端文本**完全替换**内置系统提示词
+
+---
+
+## 工具控制 (`allowed_tools`, `passthrough_tools`)
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `allowed_tools` | []string | 限制可用的内置工具（白名单） |
+| `passthrough_tools` | []string | agent 不执行的工具 — 中继回客户端 |
+
+```json
+"allowed_tools": ["bash", "file_read", "file_write"],
+"passthrough_tools": ["ask_user_question", "custom_action"]
+```
+
+---
+
+## 动态 MCP 服务器 (`mcp_servers`)
+
+AG-UI 协议允许客户端通过 `ForwardedProps.mcp_servers` 转发 MCP 服务器配置。
+网关会建立到这些服务器的连接，将其工具注册为 `DynamicToolSource`，并将服务器
+提供的指令注入系统提示。连接在 thread 级别缓存，支持跨 turn 复用。
 
 ```
 ┌─────────┐   POST /v1/agents/run    ┌──────────────┐
@@ -22,37 +133,35 @@ AG-UI 协议允许客户端通过 `RunAgentInput` 负载中的
                    └────────────┘   └────────────┘   └────────────┘
 ```
 
-## 客户端配置
+## MCP 客户端配置
 
-客户端在 `ForwardedProps` 中包含 MCP 服务器配置：
+`mcp_servers` 数组中的每个元素可以是 **JSON 对象** 或 **URI 字符串**，
+两种格式可在同一数组中混合使用。
+
+### 对象格式
 
 ```json
 {
-  "threadId": "thread_abc",
-  "runId": "run_123",
-  "messages": [...],
-  "forwardedProps": {
-    "mcp_servers": [
-      {
-        "name": "my-tools",
-        "type": "http",
-        "url": "https://mcp.example.com/sse",
-        "headers": {"Authorization": "Bearer <token>"},
-        "timeout": 5.0
-      },
-      {
-        "name": "local-db",
-        "type": "stdio",
-        "command": "npx",
-        "args": ["-y", "@modelcontextprotocol/server-sqlite", "db.sqlite"],
-        "env": {"DB_PATH": "/data/app.db"}
-      }
-    ]
-  }
+  "mcp_servers": [
+    {
+      "name": "my-tools",
+      "type": "http",
+      "url": "https://mcp.example.com/sse",
+      "headers": {"Authorization": "Bearer <token>"},
+      "timeout": 5.0
+    },
+    {
+      "name": "local-db",
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-sqlite", "db.sqlite"],
+      "env": {"DB_PATH": "/data/app.db"}
+    }
+  ]
 }
 ```
 
-### ClientMCPServer 字段
+#### ClientMCPServer 字段
 
 | 字段      | 类型              | 必填   | 说明                                          |
 |-----------|-------------------|--------|-----------------------------------------------|
@@ -64,6 +173,37 @@ AG-UI 协议允许客户端通过 `RunAgentInput` 负载中的
 | `headers` | map[string]string | 否     | 每次请求携带的 HTTP 头                        |
 | `env`     | map[string]string | 否     | stdio 进程的环境变量                          |
 | `timeout` | float64           | 否     | 单服务器连接超时（秒），0 表示使用全局默认值  |
+
+### URI 格式
+
+MCP 服务器也可以用 URI 字符串表示，更紧凑：
+
+| 传输类型 | URI 格式 | 示例 |
+|---------|---------|------|
+| HTTP (StreamableHTTP) | `https://host/path?name=xxx&timeout=30` | `https://mcp.example.com/tools?name=weather` |
+| SSE (旧版) | `sse://host/path?name=xxx` | `sse://mcp.example.com/sse?name=code-tools` |
+| Stdio | `stdio:///command?args=a1&args=a2&name=xxx` | `stdio:///npx?args=-y&args=@mcp/server-memory&name=memory` |
+
+URI query 参数：
+
+| 参数 | 必填 | 说明 |
+|------|------|------|
+| `name` | 是 | 服务器名称（唯一标识符） |
+| `timeout` | 否 | 连接超时秒数 |
+| `args` | stdio 必填 | 命令参数（可重复） |
+| `header_*` | 否 | 自定义 HTTP 头（如 `header_Authorization=Bearer+tok`） |
+
+### 混合格式示例
+
+```json
+{
+  "mcp_servers": [
+    "https://mcp.example.com/tools?name=weather&timeout=30",
+    "sse://mcp.internal/sse?name=code-tools&header_Authorization=Bearer+tok",
+    {"name": "local-db", "type": "stdio", "command": "mcp-server-sqlite", "args": ["db.sqlite"]}
+  ]
+}
+```
 
 ## 架构
 

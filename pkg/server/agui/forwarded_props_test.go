@@ -59,7 +59,7 @@ func TestParseModelURI_Valid(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			entry, _, err := parseModelURI(tc.uri)
+			entry, _, err := ParseModelURI(tc.uri)
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
@@ -82,7 +82,7 @@ func TestParseModelURI_Valid(t *testing.T) {
 func TestParseModelURI_Overrides(t *testing.T) {
 	uri := "openai://sk@api.openai.com/v1?model=gpt-4o&temperature=0.7&top_p=0.9&max_tokens=4096&stop=END,STOP&seed=42&tool_choice=auto&parallel_tool_calls=true"
 
-	_, ov, err := parseModelURI(uri)
+	_, ov, err := ParseModelURI(uri)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -114,7 +114,7 @@ func TestParseModelURI_Overrides(t *testing.T) {
 
 func TestParseModelURI_NoOverrides(t *testing.T) {
 	uri := "openai://sk@api.openai.com/v1?model=gpt-4o"
-	_, ov, err := parseModelURI(uri)
+	_, ov, err := ParseModelURI(uri)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -136,7 +136,7 @@ func TestParseModelURI_Invalid(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			_, _, err := parseModelURI(tc.uri)
+			_, _, err := ParseModelURI(tc.uri)
 			if err == nil {
 				t.Error("expected error, got nil")
 			}
@@ -167,14 +167,14 @@ func TestApplyForwardedProps_ModelURI(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if req.ModelEndpoint == nil {
-		t.Fatal("expected non-nil ModelEndpoint")
+	if len(req.ModelEndpoint) == 0 {
+		t.Fatal("expected non-empty ModelEndpoint")
 	}
-	if req.ModelEndpoint.Provider != "openai" {
-		t.Errorf("provider = %q, want openai", req.ModelEndpoint.Provider)
+	if req.ModelEndpoint[0].Provider != "openai" {
+		t.Errorf("provider = %q, want openai", req.ModelEndpoint[0].Provider)
 	}
-	if req.ModelEndpoint.Model != "gpt-4o" {
-		t.Errorf("model = %q, want gpt-4o", req.ModelEndpoint.Model)
+	if req.ModelEndpoint[0].Model != "gpt-4o" {
+		t.Errorf("model = %q, want gpt-4o", req.ModelEndpoint[0].Model)
 	}
 	if req.ModelOverrides == nil || req.ModelOverrides.Temperature == nil {
 		t.Fatal("expected ModelOverrides with temperature")
@@ -193,8 +193,39 @@ func TestApplyForwardedProps_DenyModelEndpoint(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if req.ModelEndpoint != nil {
-		t.Error("expected nil ModelEndpoint when DenyModelEndpoint=true")
+	if len(req.ModelEndpoint) != 0 {
+		t.Error("expected empty ModelEndpoint when DenyModelEndpoint=true")
+	}
+}
+
+func TestApplyForwardedProps_ModelURIArray(t *testing.T) {
+	props := map[string]any{
+		"model_uri": []any{
+			"openai://sk-primary@api.openai.com/v1?model=gpt-4o&temperature=0.7",
+			"anthropic://sk-fallback@api.anthropic.com?model=claude-sonnet-4-20250514",
+			"openai://sk-last@dashscope.aliyuncs.com/compatible-mode/v1?model=qwen-max",
+		},
+	}
+	req := api.Request{}
+	err := applyForwardedProps(props, &req, Options{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(req.ModelEndpoint) != 3 {
+		t.Fatalf("expected 3 entries, got %d", len(req.ModelEndpoint))
+	}
+	if req.ModelEndpoint[0].Provider != "openai" || req.ModelEndpoint[0].Model != "gpt-4o" {
+		t.Errorf("entry[0] = %+v, want openai/gpt-4o", req.ModelEndpoint[0])
+	}
+	if req.ModelEndpoint[1].Provider != "anthropic" || req.ModelEndpoint[1].Model != "claude-sonnet-4-20250514" {
+		t.Errorf("entry[1] = %+v, want anthropic/claude-sonnet-4-20250514", req.ModelEndpoint[1])
+	}
+	if req.ModelEndpoint[2].Provider != "openai" || req.ModelEndpoint[2].Model != "qwen-max" {
+		t.Errorf("entry[2] = %+v, want openai/qwen-max", req.ModelEndpoint[2])
+	}
+	// ModelOverrides only from first URI
+	if req.ModelOverrides == nil || req.ModelOverrides.Temperature == nil || *req.ModelOverrides.Temperature != 0.7 {
+		t.Errorf("expected temperature=0.7 from first URI")
 	}
 }
 

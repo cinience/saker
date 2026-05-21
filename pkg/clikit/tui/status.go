@@ -23,6 +23,10 @@ type StatusBar struct {
 	// Token usage counters (cumulative across turns).
 	inputTokens  int
 	outputTokens int
+
+	// lastInputTokens holds the most recent single-turn input token count,
+	// which approximates the current context window fill level.
+	lastInputTokens int
 }
 
 // NewStatusBar creates a StatusBar component.
@@ -49,6 +53,9 @@ func (s *StatusBar) SetModel(name string) {
 func (s *StatusBar) AddTokens(input, output int) {
 	s.inputTokens += input
 	s.outputTokens += output
+	if input > 0 {
+		s.lastInputTokens = input
+	}
 }
 
 // ResetTokens clears the token counters (e.g., on /new).
@@ -119,9 +126,9 @@ func (s *StatusBar) buildInfoLine() string {
 			parts = append(parts, s.styles.StatusText.Render(formatCost(cost.TotalCost, cost.Currency)))
 		}
 
-		// Context window usage percentage.
-		if s.contextWindow > 0 && s.inputTokens > 0 {
-			pct := float64(s.inputTokens) * 100 / float64(s.contextWindow)
+		// Context window usage percentage (based on last turn's input).
+		if s.contextWindow > 0 && s.lastInputTokens > 0 {
+			pct := float64(s.lastInputTokens) * 100 / float64(s.contextWindow)
 			parts = append(parts, s.styles.StatusText.Render(fmt.Sprintf("ctx %.0f%%", pct)))
 		}
 	}

@@ -233,7 +233,10 @@ Saker implements the [AG-UI Protocol](https://docs.ag-ui.com) — an open standa
 | Human-in-the-loop (tool-call based interrupts) | Supported |
 | Thread management (list, create, update, delete, archive) | Supported |
 | CopilotKit v2 envelope transport | Supported |
-| Dynamic MCP server forwarding | Supported |
+| Dynamic MCP server forwarding (object + URI format) | Supported |
+| Client LLM endpoint override (`model_uri` with failover) | Supported |
+| System prompt injection (prepend / append / replace) | Supported |
+| Tool whitelist & passthrough control | Supported |
 | Event ring buffer (reconnect replay with SSE IDs) | Supported |
 | Rate limiting, backpressure & load shedding | Supported |
 
@@ -324,7 +327,7 @@ saker/
 | [Observability](docs/observability.md) | Metrics, logs, OTel |
 | [Testing](docs/testing.md) | Test taxonomy and harness |
 | [API reference](docs/api-reference.md) | REST / WS / SSE surface |
-| [AG-UI dynamic MCP](docs/en/agui-mcp.md) | Dynamic MCP server integration |
+| [AG-UI ForwardedProps](docs/en/agui-mcp.md) | Client config: model_uri, system_prompt, tools, MCP |
 | [ADRs](docs/adr/) | Architecture decision records |
 | [Security policy](SECURITY.md) | Reporting vulnerabilities |
 | [Third-party notices](docs/third-party-notices.md) | Dependency licenses |
