@@ -1,0 +1,20 @@
+{
+  "name": "security_mcp_stdio_blocked",
+  "description": "stdio MCP server rejected when AllowMCPStdio is false (default)",
+  "input": {
+    "threadId": "test-thread-18",
+    "runId": "test-run-18",
+    "messages": [{"role": "user", "content": "hello"}],
+    "forwardedProps": {
+      "mcp_servers": [
+        {"name": "local", "type": "stdio", "command": "mcp-server-sqlite", "args": ["db.sqlite"]}
+      ]
+    }
+  },
+  "options": {"allow_mcp_stdio": false},
+  "expect": {
+    "http_status": 403,
+    "error_type": "permission_error",
+    "error_contains": "stdio"
+  }
+}

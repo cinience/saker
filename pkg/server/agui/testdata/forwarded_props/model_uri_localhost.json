@@ -1,0 +1,27 @@
+{
+  "name": "model_uri_localhost_http_scheme",
+  "description": "Localhost target auto-detects http:// scheme instead of https://",
+  "input": {
+    "threadId": "test-thread-3",
+    "runId": "test-run-3",
+    "messages": [{"role": "user", "content": "test"}],
+    "forwardedProps": {
+      "model_uri": "openai://ollama@localhost:11434/v1?model=llama3"
+    }
+  },
+  "options": {},
+  "expect": {
+    "http_status": 200,
+    "request": {
+      "model_endpoint": [
+        {"provider": "openai", "model": "llama3", "apiKey": "ollama", "baseUrl": "http://localhost:11434/v1"}
+      ],
+      "model_overrides": null,
+      "system_prompt_override": null,
+      "tool_whitelist": null,
+      "passthrough_tools": null
+    },
+    "events_contain": ["RUN_STARTED", "RUN_FINISHED"],
+    "events_not_contain": ["RUN_ERROR"]
+  }
+}

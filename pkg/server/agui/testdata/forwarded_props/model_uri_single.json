@@ -1,0 +1,27 @@
+{
+  "name": "model_uri_single_openai",
+  "description": "Single model_uri string parsed into ModelEndpoint with sampling overrides",
+  "input": {
+    "threadId": "test-thread-1",
+    "runId": "test-run-1",
+    "messages": [{"role": "user", "content": "hello"}],
+    "forwardedProps": {
+      "model_uri": "openai://sk-test@api.openai.com/v1?model=gpt-4o&temperature=0.7"
+    }
+  },
+  "options": {},
+  "expect": {
+    "http_status": 200,
+    "request": {
+      "model_endpoint": [
+        {"provider": "openai", "model": "gpt-4o", "apiKey": "sk-test", "baseUrl": "https://api.openai.com/v1"}
+      ],
+      "model_overrides": {"temperature": 0.7},
+      "system_prompt_override": null,
+      "tool_whitelist": null,
+      "passthrough_tools": null
+    },
+    "events_contain": ["RUN_STARTED", "RUN_FINISHED"],
+    "events_not_contain": ["RUN_ERROR"]
+  }
+}

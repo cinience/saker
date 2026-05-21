@@ -1,0 +1,25 @@
+{
+  "name": "security_deny_model_endpoint",
+  "description": "DenyModelEndpoint silently ignores model_uri without error",
+  "input": {
+    "threadId": "test-thread-14",
+    "runId": "test-run-14",
+    "messages": [{"role": "user", "content": "hello"}],
+    "forwardedProps": {
+      "model_uri": "openai://sk-test@api.openai.com/v1?model=gpt-4o"
+    }
+  },
+  "options": {"deny_model_endpoint": true},
+  "expect": {
+    "http_status": 200,
+    "request": {
+      "model_endpoint": null,
+      "model_overrides": null,
+      "system_prompt_override": null,
+      "tool_whitelist": null,
+      "passthrough_tools": null
+    },
+    "events_contain": ["RUN_STARTED", "RUN_FINISHED"],
+    "events_not_contain": ["RUN_ERROR"]
+  }
+}

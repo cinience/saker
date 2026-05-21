@@ -1,0 +1,20 @@
+{
+  "name": "mcp_uri_sse_format",
+  "description": "MCP server specified as sse:// URI string converts to https URL",
+  "input": {
+    "threadId": "test-thread-11",
+    "runId": "test-run-11",
+    "messages": [{"role": "user", "content": "hello"}],
+    "forwardedProps": {
+      "mcp_servers": [
+        "sse://mcp.example.com/sse?name=code-tools"
+      ]
+    }
+  },
+  "options": {},
+  "expect_mcp_parse": {
+    "servers": [
+      {"name": "code-tools", "type": "sse", "url": "https://mcp.example.com/sse"}
+    ]
+  }
+}

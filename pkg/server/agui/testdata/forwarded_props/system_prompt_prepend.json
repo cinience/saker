@@ -1,0 +1,25 @@
+{
+  "name": "system_prompt_prepend_default",
+  "description": "System prompt without explicit mode defaults to prepend",
+  "input": {
+    "threadId": "test-thread-4",
+    "runId": "test-run-4",
+    "messages": [{"role": "user", "content": "hello"}],
+    "forwardedProps": {
+      "system_prompt": "You are a data analyst."
+    }
+  },
+  "options": {},
+  "expect": {
+    "http_status": 200,
+    "request": {
+      "model_endpoint": null,
+      "model_overrides": null,
+      "system_prompt_override": {"text": "You are a data analyst.", "mode": "prepend"},
+      "tool_whitelist": null,
+      "passthrough_tools": null
+    },
+    "events_contain": ["RUN_STARTED", "RUN_FINISHED"],
+    "events_not_contain": ["RUN_ERROR"]
+  }
+}

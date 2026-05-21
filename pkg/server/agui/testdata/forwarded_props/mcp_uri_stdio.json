@@ -1,0 +1,20 @@
+{
+  "name": "mcp_uri_stdio_format",
+  "description": "MCP server specified as stdio:// URI parses command and args",
+  "input": {
+    "threadId": "test-thread-12",
+    "runId": "test-run-12",
+    "messages": [{"role": "user", "content": "hello"}],
+    "forwardedProps": {
+      "mcp_servers": [
+        "stdio:///npx?args=-y&args=@modelcontextprotocol/server-memory&name=memory"
+      ]
+    }
+  },
+  "options": {"allow_mcp_stdio": true},
+  "expect_mcp_parse": {
+    "servers": [
+      {"name": "memory", "type": "stdio", "command": "npx", "args": ["-y", "@modelcontextprotocol/server-memory"]}
+    ]
+  }
+}

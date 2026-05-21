@@ -350,9 +350,12 @@ func (rt *Runtime) appendMessageEvents(ctx context.Context, threadID, turnID str
 			for _, ref := range msg.Artifacts {
 				url := ref.URL
 				if url == "" && ref.Path != "" {
-					url = "/api/files/" + ref.Path
-					if strings.HasPrefix(ref.Path, "/") {
+					if strings.HasPrefix(ref.Path, "/media/") {
+						url = ref.Path
+					} else if strings.HasPrefix(ref.Path, "/") {
 						url = "/api/files" + ref.Path
+					} else {
+						url = "/api/files/" + ref.Path
 					}
 				}
 				if url == "" {

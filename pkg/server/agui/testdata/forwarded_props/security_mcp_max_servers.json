@@ -1,0 +1,25 @@
+{
+  "name": "security_mcp_max_servers_exceeded",
+  "description": "Exceeding MaxMCPServersPerSession returns 400 error",
+  "input": {
+    "threadId": "test-thread-17",
+    "runId": "test-run-17",
+    "messages": [{"role": "user", "content": "hello"}],
+    "forwardedProps": {
+      "mcp_servers": [
+        {"name": "s1", "type": "http", "url": "https://s1.example.com"},
+        {"name": "s2", "type": "http", "url": "https://s2.example.com"},
+        {"name": "s3", "type": "http", "url": "https://s3.example.com"},
+        {"name": "s4", "type": "http", "url": "https://s4.example.com"},
+        {"name": "s5", "type": "http", "url": "https://s5.example.com"},
+        {"name": "s6", "type": "http", "url": "https://s6.example.com"}
+      ]
+    }
+  },
+  "options": {"max_mcp_servers_per_session": 5},
+  "expect": {
+    "http_status": 403,
+    "error_type": "permission_error",
+    "error_contains": "exceeds limit"
+  }
+}

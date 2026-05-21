@@ -1,0 +1,26 @@
+{
+  "name": "system_prompt_replace_mode",
+  "description": "System prompt with replace mode completely overrides built-in prompt",
+  "input": {
+    "threadId": "test-thread-6",
+    "runId": "test-run-6",
+    "messages": [{"role": "user", "content": "hello"}],
+    "forwardedProps": {
+      "system_prompt": "You are a custom assistant with no default behavior.",
+      "system_prompt_mode": "replace"
+    }
+  },
+  "options": {},
+  "expect": {
+    "http_status": 200,
+    "request": {
+      "model_endpoint": null,
+      "model_overrides": null,
+      "system_prompt_override": {"text": "You are a custom assistant with no default behavior.", "mode": "replace"},
+      "tool_whitelist": null,
+      "passthrough_tools": null
+    },
+    "events_contain": ["RUN_STARTED", "RUN_FINISHED"],
+    "events_not_contain": ["RUN_ERROR"]
+  }
+}

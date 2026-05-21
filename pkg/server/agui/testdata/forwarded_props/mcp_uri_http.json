@@ -1,0 +1,20 @@
+{
+  "name": "mcp_uri_http_format",
+  "description": "MCP server specified as HTTPS URI string is parsed correctly",
+  "input": {
+    "threadId": "test-thread-10",
+    "runId": "test-run-10",
+    "messages": [{"role": "user", "content": "hello"}],
+    "forwardedProps": {
+      "mcp_servers": [
+        "https://mcp.example.com/tools?name=weather&timeout=30"
+      ]
+    }
+  },
+  "options": {},
+  "expect_mcp_parse": {
+    "servers": [
+      {"name": "weather", "type": "http", "url": "https://mcp.example.com/tools", "timeout": 30}
+    ]
+  }
+}

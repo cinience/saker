@@ -1,0 +1,33 @@
+{
+  "name": "model_uri_array_failover_chain",
+  "description": "Array of model_uri strings builds a failover chain; overrides from first URI only",
+  "input": {
+    "threadId": "test-thread-2",
+    "runId": "test-run-2",
+    "messages": [{"role": "user", "content": "hi"}],
+    "forwardedProps": {
+      "model_uri": [
+        "openai://sk-primary@api.openai.com/v1?model=gpt-4o&temperature=0.8&max_tokens=2048",
+        "anthropic://sk-fallback@api.anthropic.com?model=claude-sonnet-4-20250514",
+        "openai://sk-last@dashscope.aliyuncs.com/compatible-mode/v1?model=qwen-max"
+      ]
+    }
+  },
+  "options": {},
+  "expect": {
+    "http_status": 200,
+    "request": {
+      "model_endpoint": [
+        {"provider": "openai", "model": "gpt-4o", "apiKey": "sk-primary", "baseUrl": "https://api.openai.com/v1"},
+        {"provider": "anthropic", "model": "claude-sonnet-4-20250514", "apiKey": "sk-fallback", "baseUrl": "https://api.anthropic.com"},
+        {"provider": "openai", "model": "qwen-max", "apiKey": "sk-last", "baseUrl": "https://dashscope.aliyuncs.com/compatible-mode/v1"}
+      ],
+      "model_overrides": {"temperature": 0.8, "max_tokens": 2048},
+      "system_prompt_override": null,
+      "tool_whitelist": null,
+      "passthrough_tools": null
+    },
+    "events_contain": ["RUN_STARTED", "RUN_FINISHED"],
+    "events_not_contain": ["RUN_ERROR"]
+  }
+}

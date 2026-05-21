@@ -1,0 +1,26 @@
+{
+  "name": "mcp_mixed_uri_and_object",
+  "description": "mcp_servers array can mix URI strings and JSON objects",
+  "input": {
+    "threadId": "test-thread-13",
+    "runId": "test-run-13",
+    "messages": [{"role": "user", "content": "hello"}],
+    "forwardedProps": {
+      "mcp_servers": [
+        "https://mcp.example.com/tools?name=weather&timeout=10",
+        {
+          "name": "local-db",
+          "type": "http",
+          "url": "https://mcp.internal/sqlite"
+        }
+      ]
+    }
+  },
+  "options": {},
+  "expect_mcp_parse": {
+    "servers": [
+      {"name": "weather", "type": "http", "url": "https://mcp.example.com/tools", "timeout": 10},
+      {"name": "local-db", "type": "http", "url": "https://mcp.internal/sqlite"}
+    ]
+  }
+}

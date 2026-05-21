@@ -124,9 +124,13 @@ func extractArtifacts(toolName string, output interface{}) []Artifact {
 
 		// 3b: local file paths (absolute or relative).
 		for _, filePath := range detectMediaPaths(out) {
-			url := "/api/files/" + filePath.path
-			if strings.HasPrefix(filePath.path, "/") {
+			var url string
+			if strings.HasPrefix(filePath.path, "/media/") {
+				url = filePath.path
+			} else if strings.HasPrefix(filePath.path, "/") {
 				url = "/api/files" + filePath.path
+			} else {
+				url = "/api/files/" + filePath.path
 			}
 			if seen[url] {
 				continue
