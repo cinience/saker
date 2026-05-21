@@ -4,14 +4,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"sort"
 	"time"
 )
 
 // Baseline stores historical evaluation metrics for regression detection.
 type Baseline struct {
-	Version     string                  `json:"version"`
-	Model       string                  `json:"model"`
-	CollectedAt time.Time               `json:"collected_at"`
+	Version     string                   `json:"version"`
+	Model       string                   `json:"model"`
+	CollectedAt time.Time                `json:"collected_at"`
 	Suites      map[string]SuiteBaseline `json:"suites"`
 }
 
@@ -19,6 +20,7 @@ type Baseline struct {
 type SuiteBaseline struct {
 	PassRate  float64 `json:"pass_rate"`
 	AvgScore  float64 `json:"avg_score"`
+	P10Score  float64 `json:"p10_score"`
 	CaseCount int     `json:"case_count"`
 }
 
@@ -64,8 +66,27 @@ func SaveBaseline(path string, b *Baseline) error {
 	return os.WriteFile(path, data, 0644)
 }
 
+// CollectBaseline generates a Baseline from an EvalReport.
+func CollectBaseline(report *EvalReport, modelName string) *Baseline {
+	b := &Baseline{
+		Version:     "1",
+		Model:       modelName,
+		CollectedAt: time.Now().UTC(),
+		Suites:      make(map[string]SuiteBaseline),
+	}
+	for i := range report.Suites {
+		suite := &report.Suites[i]
+		b.Suites[suite.Name] = SuiteBaseline{
+			PassRate:  suite.PassRate(),
+			AvgScore:  suite.AvgScore(),
+			P10Score:  computeP10(suite.Results),
+			CaseCount: len(suite.Results),
+		}
+	}
+	return b
+}
+
 // RegressionCheck compares current evaluation results against a baseline.
-// Returns alerts sorted by severity (BLOCK first).
 func RegressionCheck(report *EvalReport, baseline *Baseline) []RegressionAlert {
 	var alerts []RegressionAlert
 
@@ -111,23 +132,20 @@ func RegressionCheck(report *EvalReport, baseline *Baseline) []RegressionAlert {
 			}
 		}
 
-		// Rule 3: P10 drop > 15% => INFO (requires at least 5 results)
-		if len(suite.Results) >= 5 {
-			p10 := percentile(suite.Results, 10)
-			baselineP10 := bl.AvgScore * 0.7 // approximate P10 as 70% of avg
-			if baselineP10 > 0 {
-				delta := (baselineP10 - p10) / baselineP10
-				if delta > 0.15 {
-					alerts = append(alerts, RegressionAlert{
-						Level:    RegressionInfo,
-						Suite:    suite.Name,
-						Metric:   "p10_score",
-						Baseline: baselineP10,
-						Current:  p10,
-						Delta:    -delta,
-						Message:  fmt.Sprintf("[INFO] %s P10 score dropped %.1f%%", suite.Name, delta*100),
-					})
-				}
+		// Rule 3: P10 drop > 15% => INFO
+		if bl.P10Score > 0 && len(suite.Results) >= 5 {
+			p10 := computeP10(suite.Results)
+			delta := (bl.P10Score - p10) / bl.P10Score
+			if delta > 0.15 {
+				alerts = append(alerts, RegressionAlert{
+					Level:    RegressionInfo,
+					Suite:    suite.Name,
+					Metric:   "p10_score",
+					Baseline: bl.P10Score,
+					Current:  p10,
+					Delta:    -delta,
+					Message:  fmt.Sprintf("[INFO] %s P10 score dropped %.1f%% (%.2f -> %.2f)", suite.Name, delta*100, bl.P10Score, p10),
+				})
 			}
 		}
 	}
@@ -135,7 +153,7 @@ func RegressionCheck(report *EvalReport, baseline *Baseline) []RegressionAlert {
 	return alerts
 }
 
-func percentile(results []EvalResult, p int) float64 {
+func computeP10(results []EvalResult) float64 {
 	if len(results) == 0 {
 		return 0
 	}
@@ -143,15 +161,8 @@ func percentile(results []EvalResult, p int) float64 {
 	for i, r := range results {
 		scores[i] = r.Score
 	}
-	// Simple sort for percentile
-	for i := range scores {
-		for j := i + 1; j < len(scores); j++ {
-			if scores[j] < scores[i] {
-				scores[i], scores[j] = scores[j], scores[i]
-			}
-		}
-	}
-	idx := len(scores) * p / 100
+	sort.Float64s(scores)
+	idx := len(scores) * 10 / 100
 	if idx >= len(scores) {
 		idx = len(scores) - 1
 	}

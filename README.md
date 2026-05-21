@@ -101,7 +101,7 @@ make web-editor-dev               # editor dev server
 |---|---|
 | Core loop | Iteration cap, deadline, classified `StopReason` (`completed` / `max_iterations` / `max_budget` / `max_tokens` / `repeat_loop` / aborted variants / `model_error` / `tool_passthrough`) |
 | Budget guard | Aborts on cumulative cost or token ceiling |
-| Loop detection | Halts on identical repeated tool calls; optional self-correction |
+| Loop detection | Two-tier: identical-params threshold (default 5) and same-tool hard threshold (default 30). High-frequency tools (`bash`, `read`, `edit`, `grep`, etc.) are exempt from the same-tool threshold. Configurable via `SameToolExempt` map. Optional self-correction hook fires before abort. |
 | SSE streaming | Anthropic-compatible SSE with agent-specific event extensions |
 | Session history | In-memory ring buffer (default 1000 turns, configurable); PreloadHistory for worker failover |
 | Context compaction | `compact` and `microcompact` strategies, prompt summarisation, history trimming |

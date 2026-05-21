@@ -30,9 +30,28 @@ const DefaultRepeatLoopThreshold = 5
 
 const (
 	DefaultSameToolSoftThreshold = 10
-	DefaultSameToolHardThreshold = 15
+	DefaultSameToolHardThreshold = 30
 	DefaultToolResultMaxChars    = 30_000
 )
+
+// DefaultSameToolExempt lists tools that naturally run in long consecutive
+// sequences (file I/O, shell commands, search). These are excluded from
+// SameToolHardThreshold — only the identical-params RepeatLoopThreshold
+// applies to them.
+var DefaultSameToolExempt = map[string]bool{
+	"bash":              true,
+	"read":              true,
+	"write":            true,
+	"edit":              true,
+	"grep":              true,
+	"glob":              true,
+	"web_search":        true,
+	"web_fetch":         true,
+	"spawn_agent":       true,
+	"spawn_agents_batch": true,
+	"wait_agent":        true,
+	"image_read":        true,
+}
 
 var DefaultSubagentDisallowedTools = map[string]bool{
 	"agent":             true,
@@ -69,6 +88,10 @@ type Options struct {
 	OnRepeatWarning       RepeatWarningHook
 	SameToolSoftThreshold int
 	SameToolHardThreshold int
+	// SameToolExempt lists tool names excluded from SameToolHardThreshold.
+	// These tools naturally run in long consecutive sequences. Nil applies
+	// DefaultSameToolExempt.
+	SameToolExempt map[string]bool
 	ToolResultMaxChars    int
 	ToolResultOutputDir   string
 	// MaxBudgetUSD aborts Run when the cumulative estimated cost reaches
@@ -105,6 +128,9 @@ func (o Options) withDefaults() Options {
 	}
 	if o.SameToolHardThreshold == 0 {
 		o.SameToolHardThreshold = DefaultSameToolHardThreshold
+	}
+	if o.SameToolExempt == nil {
+		o.SameToolExempt = DefaultSameToolExempt
 	}
 	if o.ToolResultMaxChars == 0 {
 		o.ToolResultMaxChars = DefaultToolResultMaxChars

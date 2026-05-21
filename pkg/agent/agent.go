@@ -327,11 +327,13 @@ func (a *Agent) Run(ctx context.Context, c *Context) (*ModelOutput, error) {
 		}
 		if a.opts.SameToolHardThreshold > 0 {
 			count := sameToolRepeatCount(recentCalls)
-			if count >= a.opts.SameToolHardThreshold {
+			lastToolName := recentCalls[len(recentCalls)-1].name
+			exempt := a.opts.SameToolExempt[lastToolName]
+			if !exempt && count >= a.opts.SameToolHardThreshold {
 				annotate(last, StopReasonRepeatLoop)
 				return last, fmt.Errorf("agent: detected repeated tool call loop (same tool called %d+ times with varying parameters)", a.opts.SameToolHardThreshold)
 			}
-			if a.opts.SameToolSoftThreshold > 0 && count >= a.opts.SameToolSoftThreshold && a.opts.OnRepeatWarning != nil {
+			if !exempt && a.opts.SameToolSoftThreshold > 0 && count >= a.opts.SameToolSoftThreshold && a.opts.OnRepeatWarning != nil {
 				sig := recentCalls[len(recentCalls)-1]
 				if !sameToolWarned[sig.name] {
 					sameToolWarned[sig.name] = true

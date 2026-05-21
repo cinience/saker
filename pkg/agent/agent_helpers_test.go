@@ -307,6 +307,7 @@ func TestAgent_SameToolSoftThresholdWarning(t *testing.T) {
 	ag, err := New(mdl, tools, Options{
 		SameToolSoftThreshold: 3,
 		SameToolHardThreshold: 6,
+		SameToolExempt:        map[string]bool{},
 		OnRepeatWarning:       hook,
 		MaxIterations:         20,
 	})

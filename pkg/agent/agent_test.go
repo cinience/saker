@@ -488,7 +488,7 @@ func TestAgent_RepeatLoopThresholdAbortsAtConfiguredCount(t *testing.T) {
 func TestAgent_SameToolDifferentInputAbortsAtHardThreshold(t *testing.T) {
 	model := &incrementingToolModel{name: "read"}
 	tools := &stubTools{}
-	ag, err := New(model, tools, Options{SameToolHardThreshold: 4, MaxIterations: 20})
+	ag, err := New(model, tools, Options{SameToolHardThreshold: 4, SameToolExempt: map[string]bool{}, MaxIterations: 20})
 	if err != nil {
 		t.Fatalf("new: %v", err)
 	}
