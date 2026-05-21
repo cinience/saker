@@ -266,7 +266,6 @@ func (s *runSession) emitArtifacts(ctx context.Context, w io.Writer, sseW sseWri
 				state.artifacts[artifactIdx] = cached
 			}
 			s.mu.Unlock()
-			s.gateway.storeArtifacts(s.threadID, state.artifacts)
 
 			// Notify attached client of URL update.
 			patch := []aguievents.JSONPatchOperation{

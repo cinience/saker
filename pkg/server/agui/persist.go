@@ -3,7 +3,6 @@ package agui
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"strings"
 
 	"github.com/saker-ai/saker/pkg/conversation"
@@ -72,25 +71,7 @@ func (g *Gateway) persistAssistantWithArtifacts(ctx context.Context, threadID, t
 		projectID = "default"
 	}
 
-	// Append artifact HTML so MESSAGES_SNAPSHOT includes media on reload.
-	var fullText string
-	if len(arts) > 0 {
-		var b strings.Builder
-		b.WriteString(text)
-		for _, a := range arts {
-			switch a.Type {
-			case "video":
-				b.WriteString(fmt.Sprintf("\n\n<video src=\"%s\" controls style=\"max-width:100%%;border-radius:8px\"></video>\n\n", a.URL))
-			case "audio":
-				b.WriteString(fmt.Sprintf("\n\n<audio src=\"%s\" controls></audio>\n\n", a.URL))
-			default:
-				b.WriteString(fmt.Sprintf("\n\n<img src=\"%s\" alt=\"%s\" style=\"max-width:100%%;border-radius:8px\" />\n\n", a.URL, a.Name))
-			}
-		}
-		fullText = b.String()
-	} else {
-		fullText = text
-	}
+	fullText := text
 
 	if strings.TrimSpace(fullText) == "" {
 		return

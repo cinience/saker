@@ -39,13 +39,25 @@ Saker fuses three things that creative teams usually run as separate stacks &mda
 |---|---|---|
 | Creative pipeline scattered across tools | Separate backends for prompting, generation, and editing | One binary that embeds the workspace, editor, runtime, and gateways |
 | Sandbox is either insecure or impractical | Docker-only or host-only | Five backends &mdash; host, Landlock, gVisor, Docker, govm &mdash; selected per host |
-| Vendor lock-in for models and tools | One provider, one tool table | Multi-provider with failover and routing; 33 builtin tools, MCP servers, remote tools |
+| Vendor lock-in for models and tools | One provider, one tool table | Multi-provider with failover and routing; 37 builtin tools, MCP servers, remote tools |
 | Hard to deploy multi-tenant on a server | Local CLI only | Built-in OAuth/LDAP/Bearer auth, CSRF, CORS, SSRF guards, path-traversal hardening, per-project scopes |
 | Observability bolted on later | Wire OTel after the fact | Prometheus metrics, structured slog, OTel spans, request IDs through the stack out of the box |
 
 ## Quick start
 
-### Prerequisites
+### Install
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/saker-ai/saker/main/install.sh | bash
+```
+
+Or install via npm:
+
+```bash
+npm install -g @anthropic-ai/saker
+```
+
+### Prerequisites (build from source)
 
 - Go 1.26 or newer
 - Node.js 22 or newer
@@ -87,14 +99,14 @@ make web-editor-dev               # editor dev server
 
 | Capability | Notes |
 |---|---|
-| Core loop | Iteration cap, deadline, classified `StopReason` (`completed` / `max_iterations` / `max_budget` / `max_tokens` / `repeat_loop` / aborted variants / `model_error`) |
+| Core loop | Iteration cap, deadline, classified `StopReason` (`completed` / `max_iterations` / `max_budget` / `max_tokens` / `repeat_loop` / aborted variants / `model_error` / `tool_passthrough`) |
 | Budget guard | Aborts on cumulative cost or token ceiling |
 | Loop detection | Halts on identical repeated tool calls; optional self-correction |
 | SSE streaming | Anthropic-compatible SSE with agent-specific event extensions |
-| Session history | In-memory ring buffer (default 1000 turns, configurable) |
+| Session history | In-memory ring buffer (default 1000 turns, configurable); PreloadHistory for worker failover |
 | Context compaction | `compact` and `microcompact` strategies, prompt summarisation, history trimming |
 | Profiles | Named profiles isolate settings, memory, and history |
-| Subagents | Forked sub-runtimes with optional git worktree, transcript streamed back |
+| Subagents | Fork sub-runtimes with depth control, mailbox messaging, tool split, and batch jobs; optional git worktree; transcript streamed back |
 | Checkpoints | Resumable session/run state via memory or file backend |
 
 ### Models
@@ -103,13 +115,15 @@ Backed by [Bifrost](https://github.com/maximhq/bifrost) (`pkg/model/bifrost_adap
 
 | Capability | Notes |
 |---|---|
-| Providers | 23+ via Bifrost: Anthropic, OpenAI, AWS Bedrock, Google Vertex, Azure OpenAI, Ollama, Cohere, Mistral, Groq, Gemini, XAI, DashScope (via OpenAI-compatible), Cerebras, Fireworks, OpenRouter, HuggingFace, Replicate, … |
+| Wire-level providers | 6 adapters: Anthropic, OpenAI, Ollama, AWS Bedrock, Google Vertex, Azure OpenAI |
+| OpenAI-compatible vendors | Any `/v1`-compatible endpoint &mdash; DashScope (Qwen), DeepSeek, Moonshot, Zhipu, MiniMax, Together, Groq, Cerebras, Fireworks, OpenRouter, vLLM, … |
+| China model catalog | 32 models from 6 vendors (Alibaba/DashScope, DeepSeek, MiniMax, Moonshot, Volcengine, Zhipu) with region-aware pricing |
 | Auth | API key, AWS IAM (Bedrock), GCP service account or IAM role (Vertex), Azure API key or client_secret/tenant (Azure) |
-| Failover | Bifrost SDK-level `Fallbacks` cross-provider routing; observer plugin emits per-request switch events |
+| Failover | Bifrost SDK-level `Fallbacks` cross-provider routing; multi-key pool with weighted routing; observer plugin emits per-request switch events |
 | Prompt caching | System and recent-message ephemeral cache_control on Anthropic / Bedrock-Anthropic |
 | Observability | Optional `ObservationSink` plugin captures per-request provider/model/usage/duration; OTel span attrs include cache & total tokens |
 
-### Tools (33 builtin + memory + MCP)
+### Tools (37 builtin + memory + MCP)
 
 <details>
 <summary>Expand to see the registered builtin tools</summary>
@@ -118,7 +132,8 @@ Backed by [Bifrost](https://github.com/maximhq/bifrost) (`pkg/model/bifrost_adap
 |---|---|
 | `core_io` | `bash`, `file_read`, `file_write`, `file_edit`, `grep`, `glob` |
 | `bash_mgmt` | `bash_output`, `bash_status`, `kill_task` |
-| `task_mgmt` | `task` (subagent spawn), `task_create`, `task_list`, `task_get`, `task_update` |
+| `task_mgmt` | `task_create`, `task_list`, `task_get`, `task_update` |
+| `agent_mgmt` | `spawn_agent`, `send_input`, `wait_agent`, `close_agent`, `spawn_agents_batch` |
 | `web` | `web_fetch`, `web_search` |
 | `media` | `image_read`, `video_sampler`, `stream_capture`, `stream_monitor`, `frame_analyzer`, `video_summarizer`, `analyze_video`, `media_index`, `media_search` |
 | `interaction` | `ask_user_question`, `skill`, `slash_command` |
@@ -130,9 +145,9 @@ Each runtime mode selects a curated subset via **mode presets**:
 
 | Preset | Groups | Use case |
 |---|---|---|
-| `cli` | core_io, bash_mgmt, task_mgmt, web, media, interaction | Interactive terminal / TUI |
-| `server_web` | core_io, bash_mgmt, task_mgmt, web, media, canvas, browser | Web workspace with UI |
-| `server_api` | core_io, bash_mgmt, task_mgmt, web, media, interaction | API-only backend (no canvas/browser) |
+| `cli` | core_io, bash_mgmt, task_mgmt, agent_mgmt, web, media, interaction | Interactive terminal / TUI |
+| `server_web` | core_io, bash_mgmt, task_mgmt, agent_mgmt, web, media, interaction, canvas, browser | Web workspace with UI |
+| `server_api` | core_io, bash_mgmt, task_mgmt, agent_mgmt, web, media, interaction | API-only backend (no canvas/browser) |
 | `ci` | core_io, bash_mgmt | CI pipelines (minimal) |
 
 Override with `Options.ModePreset` or `--api-only` flag. Further filter with `Options.EnabledBuiltinTools` (whitelist) or `Options.DisallowedTools` (blacklist). MCP and remote tools register on top of the preset.
@@ -140,6 +155,16 @@ Override with `Options.ModePreset` or `--api-only` flag. Further filter with `Op
 Source of truth: `pkg/api/tool_groups.go`, `pkg/api/runtime_tools_register.go`.
 
 </details>
+
+### MCP (Model Context Protocol)
+
+| Capability | Notes |
+|---|---|
+| Transports | stdio, SSE, streamable HTTP, in-memory |
+| Dynamic MCP | Per-session client-forwarded MCP servers via AG-UI; cross-turn cache with TTL |
+| Session registry | Per-server granularity, security limits, instruction injection |
+| Resilience | Retry/backoff, cache cleanup, conflict resolution, metrics |
+| OSV checking | Vulnerability scanning for MCP server dependencies |
 
 ### Sandbox & security
 
@@ -155,8 +180,8 @@ Source of truth: `pkg/api/tool_groups.go`, `pkg/api/runtime_tools_register.go`.
 ### Canvas & media
 
 - DAG document with typed nodes and edges (flow / reference / context)
-- 40+ node types (Agent, AI, Audio, Composition, Export, ImageGen, LLM, Mask, Prompt, VideoGen, VoiceGen, …)
-- Topological executor that dispatches generation nodes back into the agent runtime
+- 22 node types &mdash; prompt, agent, tool, skill, image, video, audio, text, composition, imageGen, voiceGen, videoGen, textGen, aiTypo, sketch, group, llm, mask, reference, export, table, appInput/appOutput
+- 4 executable generation nodes (imageGen, videoGen, voiceGen, textGen) dispatched back into the agent runtime
 - Media index with keyframes and `chromem-go` vector embeddings; full-text and semantic search
 - Audio transcription, video summarisation, and frame-level analysis pipelines
 
@@ -208,8 +233,44 @@ Saker implements the [AG-UI Protocol](https://docs.ag-ui.com) — an open standa
 | Human-in-the-loop (tool-call based interrupts) | Supported |
 | Thread management (list, create, update, delete, archive) | Supported |
 | CopilotKit v2 envelope transport | Supported |
+| Dynamic MCP server forwarding | Supported |
+| Event ring buffer (reconnect replay with SSE IDs) | Supported |
+| Rate limiting, backpressure & load shedding | Supported |
 
 Protocol compliance is enforced by the test suite (`pkg/server/agui/*_test.go`). See [.docs/agui-protocol-api.md](.docs/agui-protocol-api.md) for implementation details.
+
+### OpenAI-compatible gateway
+
+Saker exposes an OpenAI-compatible `/v1/chat/completions` endpoint so existing OpenAI SDK clients can connect without changes.
+
+```bash
+./bin/saker --server --openai-gw-enabled
+```
+
+Features: streaming & non-streaming completions, per-tenant rate limiting, Bearer-key isolation, run hub with in-memory or persistent (SQLite/Postgres) event store, circuit breaker, and reconnect replay via event ring buffer.
+
+### Synapse hub
+
+Saker instances can register with a central **Synapse** control plane over gRPC, enabling distributed worker orchestration.
+
+```bash
+./bin/saker --server \
+  --synapse-hub-addr hub.example.com:443 \
+  --synapse-auth-token "<token>" \
+  --synapse-models "claude-sonnet-4-5-20250929"
+```
+
+Features: automatic registration with heartbeat, sandbox-aware routing, model advertisement, label-based scheduling, and configurable concurrency limits.
+
+### ACP (Agent Communication Protocol)
+
+Saker can act as an [ACP](https://github.com/coder/acp) agent over stdio, enabling interoperability with ACP-aware hosts (e.g. Claude Code, Coder).
+
+```bash
+./bin/saker --acp
+```
+
+Features: bidirectional tool forwarding, permission management, mode-based policy enforcement, MCP integration within ACP sessions, and conversation history conversion.
 
 ## Architecture
 
@@ -234,15 +295,17 @@ For per-package roles see [docs/architecture.md](docs/architecture.md).
 saker/
 ├── cmd/                  # CLI dispatcher (cmd/saker) and Wails desktop (cmd/desktop)
 ├── pkg/                  # Go runtime: api, agent, model, tool, runtime, server, sandbox, security,
-│                         # canvas, pipeline, media, artifact, sessiondb, memory, persona, project,
-│                         # storage, config, middleware, metrics, clikit, mcp, acp, im, skillhub …
-├── web/                  # Next.js 16 web workspace (saker-web)
+│                         # canvas, pipeline, media, artifact, conversation, memory, persona, project,
+│                         # storage, config, middleware, metrics, clikit, mcp, acp, im, skillhub,
+│                         # synapse, runhub, core, eval, profile, prompts, provider, apps …
+├── web/                  # Vite + React 19 web workspace (saker-web)
 ├── web-editor-next/      # Browser video editor derived from OpenCut (saker-web-editor)
-├── packages/             # Shared TS workspace packages (editor-protocol)
-├── examples/             # 20 numbered examples (01-basic … 20-realtime-video)
+├── packages/             # Shared TS workspace packages (editor-protocol, platform binaries)
+├── examples/             # 21 numbered examples (01-basic … 21-openai-gateway)
 ├── test/                 # Integration, pipeline, runtime, security suites
 ├── e2e/                  # Docker-based end-to-end suites
-├── eval/                 # Eval framework (offline + LLM + Terminal-Bench)
+├── eval/                 # Eval framework (offline + LLM + Terminal-Bench 2)
+├── proto/                # Protobuf / gRPC definitions (synapse hub service)
 ├── docs/                 # Documentation, ADRs, diagrams (mermaid + rendered SVG)
 ├── bench/                # Benchmark baselines
 └── scripts/              # Repo maintenance scripts
@@ -261,6 +324,7 @@ saker/
 | [Observability](docs/observability.md) | Metrics, logs, OTel |
 | [Testing](docs/testing.md) | Test taxonomy and harness |
 | [API reference](docs/api-reference.md) | REST / WS / SSE surface |
+| [AG-UI dynamic MCP](docs/en/agui-mcp.md) | Dynamic MCP server integration |
 | [ADRs](docs/adr/) | Architecture decision records |
 | [Security policy](SECURITY.md) | Reporting vulnerabilities |
 | [Third-party notices](docs/third-party-notices.md) | Dependency licenses |

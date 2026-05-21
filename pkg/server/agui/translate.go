@@ -367,29 +367,6 @@ func (s *streamState) finalize(ctx context.Context, w io.Writer, sseW sseWriter,
 			return err
 		}
 	}
-	if len(s.artifacts) > 0 {
-		if !s.textStarted {
-			s.textStarted = true
-			s.textMsgSeq++
-			if err := s.writeEvent(ctx, w, sseW, aguievents.NewTextMessageStartEvent(s.currentTextMsgID(), aguievents.WithRole("assistant"))); err != nil {
-				return err
-			}
-		}
-		for _, a := range s.artifacts {
-			var html string
-			switch a.Type {
-			case "video":
-				html = fmt.Sprintf("\n\n<video src=\"%s\" controls style=\"max-width:100%%;border-radius:8px\"></video>\n\n", a.URL)
-			case "audio":
-				html = fmt.Sprintf("\n\n<audio src=\"%s\" controls></audio>\n\n", a.URL)
-			default:
-				html = fmt.Sprintf("\n\n<img src=\"%s\" alt=\"%s\" style=\"max-width:100%%;border-radius:8px\" />\n\n", a.URL, a.Name)
-			}
-			if err := s.writeEvent(ctx, w, sseW, aguievents.NewTextMessageContentEvent(s.currentTextMsgID(), html)); err != nil {
-				return err
-			}
-		}
-	}
 	if s.textStarted {
 		if err := s.writeEvent(ctx, w, sseW, aguievents.NewTextMessageEndEvent(s.currentTextMsgID())); err != nil {
 			return err
