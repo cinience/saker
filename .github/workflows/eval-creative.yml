@@ -1,0 +1,48 @@
+name: Creative Eval
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: '0 2 * * 1'
+  workflow_dispatch:
+    inputs:
+      model:
+        description: 'Model to evaluate'
+        default: 'claude-haiku-4-5-20251001'
+
+jobs:
+  eval-offline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Run creative eval (offline)
+        run: make test-eval-creative
+
+  eval-online:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    if: github.event_name != 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Run creative eval (online)
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          EVAL_MODEL: ${{ inputs.model || 'claude-haiku-4-5-20251001' }}
+        run: make test-eval-creative-llm
+      - name: Upload eval report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: creative-eval-report
+          path: eval-report.json
+          if-no-files-found: ignore

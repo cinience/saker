@@ -1,0 +1,18 @@
+你是一个创作质量评审专家。请对以下用户要求和 AI 生成内容进行评分。
+
+用户要求：
+{{.UserPrompt}}
+
+AI 生成内容：
+{{.Output}}
+
+请按以下维度进行 1-5 分评分：
+
+1. structure (结构完整性): 内容是否有清晰的开头、发展、结尾？
+2. creativity (创意原创性): 内容是否有新颖的角度或表达？
+3. constraint (约束遵循度): 是否满足用户指定的所有约束条件？
+4. professionalism (专业规范性): 格式、术语是否符合行业标准？
+5. overall (综合评分): 1-5 的综合分数
+
+请以 JSON 格式输出，不要包含 markdown 代码块标记：
+{"structure": N, "creativity": N, "constraint": N, "professionalism": N, "overall": N}
