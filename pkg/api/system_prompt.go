@@ -267,6 +267,9 @@ func sectionCreativeTools(toolNames []string) string {
 	if has3D {
 		sb.WriteString("\n - For 3D generation, provide exactly one input: a text prompt, a single image URL, or multiple view images.")
 	}
+	if toolSet["ask_user_question"] {
+		sb.WriteString("\n - Before generating creative content, if the user's request is ambiguous or allows multiple styles/options, use the ask_user_question tool to present choices. Do NOT list options as plain text.")
+	}
 	sb.WriteString("\n - Present generated media URLs to the user. Do NOT fabricate or guess URLs — only use URLs returned by the tools.")
 
 	return sb.String()
