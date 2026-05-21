@@ -134,17 +134,7 @@ func (g *Gateway) handleNewRun(c *gin.Context, input aguitypes.RunAgentInput, ru
 	if projectID == "" {
 		projectID = "default"
 	}
-
-	g.ensureThread(c.Request.Context(), threadID, identity)
-
 	turnID := runID
-	if g.deps.ConversationStore != nil {
-		if tid, err := g.deps.ConversationStore.OpenTurn(c.Request.Context(), threadID, ""); err == nil {
-			turnID = tid
-		}
-	}
-
-	g.persistUserMessage(c.Request.Context(), threadID, turnID, projectID, sakerReq.Prompt)
 
 	if span := trace.SpanFromContext(c.Request.Context()); span.IsRecording() {
 		span.SetAttributes(

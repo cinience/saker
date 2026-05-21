@@ -169,9 +169,10 @@ func sectionUsingTools(toolNames []string) string {
    - Choosing between multiple valid implementation approaches
    - Confirming before destructive or irreversible actions
    - Gathering specific requirements that cannot be reasonably inferred
+   - Clarifying user intent when the request is vague and fulfilling it requires resource-intensive operations (e.g. media generation, long-running tasks)
    - Offering follow-up options after completing a creative task (e.g. style variations)
    When you DO need user input from one of these cases, you MUST call the ask_user_question tool — never present choices as plain text bullets or numbered lists. The tool provides a better interactive experience.
-   NEVER use this tool for greetings, simple questions, or when you can provide a helpful direct answer. Always prefer responding directly unless the task truly requires a structured choice from the user.`)
+   NEVER use this tool for greetings or simple informational questions.`)
 	}
 
 	return sb.String()

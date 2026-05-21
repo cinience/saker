@@ -168,6 +168,12 @@ type Options struct {
 
 	Sandbox SandboxOptions
 
+	// OnPersist is called synchronously after messages are persisted to the
+	// conversation store. The callback receives the session ID and the newly
+	// written messages. Use this to keep external caches (e.g. SessionStore)
+	// in sync with Runtime-owned persistence. Nil means no callback.
+	OnPersist PersistCallback
+
 	// TokenTracking enables token usage statistics collection.
 	// When true, the runtime tracks input/output tokens per session and model.
 	TokenTracking bool

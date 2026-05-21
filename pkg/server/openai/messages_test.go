@@ -60,8 +60,8 @@ func TestMessagesToRequest_SimpleUser(t *testing.T) {
 	if got.Prompt != "Hello, saker." {
 		t.Errorf("Prompt = %q, want %q", got.Prompt, "Hello, saker.")
 	}
-	if !got.Ephemeral {
-		t.Error("Ephemeral must be true to prevent saker from double-writing history")
+	if got.Ephemeral {
+		t.Error("Ephemeral should be false — Runtime owns persistence")
 	}
 	if got.Model != api.ModelTierMid {
 		t.Errorf("Model = %q, want %q", got.Model, api.ModelTierMid)

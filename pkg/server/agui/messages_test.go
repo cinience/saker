@@ -21,8 +21,8 @@ func TestMessagesToRequest_SimpleUser(t *testing.T) {
 	if req.SessionID != "thread_1" {
 		t.Errorf("SessionID = %q, want thread_1", req.SessionID)
 	}
-	if !req.Ephemeral {
-		t.Error("Ephemeral should be true so AG-UI does not double-persist runtime history")
+	if req.Ephemeral {
+		t.Error("Ephemeral should be false — Runtime owns persistence")
 	}
 }
 
@@ -327,7 +327,7 @@ func TestMessagesToRequest_PreloadHistoryWithToolCalls(t *testing.T) {
 	}
 }
 
-func TestMessagesToRequest_PreloadTrimsLeadingAssistant(t *testing.T) {
+func TestMessagesToRequest_PreloadPreservesLeadingAssistant(t *testing.T) {
 	t.Parallel()
 	input := aguitypes.RunAgentInput{
 		ThreadID: "thread_trim",
@@ -340,12 +340,15 @@ func TestMessagesToRequest_PreloadTrimsLeadingAssistant(t *testing.T) {
 	if req.Prompt != "generate an image" {
 		t.Errorf("Prompt = %q, want %q", req.Prompt, "generate an image")
 	}
-	if len(req.PreloadHistory) != 0 {
-		t.Errorf("PreloadHistory should be empty after trimming leading assistant, got %d", len(req.PreloadHistory))
+	if len(req.PreloadHistory) != 1 {
+		t.Fatalf("PreloadHistory len = %d, want 1 (assistant preserved)", len(req.PreloadHistory))
+	}
+	if req.PreloadHistory[0].Role != "assistant" {
+		t.Errorf("PreloadHistory[0].Role = %q, want assistant", req.PreloadHistory[0].Role)
 	}
 }
 
-func TestMessagesToRequest_PreloadTrimsMultipleLeadingAssistant(t *testing.T) {
+func TestMessagesToRequest_PreloadPreservesMultipleLeadingAssistant(t *testing.T) {
 	t.Parallel()
 	input := aguitypes.RunAgentInput{
 		ThreadID: "thread_trim2",
@@ -361,14 +364,14 @@ func TestMessagesToRequest_PreloadTrimsMultipleLeadingAssistant(t *testing.T) {
 	if req.Prompt != "second question" {
 		t.Errorf("Prompt = %q, want %q", req.Prompt, "second question")
 	}
-	if len(req.PreloadHistory) != 2 {
-		t.Fatalf("PreloadHistory len = %d, want 2 (user+assistant after trim)", len(req.PreloadHistory))
+	if len(req.PreloadHistory) != 4 {
+		t.Fatalf("PreloadHistory len = %d, want 4 (all messages before last user)", len(req.PreloadHistory))
 	}
-	if req.PreloadHistory[0].Role != "user" || req.PreloadHistory[0].Content != "first question" {
-		t.Errorf("PreloadHistory[0] = %+v, want user/first question", req.PreloadHistory[0])
+	if req.PreloadHistory[0].Role != "assistant" || req.PreloadHistory[0].Content != "System init" {
+		t.Errorf("PreloadHistory[0] = %+v, want assistant/System init", req.PreloadHistory[0])
 	}
-	if req.PreloadHistory[1].Role != "assistant" || req.PreloadHistory[1].Content != "first answer" {
-		t.Errorf("PreloadHistory[1] = %+v, want assistant/first answer", req.PreloadHistory[1])
+	if req.PreloadHistory[3].Role != "assistant" || req.PreloadHistory[3].Content != "first answer" {
+		t.Errorf("PreloadHistory[3] = %+v, want assistant/first answer", req.PreloadHistory[3])
 	}
 }
 

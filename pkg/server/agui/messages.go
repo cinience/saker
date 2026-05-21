@@ -59,14 +59,18 @@ func messagesToRequest(input aguitypes.RunAgentInput, identity Identity) api.Req
 	var preload []message.Message
 	if lastUserIdx > 0 {
 		preload = aguiMessagesToHistory(input.Messages[:lastUserIdx])
-		preload = trimLeadingAssistant(preload)
+	}
+
+	projectID := identity.ProjectID
+	if projectID == "" {
+		projectID = "default"
 	}
 
 	req := api.Request{
 		Prompt:         prompt,
 		ContentBlocks:  contentBlocks,
 		SessionID:      input.ThreadID,
-		Ephemeral:      true,
+		ProjectID:      projectID,
 		PreloadHistory: preload,
 	}
 	if identity.Username != "" {
@@ -89,17 +93,15 @@ func messagesToRequest(input aguitypes.RunAgentInput, identity Identity) api.Req
 		req.ParentSessionID = *input.ParentRunID
 	}
 
-	// Forward state and props to metadata for downstream access.
-	meta := make(map[string]any)
+	// Forward state, props, and persist identity to metadata.
+	meta := map[string]any{"_persist_client": "agui"}
 	if input.ForwardedProps != nil {
 		meta["_agui_forwarded_props"] = input.ForwardedProps
 	}
 	if input.State != nil {
 		meta["_agui_state"] = input.State
 	}
-	if len(meta) > 0 {
-		req.Metadata = meta
-	}
+	req.Metadata = meta
 
 	return req
 }
@@ -199,16 +201,6 @@ func mimeToBlockType(mimeType string) model.ContentBlockType {
 	}
 }
 
-// trimLeadingAssistant removes leading assistant messages from preloaded
-// history that have no preceding user context. An orphaned assistant message
-// at the start biases the model into "continuation mode" and may cause it to
-// skip structured tool calls (e.g. ask_user_question).
-func trimLeadingAssistant(msgs []message.Message) []message.Message {
-	for len(msgs) > 0 && msgs[0].Role == "assistant" {
-		msgs = msgs[1:]
-	}
-	return msgs
-}
 
 // aguiMessagesToHistory converts AG-UI messages into saker message.Message
 // slice suitable for seeding runtime history (PreloadHistory). This enables

@@ -93,240 +93,245 @@ func (s *streamState) writeEvent(ctx context.Context, w io.Writer, sseW sseWrite
 func (s *streamState) translateEvent(ctx context.Context, w io.Writer, sseW sseWriter, evt api.StreamEvent, filter textFilter) ([]server.Artifact, error) {
 	switch evt.Type {
 	case api.EventReasoningDelta:
-		if evt.Delta == nil || evt.Delta.Text == "" {
-			return nil, nil
-		}
-		reasoningMsgID := "reasoning_" + s.msgID
-		if !s.reasoningBlockStarted {
-			s.reasoningBlockStarted = true
-			if err := s.writeEvent(ctx, w, sseW, aguievents.NewReasoningStartEvent(reasoningMsgID)); err != nil {
-				return nil, err
-			}
-		}
-		if !s.reasoningStarted {
-			s.reasoningStarted = true
-			if err := s.writeEvent(ctx, w, sseW, aguievents.NewReasoningMessageStartEvent(reasoningMsgID, "reasoning")); err != nil {
-				return nil, err
-			}
-		}
-		return nil, s.writeEvent(ctx, w, sseW, aguievents.NewReasoningMessageContentEvent(reasoningMsgID, evt.Delta.Text))
-
+		return s.translateReasoningDelta(ctx, w, sseW, evt)
 	case api.EventContentBlockDelta:
-		if evt.Delta == nil || evt.Delta.Text == "" {
-			return nil, nil
-		}
-		// Close reasoning phase when text content starts arriving.
-		if s.reasoningStarted && !s.textStarted {
-			reasoningMsgID := "reasoning_" + s.msgID
-			if err := s.writeEvent(ctx, w, sseW, aguievents.NewReasoningMessageEndEvent(reasoningMsgID)); err != nil {
-				return nil, err
-			}
-			if s.reasoningBlockStarted {
-				if err := s.writeEvent(ctx, w, sseW, aguievents.NewReasoningEndEvent(reasoningMsgID)); err != nil {
-					return nil, err
-				}
-			}
-		}
-		safe := filter.Push(evt.Delta.Text)
-		if safe == "" {
-			return nil, nil
-		}
-		if !s.textStarted {
-			s.textStarted = true
-			s.textMsgSeq++
-			if err := s.writeEvent(ctx, w, sseW, aguievents.NewTextMessageStartEvent(s.currentTextMsgID(), aguievents.WithRole("assistant"))); err != nil {
-				return nil, err
-			}
-		}
-		return nil, s.writeEvent(ctx, w, sseW, aguievents.NewTextMessageContentEvent(s.currentTextMsgID(), safe))
-
+		return s.translateContentDelta(ctx, w, sseW, evt, filter)
 	case api.EventToolExecutionStart:
-		if evt.Name == "ask_user_question" {
-			if evt.ToolUseID != "" {
-				s.suppressedToolCalls[evt.ToolUseID] = true
-			}
-			return nil, nil
-		}
-		// Close open text message before starting tool call — AG-UI requires
-		// TEXT_MESSAGE to be fully closed before TOOL_CALL events.
-		if s.textStarted {
-			if tail := filter.Flush(); tail != "" {
-				if err := s.writeEvent(ctx, w, sseW, aguievents.NewTextMessageContentEvent(s.currentTextMsgID(), tail)); err != nil {
-					return nil, err
-				}
-			}
-			if err := s.writeEvent(ctx, w, sseW, aguievents.NewTextMessageEndEvent(s.currentTextMsgID())); err != nil {
-				return nil, err
-			}
-			s.textStarted = false
-		} else if s.textMsgSeq == 0 {
-			// Tool call before any text content. Don't emit an empty
-			// TextMessageStart→End placeholder — CopilotKit finalizes empty
-			// messages in a way that prevents the same ID from being reopened
-			// when actual text arrives later. The parentMessageId on tool calls
-			// will reference msg_X which gets created on first text content.
-			s.textMsgSeq++
-		}
-		if s.lastToolID != "" {
-			if err := s.writeEvent(ctx, w, sseW, aguievents.NewToolCallEndEvent(s.lastToolID)); err != nil {
-				return nil, err
-			}
-		}
-		toolID := evt.ToolUseID
-		if toolID == "" {
-			toolID = fmt.Sprintf("tc_%s_%s", s.runID, evt.Name)
-		}
-		s.toolCalls[toolID] = true
-		s.toolNames[toolID] = evt.Name
-		s.lastToolID = toolID
-
-		// Emit ACTIVITY_SNAPSHOT for tool execution progress.
-		s.activeActivityID = "activity_" + toolID
-		activityContent := map[string]any{
-			"tool":   evt.Name,
-			"status": "running",
-		}
-		if err := s.writeEvent(ctx, w, sseW, aguievents.NewActivitySnapshotEvent(s.activeActivityID, "TOOL_EXECUTION", activityContent)); err != nil {
-			return nil, err
-		}
-
-		if err := s.writeEvent(ctx, w, sseW, aguievents.NewToolCallStartEvent(toolID, evt.Name, aguievents.WithParentMessageID(s.msgID))); err != nil {
-			return nil, err
-		}
-		args := inputToJSON(evt.Input)
-		if args != "" && args != "{}" {
-			return nil, s.writeEvent(ctx, w, sseW, aguievents.NewToolCallArgsEvent(toolID, args))
-		}
-		return nil, nil
-
+		return s.translateToolStart(ctx, w, sseW, evt, filter)
 	case api.EventToolExecutionResult:
-		toolID := evt.ToolUseID
-		if toolID == "" {
-			toolID = s.lastToolID
-		}
-		if toolID != "" && s.suppressedToolCalls[toolID] {
-			delete(s.suppressedToolCalls, toolID)
-			return nil, nil
-		}
-		// Emit ACTIVITY_DELTA to mark tool execution completed.
-		if s.activeActivityID != "" {
-			status := "completed"
-			if evt.IsError != nil && *evt.IsError {
-				status = "error"
-			}
-			patch := []aguievents.JSONPatchOperation{
-				{Op: "replace", Path: "/status", Value: status},
-			}
-			_ = s.writeEvent(ctx, w, sseW, aguievents.NewActivityDeltaEvent(s.activeActivityID, "TOOL_EXECUTION", patch))
-			s.activeActivityID = ""
-		}
-		// Resolve tool name for artifact extraction.
-		toolName := ""
-		if toolID != "" {
-			toolName = s.toolNames[toolID]
-		}
-		if toolName == "" {
-			toolName = evt.Name
-		}
-		// Extract artifacts from tool result (non-error only).
-		var newArtifacts []server.Artifact
-		if evt.IsError == nil || !*evt.IsError {
-			for _, a := range server.ExtractArtifacts(toolName, evt.Output) {
-				if !s.seenArtifactURLs[a.URL] {
-					s.seenArtifactURLs[a.URL] = true
-					newArtifacts = append(newArtifacts, a)
-				}
-			}
-		}
-		s.artifacts = append(s.artifacts, newArtifacts...)
-		// Emit TOOL_CALL_END.
-		if toolID != "" {
-			if err := s.writeEvent(ctx, w, sseW, aguievents.NewToolCallEndEvent(toolID)); err != nil {
-				return newArtifacts, err
-			}
-			if s.lastToolID == toolID {
-				s.lastToolID = ""
-			}
-			delete(s.toolCalls, toolID)
-			delete(s.toolNames, toolID)
-		}
-		// Emit TOOL_CALL_RESULT with formatted content.
-		content := server.FormatToolResult(toolName, evt.Output)
-		if content != "" && toolID != "" {
-			if err := s.writeEvent(ctx, w, sseW, aguievents.NewToolCallResultEvent(s.msgID, toolID, content)); err != nil {
-				return newArtifacts, err
-			}
-		}
-		return newArtifacts, nil
-
+		return s.translateToolResult(ctx, w, sseW, evt)
 	case api.EventIterationStart:
-		s.iterCount++
-		stepName := fmt.Sprintf("iteration_%d", s.iterCount)
-		if s.lastStep != "" {
-			if err := s.writeEvent(ctx, w, sseW, aguievents.NewStepFinishedEvent(s.lastStep)); err != nil {
-				return nil, err
-			}
-		}
-		s.lastStep = stepName
-		// Emit ACTIVITY_SNAPSHOT for iteration progress.
-		iterActivityID := fmt.Sprintf("activity_iter_%d_%s", s.iterCount, s.runID)
-		iterContent := map[string]any{
-			"step":      stepName,
-			"iteration": s.iterCount,
-			"status":    "running",
-		}
-		_ = s.writeEvent(ctx, w, sseW, aguievents.NewActivitySnapshotEvent(iterActivityID, "ITERATION", iterContent))
-		return nil, s.writeEvent(ctx, w, sseW, aguievents.NewStepStartedEvent(stepName))
-
+		return s.translateIterStart(ctx, w, sseW)
 	case api.EventIterationStop:
-		if s.lastStep != "" {
-			if err := s.writeEvent(ctx, w, sseW, aguievents.NewStepFinishedEvent(s.lastStep)); err != nil {
-				return nil, err
-			}
-			s.lastStep = ""
-		}
-		return nil, nil
-
+		return s.translateIterStop(ctx, w, sseW)
 	case api.EventError:
-		msg := "runtime error"
-		code := ""
-		if evt.Output != nil {
-			switch v := evt.Output.(type) {
-			case string:
-				if v != "" {
-					msg = v
-				}
-			case map[string]any:
-				if m, ok := v["message"].(string); ok && m != "" {
-					msg = m
-				}
-				if c, ok := v["code"].(string); ok && c != "" {
-					code = c
-				}
-			}
-		}
-		errorLabel := code
-		if errorLabel == "" {
-			errorLabel = "unknown"
-		}
-		aguiErrorsTotal.WithLabelValues(errorLabel).Inc()
-		opts := []aguievents.RunErrorOption{aguievents.WithRunID(s.runID)}
-		if code != "" {
-			opts = append(opts, aguievents.WithErrorCode(code))
-		}
-		s.errorSent = true
-		return nil, s.writeEvent(ctx, w, sseW, aguievents.NewRunErrorEvent(msg, opts...))
-
+		return s.translateError(ctx, w, sseW, evt)
 	case api.EventTimeline:
 		if evt.Timeline == nil {
 			return nil, nil
 		}
 		return nil, s.writeEvent(ctx, w, sseW, aguievents.NewCustomEvent("timeline", aguievents.WithValue(evt.Timeline)))
-
 	case api.EventSkillActivation:
 		return nil, s.writeEvent(ctx, w, sseW, aguievents.NewCustomEvent("skill_activation", aguievents.WithValue(map[string]any{"name": evt.Name})))
 	}
 	return nil, nil
+}
+
+func (s *streamState) translateReasoningDelta(ctx context.Context, w io.Writer, sseW sseWriter, evt api.StreamEvent) ([]server.Artifact, error) {
+	if evt.Delta == nil || evt.Delta.Text == "" {
+		return nil, nil
+	}
+	reasoningMsgID := "reasoning_" + s.msgID
+	if !s.reasoningBlockStarted {
+		s.reasoningBlockStarted = true
+		if err := s.writeEvent(ctx, w, sseW, aguievents.NewReasoningStartEvent(reasoningMsgID)); err != nil {
+			return nil, err
+		}
+	}
+	if !s.reasoningStarted {
+		s.reasoningStarted = true
+		if err := s.writeEvent(ctx, w, sseW, aguievents.NewReasoningMessageStartEvent(reasoningMsgID, "reasoning")); err != nil {
+			return nil, err
+		}
+	}
+	return nil, s.writeEvent(ctx, w, sseW, aguievents.NewReasoningMessageContentEvent(reasoningMsgID, evt.Delta.Text))
+}
+
+func (s *streamState) translateContentDelta(ctx context.Context, w io.Writer, sseW sseWriter, evt api.StreamEvent, filter textFilter) ([]server.Artifact, error) {
+	if evt.Delta == nil || evt.Delta.Text == "" {
+		return nil, nil
+	}
+	if s.reasoningStarted && !s.textStarted {
+		reasoningMsgID := "reasoning_" + s.msgID
+		if err := s.writeEvent(ctx, w, sseW, aguievents.NewReasoningMessageEndEvent(reasoningMsgID)); err != nil {
+			return nil, err
+		}
+		if s.reasoningBlockStarted {
+			if err := s.writeEvent(ctx, w, sseW, aguievents.NewReasoningEndEvent(reasoningMsgID)); err != nil {
+				return nil, err
+			}
+		}
+	}
+	safe := filter.Push(evt.Delta.Text)
+	if safe == "" {
+		return nil, nil
+	}
+	if !s.textStarted {
+		s.textStarted = true
+		s.textMsgSeq++
+		if err := s.writeEvent(ctx, w, sseW, aguievents.NewTextMessageStartEvent(s.currentTextMsgID(), aguievents.WithRole("assistant"))); err != nil {
+			return nil, err
+		}
+	}
+	return nil, s.writeEvent(ctx, w, sseW, aguievents.NewTextMessageContentEvent(s.currentTextMsgID(), safe))
+}
+
+func (s *streamState) translateToolStart(ctx context.Context, w io.Writer, sseW sseWriter, evt api.StreamEvent, filter textFilter) ([]server.Artifact, error) {
+	if evt.Name == "ask_user_question" {
+		if evt.ToolUseID != "" {
+			s.suppressedToolCalls[evt.ToolUseID] = true
+		}
+		return nil, nil
+	}
+	if s.textStarted {
+		if tail := filter.Flush(); tail != "" {
+			if err := s.writeEvent(ctx, w, sseW, aguievents.NewTextMessageContentEvent(s.currentTextMsgID(), tail)); err != nil {
+				return nil, err
+			}
+		}
+		if err := s.writeEvent(ctx, w, sseW, aguievents.NewTextMessageEndEvent(s.currentTextMsgID())); err != nil {
+			return nil, err
+		}
+		s.textStarted = false
+	} else if s.textMsgSeq == 0 {
+		s.textMsgSeq++
+	}
+	if s.lastToolID != "" {
+		if err := s.writeEvent(ctx, w, sseW, aguievents.NewToolCallEndEvent(s.lastToolID)); err != nil {
+			return nil, err
+		}
+	}
+	toolID := evt.ToolUseID
+	if toolID == "" {
+		toolID = fmt.Sprintf("tc_%s_%s", s.runID, evt.Name)
+	}
+	s.toolCalls[toolID] = true
+	s.toolNames[toolID] = evt.Name
+	s.lastToolID = toolID
+
+	s.activeActivityID = "activity_" + toolID
+	activityContent := map[string]any{
+		"tool":   evt.Name,
+		"status": "running",
+	}
+	if err := s.writeEvent(ctx, w, sseW, aguievents.NewActivitySnapshotEvent(s.activeActivityID, "TOOL_EXECUTION", activityContent)); err != nil {
+		return nil, err
+	}
+
+	if err := s.writeEvent(ctx, w, sseW, aguievents.NewToolCallStartEvent(toolID, evt.Name, aguievents.WithParentMessageID(s.msgID))); err != nil {
+		return nil, err
+	}
+	args := inputToJSON(evt.Input)
+	if args != "" && args != "{}" {
+		return nil, s.writeEvent(ctx, w, sseW, aguievents.NewToolCallArgsEvent(toolID, args))
+	}
+	return nil, nil
+}
+
+func (s *streamState) translateToolResult(ctx context.Context, w io.Writer, sseW sseWriter, evt api.StreamEvent) ([]server.Artifact, error) {
+	toolID := evt.ToolUseID
+	if toolID == "" {
+		toolID = s.lastToolID
+	}
+	if toolID != "" && s.suppressedToolCalls[toolID] {
+		delete(s.suppressedToolCalls, toolID)
+		return nil, nil
+	}
+	if s.activeActivityID != "" {
+		status := "completed"
+		if evt.IsError != nil && *evt.IsError {
+			status = "error"
+		}
+		patch := []aguievents.JSONPatchOperation{
+			{Op: "replace", Path: "/status", Value: status},
+		}
+		_ = s.writeEvent(ctx, w, sseW, aguievents.NewActivityDeltaEvent(s.activeActivityID, "TOOL_EXECUTION", patch))
+		s.activeActivityID = ""
+	}
+	toolName := ""
+	if toolID != "" {
+		toolName = s.toolNames[toolID]
+	}
+	if toolName == "" {
+		toolName = evt.Name
+	}
+	var newArtifacts []server.Artifact
+	if evt.IsError == nil || !*evt.IsError {
+		for _, a := range server.ExtractArtifacts(toolName, evt.Output) {
+			if !s.seenArtifactURLs[a.URL] {
+				s.seenArtifactURLs[a.URL] = true
+				newArtifacts = append(newArtifacts, a)
+			}
+		}
+	}
+	s.artifacts = append(s.artifacts, newArtifacts...)
+	if toolID != "" {
+		if err := s.writeEvent(ctx, w, sseW, aguievents.NewToolCallEndEvent(toolID)); err != nil {
+			return newArtifacts, err
+		}
+		if s.lastToolID == toolID {
+			s.lastToolID = ""
+		}
+		delete(s.toolCalls, toolID)
+		delete(s.toolNames, toolID)
+	}
+	content := server.FormatToolResult(toolName, evt.Output)
+	if content != "" && toolID != "" {
+		if err := s.writeEvent(ctx, w, sseW, aguievents.NewToolCallResultEvent(s.msgID, toolID, content)); err != nil {
+			return newArtifacts, err
+		}
+	}
+	return newArtifacts, nil
+}
+
+func (s *streamState) translateIterStart(ctx context.Context, w io.Writer, sseW sseWriter) ([]server.Artifact, error) {
+	s.iterCount++
+	stepName := fmt.Sprintf("iteration_%d", s.iterCount)
+	if s.lastStep != "" {
+		if err := s.writeEvent(ctx, w, sseW, aguievents.NewStepFinishedEvent(s.lastStep)); err != nil {
+			return nil, err
+		}
+	}
+	s.lastStep = stepName
+	iterActivityID := fmt.Sprintf("activity_iter_%d_%s", s.iterCount, s.runID)
+	iterContent := map[string]any{
+		"step":      stepName,
+		"iteration": s.iterCount,
+		"status":    "running",
+	}
+	_ = s.writeEvent(ctx, w, sseW, aguievents.NewActivitySnapshotEvent(iterActivityID, "ITERATION", iterContent))
+	return nil, s.writeEvent(ctx, w, sseW, aguievents.NewStepStartedEvent(stepName))
+}
+
+func (s *streamState) translateIterStop(ctx context.Context, w io.Writer, sseW sseWriter) ([]server.Artifact, error) {
+	if s.lastStep != "" {
+		if err := s.writeEvent(ctx, w, sseW, aguievents.NewStepFinishedEvent(s.lastStep)); err != nil {
+			return nil, err
+		}
+		s.lastStep = ""
+	}
+	return nil, nil
+}
+
+func (s *streamState) translateError(ctx context.Context, w io.Writer, sseW sseWriter, evt api.StreamEvent) ([]server.Artifact, error) {
+	msg := "runtime error"
+	code := ""
+	if evt.Output != nil {
+		switch v := evt.Output.(type) {
+		case string:
+			if v != "" {
+				msg = v
+			}
+		case map[string]any:
+			if m, ok := v["message"].(string); ok && m != "" {
+				msg = m
+			}
+			if c, ok := v["code"].(string); ok && c != "" {
+				code = c
+			}
+		}
+	}
+	errorLabel := code
+	if errorLabel == "" {
+		errorLabel = "unknown"
+	}
+	aguiErrorsTotal.WithLabelValues(errorLabel).Inc()
+	opts := []aguievents.RunErrorOption{aguievents.WithRunID(s.runID)}
+	if code != "" {
+		opts = append(opts, aguievents.WithErrorCode(code))
+	}
+	s.errorSent = true
+	return nil, s.writeEvent(ctx, w, sseW, aguievents.NewRunErrorEvent(msg, opts...))
 }
 
 
@@ -365,6 +370,29 @@ func (s *streamState) finalize(ctx context.Context, w io.Writer, sseW sseWriter,
 		}
 		if err := s.writeEvent(ctx, w, sseW, aguievents.NewTextMessageContentEvent(s.currentTextMsgID(), tail)); err != nil {
 			return err
+		}
+	}
+	if len(s.artifacts) > 0 {
+		if !s.textStarted {
+			s.textStarted = true
+			s.textMsgSeq++
+			if err := s.writeEvent(ctx, w, sseW, aguievents.NewTextMessageStartEvent(s.currentTextMsgID(), aguievents.WithRole("assistant"))); err != nil {
+				return err
+			}
+		}
+		for _, a := range s.artifacts {
+			var html string
+			switch a.Type {
+			case "video":
+				html = fmt.Sprintf("\n\n<video src=\"%s\" controls style=\"max-width:100%%;border-radius:8px\"></video>\n\n", a.URL)
+			case "audio":
+				html = fmt.Sprintf("\n\n<audio src=\"%s\" controls></audio>\n\n", a.URL)
+			default:
+				html = fmt.Sprintf("\n\n<img src=\"%s\" alt=\"%s\" style=\"max-width:100%%;border-radius:8px\" />\n\n", a.URL, a.Name)
+			}
+			if err := s.writeEvent(ctx, w, sseW, aguievents.NewTextMessageContentEvent(s.currentTextMsgID(), html)); err != nil {
+				return err
+			}
 		}
 	}
 	if s.textStarted {

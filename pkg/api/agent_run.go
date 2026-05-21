@@ -70,7 +70,9 @@ func (rt *Runtime) Run(ctx context.Context, req Request) (resp *Response, err er
 		return nil, prepErr
 	}
 	if !prep.normalized.Ephemeral {
-		defer rt.persistHistory(prep.normalized.SessionID, prep.history)
+		persistID := resolvePersistIdentity(prep.normalized)
+		rt.persistUserMessageImmediate(prep.normalized.SessionID, prep.prompt, persistID)
+		defer rt.persistHistory(prep.normalized.SessionID, prep.history, persistID)
 	}
 	result, runErr := rt.runAgent(prep)
 	if runErr != nil {
@@ -178,7 +180,14 @@ func (rt *Runtime) RunStream(ctx context.Context, req Request) (<-chan StreamEve
 			return
 		}
 		if !prep.normalized.Ephemeral {
-			defer rt.persistHistory(prep.normalized.SessionID, prep.history)
+			persistID := resolvePersistIdentity(prep.normalized)
+			rt.persistUserMessageImmediate(prep.normalized.SessionID, prep.prompt, persistID)
+			defer rt.persistHistory(prep.normalized.SessionID, prep.history, persistID)
+			// Incremental persistence: flush new messages every 30s so a
+			// mid-stream crash does not lose the entire assistant reply.
+			incrementalDone := make(chan struct{})
+			go rt.incrementalPersistLoop(prep.normalized.SessionID, prep.history, persistID, incrementalDone)
+			defer close(incrementalDone)
 		}
 
 		// Emit skill activation events for explicitly matched skills only.

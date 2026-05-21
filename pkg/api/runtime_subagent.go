@@ -230,7 +230,7 @@ func (r runtimeSubagentRunner) runTraditional(ctx context.Context, req subagents
 		// the parent run's budget.
 		maxIterationsOverride: subagentMaxIterations(r.rt.opts.MaxIterations),
 	}
-	defer r.rt.persistHistory(sessionID, history)
+	defer r.rt.persistHistory(sessionID, history, resolvePersistIdentity(normalized))
 
 	// Start mailbox draining: inject external messages into history so the
 	// agent loop picks them up on its next iteration.

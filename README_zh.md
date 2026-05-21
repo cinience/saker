@@ -39,13 +39,25 @@ Saker 把创作团队通常分散使用的三层栈 &mdash; agent 运行时、We
 |---|---|---|
 | 创作链路散落在多个工具里 | 独立维护 prompting、生成、剪辑三套后端 | 一份二进制内嵌工作台、剪辑器、运行时、网关 |
 | 沙箱要么不安全要么用不上 | 只支持 Docker 或只允许跑在宿主机 | 五种后端 &mdash; host、Landlock、gVisor、Docker、govm &mdash; 按宿主机能力自动降级 |
-| 模型与工具被供应商锁死 | 单一 provider、单一工具表 | 多 provider 失败转移与智能路由；33 个内置工具，加 MCP server 与远程工具 |
+| 模型与工具被供应商锁死 | 单一 provider、单一工具表 | 多 provider 失败转移与智能路由；37 个内置工具，加 MCP server 与远程工具 |
 | 服务器端多租户难以部署 | 只有本地 CLI | 内置 OAuth/LDAP/Bearer 认证、CSRF、CORS、SSRF 防护、路径穿越加固、按项目隔离 |
 | 可观测性总是事后补 | 出了问题再接 OTel | Prometheus 指标、结构化 slog、OTel span、贯穿链路的 request ID 一开始就有 |
 
 ## 快速开始
 
-### 前置条件
+### 安装
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/saker-ai/saker/main/install.sh | bash
+```
+
+也可以通过 npm 安装：
+
+```bash
+npm install -g @anthropic-ai/saker
+```
+
+### 前置条件（从源码构建）
 
 - Go 1.26 或更高版本
 - Node.js 22 或更高版本
@@ -87,14 +99,14 @@ make web-editor-dev               # 剪辑器开发服务器
 
 | 能力 | 说明 |
 |---|---|
-| 主循环 | 迭代上限、超时、分类的 `StopReason`（`completed` / `max_iterations` / `max_budget` / `max_tokens` / `repeat_loop` / abort 系列 / `model_error`）|
+| 主循环 | 迭代上限、超时、分类的 `StopReason`（`completed` / `max_iterations` / `max_budget` / `max_tokens` / `repeat_loop` / abort 系列 / `model_error` / `tool_passthrough`）|
 | 预算守护 | 累计成本或 token 触顶即中断 |
 | 死循环检测 | 重复同一工具调用即停；可选自我纠正 prompt |
 | SSE 流 | 兼容 Anthropic SSE 协议，附 agent 专属事件扩展 |
-| 会话历史 | 内存环形缓冲，默认 1000 轮，可配 |
+| 会话历史 | 内存环形缓冲，默认 1000 轮，可配；支持 PreloadHistory 实现 worker 故障转移 |
 | 上下文压缩 | `compact` 与 `microcompact` 两种策略，prompt 摘要 + 历史裁剪 |
 | Profiles | 命名 profile 隔离设置、记忆与历史 |
-| Subagents | 子运行时分叉，可选 git worktree，转录原路返回 |
+| Subagents | 子运行时分叉，支持深度控制、邮箱通信、工具拆分与批量任务；可选 git worktree；转录原路返回 |
 | Checkpoints | 通过内存或文件后端保存可恢复的会话/run 状态 |
 
 ### 模型
@@ -103,13 +115,15 @@ make web-editor-dev               # 剪辑器开发服务器
 
 | 能力 | 说明 |
 |---|---|
-| Provider | 通过 Bifrost 接入 23+：Anthropic、OpenAI、AWS Bedrock、Google Vertex、Azure OpenAI、Ollama、Cohere、Mistral、Groq、Gemini、XAI、DashScope（OpenAI 兼容协议）、Cerebras、Fireworks、OpenRouter、HuggingFace、Replicate … |
-| 鉴权 | API Key、AWS IAM 角色（Bedrock）、GCP 服务账号或 IAM 角色(Vertex)、Azure API Key 或 client_secret/tenant(Azure)|
-| 失败转移 | Bifrost SDK 层的 `Fallbacks` 跨 provider 路由;observer 插件按请求发送切换事件 |
+| 线路级 Provider | 6 个适配器：Anthropic、OpenAI、Ollama、AWS Bedrock、Google Vertex、Azure OpenAI |
+| OpenAI 兼容厂商 | 任何 `/v1` 兼容端点 &mdash; DashScope（通义千问）、DeepSeek、Moonshot、智谱、MiniMax、Together、Groq、Cerebras、Fireworks、OpenRouter、vLLM 等 |
+| 中国模型目录 | 6 家厂商（阿里/DashScope、DeepSeek、MiniMax、Moonshot、火山引擎、智谱）的 32 个模型，按地域区分定价 |
+| 鉴权 | API Key、AWS IAM 角色（Bedrock）、GCP 服务账号或 IAM 角色（Vertex）、Azure API Key 或 client_secret/tenant（Azure）|
+| 失败转移 | Bifrost SDK 层的 `Fallbacks` 跨 provider 路由；多 key 加权调度池；observer 插件按请求发送切换事件 |
 | Prompt 缓存 | system 与最近若干轮消息上挂 ephemeral cache_control（Anthropic / Bedrock-Anthropic）|
-| 可观测性 | 可选 `ObservationSink` 插件抓取每次请求的 provider/model/usage/duration;OTel span attrs 含 cache 与 total token |
+| 可观测性 | 可选 `ObservationSink` 插件抓取每次请求的 provider/model/usage/duration；OTel span attrs 含 cache 与 total token |
 
-### 工具（33 个内置 + memory + MCP）
+### 工具（37 个内置 + memory + MCP）
 
 <details>
 <summary>展开查看注册的内置工具</summary>
@@ -118,7 +132,8 @@ make web-editor-dev               # 剪辑器开发服务器
 |---|---|
 | `core_io` | `bash`、`file_read`、`file_write`、`file_edit`、`grep`、`glob` |
 | `bash_mgmt` | `bash_output`、`bash_status`、`kill_task` |
-| `task_mgmt` | `task`（spawn subagent）、`task_create`、`task_list`、`task_get`、`task_update` |
+| `task_mgmt` | `task_create`、`task_list`、`task_get`、`task_update` |
+| `agent_mgmt` | `spawn_agent`、`send_input`、`wait_agent`、`close_agent`、`spawn_agents_batch` |
 | `web` | `web_fetch`、`web_search` |
 | `media` | `image_read`、`video_sampler`、`stream_capture`、`stream_monitor`、`frame_analyzer`、`video_summarizer`、`analyze_video`、`media_index`、`media_search` |
 | `interaction` | `ask_user_question`、`skill`、`slash_command` |
@@ -130,9 +145,9 @@ make web-editor-dev               # 剪辑器开发服务器
 
 | 预设 | 包含分组 | 适用场景 |
 |---|---|---|
-| `cli` | core_io、bash_mgmt、task_mgmt、web、media、interaction | 交互式终端 / TUI |
-| `server_web` | core_io、bash_mgmt、task_mgmt、web、media、canvas、browser | 带 Web UI 的工作台 |
-| `server_api` | core_io、bash_mgmt、task_mgmt、web、media、interaction | 纯 API 后台（无 canvas/browser）|
+| `cli` | core_io、bash_mgmt、task_mgmt、agent_mgmt、web、media、interaction | 交互式终端 / TUI |
+| `server_web` | core_io、bash_mgmt、task_mgmt、agent_mgmt、web、media、interaction、canvas、browser | 带 Web UI 的工作台 |
+| `server_api` | core_io、bash_mgmt、task_mgmt、agent_mgmt、web、media、interaction | 纯 API 后台（无 canvas/browser）|
 | `ci` | core_io、bash_mgmt | CI 流水线（最小集）|
 
 可通过 `Options.ModePreset` 或 `--api-only` 标志覆盖。用 `Options.EnabledBuiltinTools`（白名单）或 `Options.DisallowedTools`（黑名单）进一步过滤。MCP 与远程工具会在预设之上注册。
@@ -140,6 +155,16 @@ make web-editor-dev               # 剪辑器开发服务器
 权威清单：`pkg/api/tool_groups.go`、`pkg/api/runtime_tools_register.go`。
 
 </details>
+
+### MCP（Model Context Protocol）
+
+| 能力 | 说明 |
+|---|---|
+| 传输方式 | stdio、SSE、streamable HTTP、内存 |
+| 动态 MCP | 通过 AG-UI 按会话转发客户端 MCP server；带 TTL 的跨轮次缓存 |
+| 会话注册表 | 按 server 粒度管理、安全限制、指令注入 |
+| 容错性 | 重试/退避、缓存清理、冲突解决、指标上报 |
+| OSV 检查 | 对 MCP server 依赖进行漏洞扫描 |
 
 ### 沙箱与安全
 
@@ -155,8 +180,8 @@ make web-editor-dev               # 剪辑器开发服务器
 ### Canvas 与媒体
 
 - 类型化的 DAG 文档（节点 + flow / reference / context 边）
-- 40+ 节点类型（Agent、AI、Audio、Composition、Export、ImageGen、LLM、Mask、Prompt、VideoGen、VoiceGen 等）
-- 拓扑排序执行器，把生成节点回派到 agent 运行时
+- 22 种节点类型 &mdash; prompt、agent、tool、skill、image、video、audio、text、composition、imageGen、voiceGen、videoGen、textGen、aiTypo、sketch、group、llm、mask、reference、export、table、appInput/appOutput
+- 4 种可执行生成节点（imageGen、videoGen、voiceGen、textGen）回派到 agent 运行时
 - 含关键帧的媒体索引 + 基于 `chromem-go` 的向量嵌入；全文与语义搜索
 - 音频转写、视频摘要、逐帧分析三条管线
 
@@ -188,6 +213,65 @@ Saker 可以桥接 10 个聊天平台，让用户在熟悉的 app 里直接和 a
 
 也可以通过 TUI（`im_config` 工具）或工作台的设置面板维护通道。
 
+### AG-UI 协议
+
+Saker 实现了 [AG-UI 协议](https://docs.ag-ui.com) &mdash; 一个通过事件驱动 SSE 流实现 agent-用户交互的开放标准。实现**必须**保持与官方规范的兼容性。
+
+| 能力 | 状态 |
+|---|---|
+| 生命周期事件 (RUN_STARTED / RUN_FINISHED / RUN_ERROR) | 已支持 |
+| 文本消息流 (START / CONTENT / END) | 已支持 |
+| 工具调用生命周期 (START / ARGS / END / RESULT) | 已支持 |
+| 状态管理 (STATE_SNAPSHOT / STATE_DELTA via JSON Patch) | 已支持 |
+| 活动事件 (ACTIVITY_SNAPSHOT / ACTIVITY_DELTA) | 已支持 |
+| 推理事件 (REASONING_START / MESSAGE / END) | 已支持 |
+| 步骤生命周期 (STEP_STARTED / STEP_FINISHED) | 已支持 |
+| 消息快照（连接时历史回放） | 已支持 |
+| 自定义事件 (timeline, skill_activation) | 已支持 |
+| 能力发现 (`/run/capabilities`) | 已支持 |
+| 多模态输入 (image, document via InputContent) | 已支持 |
+| Human-in-the-loop（基于工具调用的中断） | 已支持 |
+| 线程管理 (list, create, update, delete, archive) | 已支持 |
+| CopilotKit v2 信封传输 | 已支持 |
+| 动态 MCP server 转发 | 已支持 |
+| 事件环形缓冲（带 SSE ID 的断线重连回放） | 已支持 |
+| 限流、背压与过载摘除 | 已支持 |
+
+协议兼容性由测试套件强制执行（`pkg/server/agui/*_test.go`）。详见 [.docs/agui-protocol-api.md](.docs/agui-protocol-api.md)。
+
+### OpenAI 兼容网关
+
+Saker 对外暴露 OpenAI 兼容的 `/v1/chat/completions` 端点，现有 OpenAI SDK 客户端无需改动即可接入。
+
+```bash
+./bin/saker --server --openai-gw-enabled
+```
+
+功能：流式与非流式补全、按租户限流、Bearer-key 隔离、内存或持久化（SQLite/Postgres）事件存储的 run hub、熔断器、基于事件环形缓冲的断线重连回放。
+
+### Synapse Hub
+
+Saker 实例可以通过 gRPC 注册到中央 **Synapse** 控制面，实现分布式 worker 编排。
+
+```bash
+./bin/saker --server \
+  --synapse-hub-addr hub.example.com:443 \
+  --synapse-auth-token "<token>" \
+  --synapse-models "claude-sonnet-4-5-20250929"
+```
+
+功能：带心跳的自动注册、沙箱感知路由、模型广告、基于标签的调度、可配置的并发上限。
+
+### ACP（Agent Communication Protocol）
+
+Saker 可以作为 [ACP](https://github.com/coder/acp) agent 通过 stdio 运行，与支持 ACP 的宿主（如 Claude Code、Coder）互操作。
+
+```bash
+./bin/saker --acp
+```
+
+功能：双向工具转发、权限管理、基于模式的策略执行、ACP 会话内的 MCP 集成、会话历史转换。
+
 ## 架构
 
 <div align="center">
@@ -201,7 +285,7 @@ Saker 可以桥接 10 个聊天平台，让用户在熟悉的 app 里直接和 a
 1. **Surface** &mdash; CLI/TUI/HTTP/IM/ACP 入口解析输入并选定 profile。
 2. **Runtime** &mdash; `pkg/api.Runtime` 加载设置，构建沙箱，注册 builtin + MCP + 远程工具，挂上人格 / 记忆 / sessiondb / skills / subagents / cache。
 3. **Loop** &mdash; `pkg/agent.Agent.Run` 迭代直到 `StopReason` 触发；预算、死循环检测、压缩在循环外把守。
-4. **Model** &mdash; `pkg/model` 包封装 Bifrost,跨 provider 失败转移交由 Bifrost SDK 层的 `Fallbacks`。调用由 `pkg/metrics`、可选的 `ObservationSink` 插件,以及（开启 `-tags otel` 时）`pkg/api/otel.go` 仪表化。
+4. **Model** &mdash; `pkg/model` 包封装 Bifrost，跨 provider 失败转移交由 Bifrost SDK 层的 `Fallbacks`。调用由 `pkg/metrics`、可选的 `ObservationSink` 插件，以及（开启 `-tags otel` 时）`pkg/api/otel.go` 仪表化。
 5. **Tool** &mdash; 解析权限、跑 PreToolUse hook，分发到 builtin / MCP / 远程工具。涉及文件的工具会跨越 `pkg/sandbox` 边界。
 6. **Stream** &mdash; 结果以 `StreamEvent` 形式流回 SSE / WebSocket 客户端、TUI 瀑布或 IM 网关。
 
@@ -211,15 +295,17 @@ Saker 可以桥接 10 个聊天平台，让用户在熟悉的 app 里直接和 a
 saker/
 ├── cmd/                  # CLI 调度器（cmd/saker）与 Wails 桌面壳（cmd/desktop）
 ├── pkg/                  # Go 运行时：api、agent、model、tool、runtime、server、sandbox、security、
-│                         # canvas、pipeline、media、artifact、sessiondb、memory、persona、project、
-│                         # storage、config、middleware、metrics、clikit、mcp、acp、im、skillhub …
-├── web/                  # Next.js 16 工作台（saker-web）
+│                         # canvas、pipeline、media、artifact、conversation、memory、persona、project、
+│                         # storage、config、middleware、metrics、clikit、mcp、acp、im、skillhub、
+│                         # synapse、runhub、core、eval、profile、prompts、provider、apps …
+├── web/                  # Vite + React 19 工作台（saker-web）
 ├── web-editor-next/      # 衍生自 OpenCut 的浏览器视频剪辑器（saker-web-editor）
-├── packages/             # 共享 TS workspace 包（editor-protocol）
-├── examples/             # 20 个编号示例（01-basic … 20-realtime-video）
+├── packages/             # 共享 TS workspace 包（editor-protocol、平台二进制分发）
+├── examples/             # 21 个编号示例（01-basic … 21-openai-gateway）
 ├── test/                 # 集成、pipeline、运行时、安全套件
 ├── e2e/                  # 基于 Docker 的端到端套件
-├── eval/                 # Eval 框架（offline + LLM + Terminal-Bench）
+├── eval/                 # Eval 框架（offline + LLM + Terminal-Bench 2）
+├── proto/                # Protobuf / gRPC 定义（synapse hub 服务）
 ├── docs/                 # 文档、ADR、图表（mermaid 源 + 渲染 SVG）
 ├── bench/                # 基准基线
 └── scripts/              # 仓库维护脚本
@@ -238,6 +324,7 @@ saker/
 | [可观测性](docs/observability.md) | 指标、日志、OTel |
 | [测试](docs/testing.md) | 测试分类与执行框架 |
 | [API 参考](docs/api-reference.md) | REST / WS / SSE 接口面 |
+| [AG-UI 动态 MCP](docs/zh/agui-mcp.md) | 动态 MCP server 集成 |
 | [ADR](docs/adr/) | 架构决策记录 |
 | [安全策略](SECURITY.md) | 漏洞上报 |
 | [第三方声明](docs/third-party-notices.md) | 依赖许可证 |
@@ -278,9 +365,9 @@ DASHSCOPE_API_KEY=    # DashScope（走 OpenAI 兼容协议）
 SAKER_MODEL=          # 默认模型，例如 claude-sonnet-4-5-20250929
 
 # 可选 — Bifrost 接入的其他 provider
-AWS_REGION=           # Bedrock（或 AWS_DEFAULT_REGION）;留空 AWS_ACCESS_KEY_ID 时走 IAM 角色
-GOOGLE_CLOUD_PROJECT= # Vertex;GOOGLE_CLOUD_REGION 可选,默认 us-central1
-AZURE_OPENAI_ENDPOINT=  # Azure OpenAI;搭配 AZURE_OPENAI_API_KEY 或 client_secret 三元组
+AWS_REGION=           # Bedrock（或 AWS_DEFAULT_REGION）；留空 AWS_ACCESS_KEY_ID 时走 IAM 角色
+GOOGLE_CLOUD_PROJECT= # Vertex；GOOGLE_CLOUD_REGION 可选，默认 us-central1
+AZURE_OPENAI_ENDPOINT=  # Azure OpenAI；搭配 AZURE_OPENAI_API_KEY 或 client_secret 三元组
 OLLAMA_BASE_URL=      # Ollama（默认 http://localhost:11434）
 ```
 

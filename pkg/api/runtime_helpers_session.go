@@ -71,38 +71,6 @@ func (s *historyStore) Get(id string) *message.History {
 	return hist
 }
 
-// GetNoLoad returns the session history without invoking the DB loader for new
-// sessions. Used when the caller manages its own persistence lifecycle (e.g.
-// AG-UI Ephemeral mode) and the DB may contain messages that would create
-// duplicates if loaded into the runtime history.
-func (s *historyStore) GetNoLoad(id string) *message.History {
-	if strings.TrimSpace(id) == "" {
-		id = defaultSessionID(defaultEntrypoint)
-	}
-	s.mu.Lock()
-	now := time.Now()
-	if hist, ok := s.data[id]; ok {
-		s.lastUsed[id] = now
-		s.mu.Unlock()
-		return hist
-	}
-	hist := message.NewHistory()
-	s.data[id] = hist
-	s.lastUsed[id] = now
-	onEvict := s.onEvict
-	evicted := ""
-	if len(s.data) > s.maxSize {
-		evicted = s.evictOldest()
-	}
-	s.mu.Unlock()
-	if evicted != "" {
-		cleanupToolOutputSessionDir(evicted) //nolint:errcheck
-		if onEvict != nil {
-			onEvict(evicted)
-		}
-	}
-	return hist
-}
 
 func (s *historyStore) evictOldest() string {
 	if len(s.data) <= s.maxSize {

@@ -21,22 +21,49 @@ import (
 // produce hundreds of events at once.
 const conversationPersistTimeout = 10 * time.Second
 
-// cliConversationProjectID is the synthetic project id used for CLI / SDK
-// traffic that doesn't carry a real tenant identity. The OpenAI gateway
-// path supplies its own projectID via authMiddleware; this one only
-// applies when api.Runtime is invoked directly (CLI Run / RunStream /
-// subagent).
-const cliConversationProjectID = "default"
+// PersistCallback is called after messages are written to the conversation
+// store. sessionID identifies the thread; msgs are the newly persisted
+// messages in order. Implementations must be safe for concurrent calls.
+type PersistCallback func(sessionID string, msgs []message.Message)
 
-// cliConversationOwnerUserID labels CLI-originated threads. Used by future
-// list / search UIs to distinguish CLI traffic from web/gateway traffic
-// without grepping client="cli" everywhere.
-const cliConversationOwnerUserID = "cli"
+// persistIdentity carries the tenant/owner/client identity for a single
+// persist operation. Derived from the api.Request so each transport layer
+// (CLI, AG-UI, OpenAI gateway) writes under its own identity without the
+// persist code needing transport awareness.
+type persistIdentity struct {
+	ProjectID   string // tenant namespace ("default" for CLI)
+	OwnerUserID string // who owns the thread ("cli", username, etc.)
+	Client      string // originating surface ("cli", "agui", "openai")
+}
 
-// cliConversationClient identifies the originating surface for the
-// conversation row. Mirrors the values used by pkg/server/openai
-// (chatPersister uses "openai") so list views can group by client.
-const cliConversationClient = "cli"
+// defaultPersistIdentity is the fallback when no Request-level identity
+// is available (backwards compat with CLI-only invocations).
+var defaultPersistIdentity = persistIdentity{
+	ProjectID:   "default",
+	OwnerUserID: "cli",
+	Client:      "cli",
+}
+
+// resolvePersistIdentity derives persistence identity from the request.
+func resolvePersistIdentity(req Request) persistIdentity {
+	id := defaultPersistIdentity
+	if req.ProjectID != "" {
+		id.ProjectID = req.ProjectID
+	}
+	if req.User != "" {
+		id.OwnerUserID = req.User
+	}
+	client := ""
+	if req.Metadata != nil {
+		if c, ok := req.Metadata["_persist_client"].(string); ok && c != "" {
+			client = c
+		}
+	}
+	if client != "" {
+		id.Client = client
+	}
+	return id
+}
 
 // persistToConversation writes the new tail of `history` into the
 // conversation store. It is a no-op when the store is unset (back-compat),
@@ -51,7 +78,7 @@ const cliConversationClient = "cli"
 //
 // Errors are logged and swallowed: persistence is additive and must not
 // break the agent loop.
-func (rt *Runtime) persistToConversation(sessionID string, history *message.History) {
+func (rt *Runtime) persistToConversation(sessionID string, history *message.History, id persistIdentity) {
 	if rt == nil || rt.conversationStore == nil || history == nil {
 		return
 	}
@@ -90,7 +117,7 @@ func (rt *Runtime) persistToConversation(sessionID string, history *message.Hist
 	defer cancel()
 
 	if !threadKnown {
-		if err := rt.ensureConversationThread(ctx, sessionID, tail); err != nil {
+		if err := rt.ensureConversationThread(ctx, sessionID, tail, id); err != nil {
 			logger.Error("api: ensure conversation thread failed",
 				"session_id", sessionID, "error", err)
 			return
@@ -112,10 +139,11 @@ func (rt *Runtime) persistToConversation(sessionID string, history *message.Hist
 	// its ToolCalls.ID values, each subsequent tool message dequeues
 	// the next id. Mirrors how providers stream them.
 	toolCallIDs := pairToolResultsToCalls(tail)
+	toolNames := pairToolNamesToResults(tail)
 
 	emitted := 0
 	for i, msg := range tail {
-		if err := rt.appendMessageEvents(ctx, sessionID, turnID, msg, toolCallIDs[i]); err != nil {
+		if err := rt.appendMessageEvents(ctx, sessionID, turnID, msg, toolCallIDs[i], toolNames[i], id); err != nil {
 			logger.Warn("api: append conversation event failed",
 				"session_id", sessionID, "turn_id", turnID, "error", err)
 			break
@@ -131,6 +159,86 @@ func (rt *Runtime) persistToConversation(sessionID string, history *message.Hist
 	rt.convCursorMu.Lock()
 	rt.convCursor[sessionID] = cursor + emitted
 	rt.convCursorMu.Unlock()
+
+	if emitted > 0 && rt.opts.OnPersist != nil {
+		rt.opts.OnPersist(sessionID, tail[:emitted])
+	}
+}
+
+// incrementalPersistLoop periodically flushes new history messages to the
+// conversation store while the agent loop is running. This limits data loss
+// on crash to at most one flush interval (30s) of assistant output.
+// The loop exits when done is closed (run completed).
+func (rt *Runtime) incrementalPersistLoop(sessionID string, history *message.History, id persistIdentity, done <-chan struct{}) {
+	const flushInterval = 30 * time.Second
+	ticker := time.NewTicker(flushInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-done:
+			return
+		case <-ticker.C:
+			rt.persistToConversation(sessionID, history, id)
+		}
+	}
+}
+
+// persistUserMessageImmediate writes the user message to the conversation
+// store synchronously, ensuring crash-safety: even if the agent loop panics
+// or the worker is killed, the user's input is already recorded. It creates
+// the thread if needed, opens a dedicated turn for the user event, and
+// pre-advances the cursor so the deferred persistToConversation skips the
+// already-written message.
+//
+// This replaces the pre-persist role previously held by the AG-UI handler.
+func (rt *Runtime) persistUserMessageImmediate(sessionID, prompt string, id persistIdentity) {
+	if rt == nil || rt.conversationStore == nil {
+		return
+	}
+	sessionID = strings.TrimSpace(sessionID)
+	if sessionID == "" || strings.TrimSpace(prompt) == "" {
+		return
+	}
+
+	logger := slog.Default()
+	ctx, cancel := context.WithTimeout(context.Background(), conversationPersistTimeout)
+	defer cancel()
+
+	rt.convCursorMu.Lock()
+	_, threadKnown := rt.convCursor[sessionID]
+	rt.convCursorMu.Unlock()
+
+	userMsg := message.Message{Role: "user", Content: strings.TrimSpace(prompt)}
+
+	if !threadKnown {
+		if err := rt.ensureConversationThread(ctx, sessionID, []message.Message{userMsg}, id); err != nil {
+			logger.Error("api: immediate persist ensure thread failed",
+				"session_id", sessionID, "error", err)
+			return
+		}
+	}
+
+	turnID, err := rt.conversationStore.OpenTurn(ctx, sessionID, "")
+	if err != nil {
+		logger.Error("api: immediate persist open turn failed",
+			"session_id", sessionID, "error", err)
+		return
+	}
+
+	if err := rt.appendMessageEvents(ctx, sessionID, turnID, userMsg, "", "", id); err != nil {
+		logger.Error("api: immediate persist user message failed",
+			"session_id", sessionID, "error", err)
+		return
+	}
+
+	if err := rt.conversationStore.CloseTurn(ctx, turnID, conversation.TurnStatusCompleted); err != nil {
+		logger.Warn("api: immediate persist close turn failed",
+			"session_id", sessionID, "turn_id", turnID, "error", err)
+	}
+
+	rt.convCursorMu.Lock()
+	rt.convCursor[sessionID] = rt.convCursor[sessionID] + 1
+	rt.convCursorMu.Unlock()
 }
 
 // ensureConversationThread creates the thread row on first contact for a
@@ -141,7 +249,7 @@ func (rt *Runtime) persistToConversation(sessionID string, history *message.Hist
 // The first user message in `tail` seeds the thread title; falls back to
 // a generic label when the head is non-text (image-only prompt) or when
 // the snapshot starts mid-conversation (resume from history).
-func (rt *Runtime) ensureConversationThread(ctx context.Context, sessionID string, tail []message.Message) error {
+func (rt *Runtime) ensureConversationThread(ctx context.Context, sessionID string, tail []message.Message, id persistIdentity) error {
 	_, err := rt.conversationStore.GetThread(ctx, sessionID)
 	if err == nil {
 		return nil
@@ -153,10 +261,10 @@ func (rt *Runtime) ensureConversationThread(ctx context.Context, sessionID strin
 	if _, cErr := rt.conversationStore.CreateThreadWithID(
 		ctx,
 		sessionID,
-		cliConversationProjectID,
-		cliConversationOwnerUserID,
+		id.ProjectID,
+		id.OwnerUserID,
 		title,
-		cliConversationClient,
+		id.Client,
 	); cErr != nil {
 		return fmt.Errorf("create thread: %w", cErr)
 	}
@@ -172,13 +280,13 @@ func (rt *Runtime) ensureConversationThread(ctx context.Context, sessionID strin
 // toolCallID is non-empty only for "tool" / "function" rows, supplied
 // by pairToolResultsToCalls so the P1 projection can link the result
 // back to its assistant call.
-func (rt *Runtime) appendMessageEvents(ctx context.Context, threadID, turnID string, msg message.Message, toolCallID string) error {
+func (rt *Runtime) appendMessageEvents(ctx context.Context, threadID, turnID string, msg message.Message, toolCallID, toolName string, id persistIdentity) error {
 	role := strings.ToLower(strings.TrimSpace(msg.Role))
 	switch role {
 	case "user":
 		_, err := rt.conversationStore.AppendEvent(ctx, conversation.AppendEventInput{
 			ThreadID:    threadID,
-			ProjectID:   cliConversationProjectID,
+			ProjectID:   id.ProjectID,
 			TurnID:      turnID,
 			Kind:        conversation.EventKindUserMessage,
 			Role:        "user",
@@ -189,7 +297,7 @@ func (rt *Runtime) appendMessageEvents(ctx context.Context, threadID, turnID str
 	case "system", "developer":
 		_, err := rt.conversationStore.AppendEvent(ctx, conversation.AppendEventInput{
 			ThreadID:    threadID,
-			ProjectID:   cliConversationProjectID,
+			ProjectID:   id.ProjectID,
 			TurnID:      turnID,
 			Kind:        conversation.EventKindSystem,
 			Role:        "system",
@@ -197,12 +305,10 @@ func (rt *Runtime) appendMessageEvents(ctx context.Context, threadID, turnID str
 		})
 		return err
 	case "assistant":
-		// Emit assistant_text first so the projection orders text-then-tools
-		// when both are present (matching how providers stream them).
 		if strings.TrimSpace(msg.Content) != "" || len(msg.ContentBlocks) > 0 {
 			_, err := rt.conversationStore.AppendEvent(ctx, conversation.AppendEventInput{
 				ThreadID:    threadID,
-				ProjectID:   cliConversationProjectID,
+				ProjectID:   id.ProjectID,
 				TurnID:      turnID,
 				Kind:        conversation.EventKindAssistantText,
 				Role:        "assistant",
@@ -221,7 +327,7 @@ func (rt *Runtime) appendMessageEvents(ctx context.Context, threadID, turnID str
 			}
 			if _, err := rt.conversationStore.AppendEvent(ctx, conversation.AppendEventInput{
 				ThreadID:     threadID,
-				ProjectID:    cliConversationProjectID,
+				ProjectID:    id.ProjectID,
 				TurnID:       turnID,
 				Kind:         conversation.EventKindAssistantToolCall,
 				Role:         "assistant",
@@ -234,30 +340,53 @@ func (rt *Runtime) appendMessageEvents(ctx context.Context, threadID, turnID str
 		}
 		return nil
 	case "tool", "function":
-		// Without a recoverable tool_call_id (no matching prior assistant
-		// ToolCalls entry), the P1 projection rejects EventKindToolResult.
-		// Demote to System so we still capture the content rather than
-		// breaking the whole turn.
 		kind := conversation.EventKindToolResult
 		if toolCallID == "" {
 			kind = conversation.EventKindSystem
 		}
+		var contentJSON any
+		if len(msg.Artifacts) > 0 {
+			arts := make([]map[string]string, 0, len(msg.Artifacts))
+			for _, ref := range msg.Artifacts {
+				url := ref.URL
+				if url == "" && ref.Path != "" {
+					url = "/api/files/" + ref.Path
+					if strings.HasPrefix(ref.Path, "/") {
+						url = "/api/files" + ref.Path
+					}
+				}
+				if url == "" {
+					continue
+				}
+				artType := string(ref.Kind)
+				if artType == "" {
+					artType = "image"
+				}
+				arts = append(arts, map[string]string{
+					"type": artType,
+					"url":  url,
+					"name": toolName,
+				})
+			}
+			if len(arts) > 0 {
+				contentJSON = map[string]any{"artifacts": arts}
+			}
+		}
 		_, err := rt.conversationStore.AppendEvent(ctx, conversation.AppendEventInput{
 			ThreadID:    threadID,
-			ProjectID:   cliConversationProjectID,
+			ProjectID:   id.ProjectID,
 			TurnID:      turnID,
 			Kind:        kind,
 			Role:        "tool",
 			ContentText: msg.Content,
+			ContentJSON: contentJSON,
 			ToolCallID:  toolCallID,
 		})
 		return err
 	default:
-		// Unknown roles: record loosely so future role values surface as
-		// system-tagged events rather than vanishing entirely.
 		_, err := rt.conversationStore.AppendEvent(ctx, conversation.AppendEventInput{
 			ThreadID:    threadID,
-			ProjectID:   cliConversationProjectID,
+			ProjectID:   id.ProjectID,
 			TurnID:      turnID,
 			Kind:        conversation.EventKindSystem,
 			Role:        role,
@@ -307,6 +436,31 @@ func pairToolResultsToCalls(tail []message.Message) []string {
 			for _, tc := range msg.ToolCalls {
 				if tc.ID != "" {
 					pending = append(pending, tc.ID)
+				}
+			}
+		case "tool", "function":
+			if len(pending) > 0 {
+				out[i] = pending[0]
+				pending = pending[1:]
+			}
+		}
+	}
+	return out
+}
+
+// pairToolNamesToResults returns a slice (one entry per message in tail)
+// holding the tool name each "tool"/"function" message answers, or "" for
+// non-tool messages. Mirrors pairToolResultsToCalls but collects names.
+func pairToolNamesToResults(tail []message.Message) []string {
+	out := make([]string, len(tail))
+	var pending []string
+	for i, msg := range tail {
+		role := strings.ToLower(strings.TrimSpace(msg.Role))
+		switch role {
+		case "assistant":
+			for _, tc := range msg.ToolCalls {
+				if tc.ID != "" {
+					pending = append(pending, tc.Name)
 				}
 			}
 		case "tool", "function":

@@ -174,6 +174,15 @@ func (rt *Runtime) ConversationStore() *conversation.Store {
 	return rt.conversationStore
 }
 
+// SetOnPersist registers a callback invoked after messages are persisted.
+// Safe to call after construction (e.g. from server.New).
+func (rt *Runtime) SetOnPersist(fn PersistCallback) {
+	if rt == nil {
+		return
+	}
+	rt.opts.OnPersist = fn
+}
+
 // ModelName returns the name of the currently active model.
 func (rt *Runtime) ModelName() string {
 	rt.mu.RLock()

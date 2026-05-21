@@ -37,28 +37,28 @@ func newRuntimeWithConvStore(t *testing.T) *Runtime {
 func TestPersistToConversation_NilSafe(t *testing.T) {
 	// nil receiver
 	var nilRT *Runtime
-	require.NotPanics(t, func() { nilRT.persistToConversation("s", message.NewHistory()) })
+	require.NotPanics(t, func() { nilRT.persistToConversation("s", message.NewHistory(), defaultPersistIdentity) })
 
 	// nil store
 	rt := &Runtime{convCursor: map[string]int{}}
-	require.NotPanics(t, func() { rt.persistToConversation("s", message.NewHistory()) })
+	require.NotPanics(t, func() { rt.persistToConversation("s", message.NewHistory(), defaultPersistIdentity) })
 
 	// nil history
 	rt2 := newRuntimeWithConvStore(t)
-	require.NotPanics(t, func() { rt2.persistToConversation("s", nil) })
+	require.NotPanics(t, func() { rt2.persistToConversation("s", nil, defaultPersistIdentity) })
 
 	// blank session
 	rt3 := newRuntimeWithConvStore(t)
 	hist := message.NewHistory()
 	hist.Append(message.Message{Role: "user", Content: "hi"})
-	rt3.persistToConversation("   ", hist)
+	rt3.persistToConversation("   ", hist, defaultPersistIdentity)
 	// thread must NOT have been created — blank id was rejected.
 	_, err := rt3.conversationStore.GetThread(context.Background(), "")
 	require.Error(t, err)
 
 	// empty snapshot
 	rt4 := newRuntimeWithConvStore(t)
-	rt4.persistToConversation("session-empty", message.NewHistory())
+	rt4.persistToConversation("session-empty", message.NewHistory(), defaultPersistIdentity)
 	_, err = rt4.conversationStore.GetThread(context.Background(), "session-empty")
 	require.Error(t, err, "no thread should be created when there are no messages")
 }
@@ -68,15 +68,15 @@ func TestPersistToConversation_ThreadAndTitleSeed(t *testing.T) {
 	hist := message.NewHistory()
 	hist.Append(message.Message{Role: "user", Content: "What is the meaning of life?"})
 
-	rt.persistToConversation("sess-1", hist)
+	rt.persistToConversation("sess-1", hist, defaultPersistIdentity)
 
 	// Thread row created with sessionID as the id and title from first user msg.
 	thread, err := rt.conversationStore.GetThread(context.Background(), "sess-1")
 	require.NoError(t, err)
 	require.Equal(t, "sess-1", thread.ID)
-	require.Equal(t, cliConversationProjectID, thread.ProjectID)
-	require.Equal(t, cliConversationOwnerUserID, thread.OwnerUserID)
-	require.Equal(t, cliConversationClient, thread.Client)
+	require.Equal(t, defaultPersistIdentity.ProjectID, thread.ProjectID)
+	require.Equal(t, defaultPersistIdentity.OwnerUserID, thread.OwnerUserID)
+	require.Equal(t, defaultPersistIdentity.Client, thread.Client)
 	require.Equal(t, "What is the meaning of life?", thread.Title)
 }
 
@@ -85,7 +85,7 @@ func TestPersistToConversation_TitleFallback(t *testing.T) {
 	hist := message.NewHistory()
 	// No user message in the snapshot — only assistant.
 	hist.Append(message.Message{Role: "assistant", Content: "Hello!"})
-	rt.persistToConversation("sess-fallback", hist)
+	rt.persistToConversation("sess-fallback", hist, defaultPersistIdentity)
 
 	thread, err := rt.conversationStore.GetThread(context.Background(), "sess-fallback")
 	require.NoError(t, err)
@@ -100,7 +100,7 @@ func TestPersistToConversation_TitleTruncation(t *testing.T) {
 	}
 	hist := message.NewHistory()
 	hist.Append(message.Message{Role: "user", Content: long})
-	rt.persistToConversation("sess-long", hist)
+	rt.persistToConversation("sess-long", hist, defaultPersistIdentity)
 
 	thread, err := rt.conversationStore.GetThread(context.Background(), "sess-long")
 	require.NoError(t, err)
@@ -112,7 +112,7 @@ func TestPersistToConversation_CursorAdvances(t *testing.T) {
 	hist := message.NewHistory()
 	hist.Append(message.Message{Role: "user", Content: "first"})
 	hist.Append(message.Message{Role: "assistant", Content: "answer-1"})
-	rt.persistToConversation("sess-cursor", hist)
+	rt.persistToConversation("sess-cursor", hist, defaultPersistIdentity)
 
 	// One turn, two events so far.
 	events, err := rt.conversationStore.GetEvents(context.Background(), "sess-cursor", conversation.GetEventsOpts{Limit: 100})
@@ -128,7 +128,7 @@ func TestPersistToConversation_CursorAdvances(t *testing.T) {
 	// Second persistHistory: only the new tail should land.
 	hist.Append(message.Message{Role: "user", Content: "follow-up"})
 	hist.Append(message.Message{Role: "assistant", Content: "answer-2"})
-	rt.persistToConversation("sess-cursor", hist)
+	rt.persistToConversation("sess-cursor", hist, defaultPersistIdentity)
 
 	events, err = rt.conversationStore.GetEvents(context.Background(), "sess-cursor", conversation.GetEventsOpts{Limit: 100})
 	require.NoError(t, err)
@@ -150,8 +150,8 @@ func TestPersistToConversation_NoOpWhenCursorAtEnd(t *testing.T) {
 	hist := message.NewHistory()
 	hist.Append(message.Message{Role: "user", Content: "single"})
 
-	rt.persistToConversation("sess-noop", hist)
-	rt.persistToConversation("sess-noop", hist) // same snapshot, cursor at end
+	rt.persistToConversation("sess-noop", hist, defaultPersistIdentity)
+	rt.persistToConversation("sess-noop", hist, defaultPersistIdentity) // same snapshot, cursor at end
 
 	events, err := rt.conversationStore.GetEvents(context.Background(), "sess-noop", conversation.GetEventsOpts{Limit: 100})
 	require.NoError(t, err)
@@ -165,7 +165,7 @@ func TestPersistToConversation_CompactionResetsCursor(t *testing.T) {
 	hist.Append(message.Message{Role: "assistant", Content: "reply-1"})
 	hist.Append(message.Message{Role: "user", Content: "msg-2"})
 	hist.Append(message.Message{Role: "assistant", Content: "reply-2"})
-	rt.persistToConversation("sess-compact", hist)
+	rt.persistToConversation("sess-compact", hist, defaultPersistIdentity)
 
 	rt.convCursorMu.Lock()
 	require.Equal(t, 4, rt.convCursor["sess-compact"])
@@ -176,7 +176,7 @@ func TestPersistToConversation_CompactionResetsCursor(t *testing.T) {
 		{Role: "system", Content: "compacted summary"},
 		{Role: "user", Content: "msg-2"},
 	})
-	rt.persistToConversation("sess-compact", hist)
+	rt.persistToConversation("sess-compact", hist, defaultPersistIdentity)
 
 	// Cursor should have been reset and the new short snapshot re-emitted.
 	rt.convCursorMu.Lock()
@@ -197,7 +197,7 @@ func TestPersistToConversation_RoleMapping(t *testing.T) {
 	hist.Append(message.Message{Role: "assistant", Content: "a"})
 	hist.Append(message.Message{Role: "weird", Content: "?"})
 
-	rt.persistToConversation("sess-roles", hist)
+	rt.persistToConversation("sess-roles", hist, defaultPersistIdentity)
 
 	events, err := rt.conversationStore.GetEvents(context.Background(), "sess-roles", conversation.GetEventsOpts{Limit: 100})
 	require.NoError(t, err)
@@ -228,7 +228,7 @@ func TestPersistToConversation_ToolResultPaired(t *testing.T) {
 	hist.Append(message.Message{Role: "tool", Content: "result-A"})
 	hist.Append(message.Message{Role: "function", Content: "result-B"})
 
-	rt.persistToConversation("sess-tool-pair", hist)
+	rt.persistToConversation("sess-tool-pair", hist, defaultPersistIdentity)
 
 	events, err := rt.conversationStore.GetEvents(context.Background(), "sess-tool-pair", conversation.GetEventsOpts{Limit: 100})
 	require.NoError(t, err)
@@ -252,7 +252,7 @@ func TestPersistToConversation_ToolResultUnpairedFallsBackToSystem(t *testing.T)
 	hist.Append(message.Message{Role: "user", Content: "go"})
 	hist.Append(message.Message{Role: "tool", Content: "stray result"})
 
-	rt.persistToConversation("sess-tool-stray", hist)
+	rt.persistToConversation("sess-tool-stray", hist, defaultPersistIdentity)
 
 	events, err := rt.conversationStore.GetEvents(context.Background(), "sess-tool-stray", conversation.GetEventsOpts{Limit: 100})
 	require.NoError(t, err)
@@ -273,7 +273,7 @@ func TestPersistToConversation_AssistantToolCallFanout(t *testing.T) {
 		},
 	})
 
-	rt.persistToConversation("sess-fanout", hist)
+	rt.persistToConversation("sess-fanout", hist, defaultPersistIdentity)
 
 	events, err := rt.conversationStore.GetEvents(context.Background(), "sess-fanout", conversation.GetEventsOpts{Limit: 100})
 	require.NoError(t, err)
@@ -305,7 +305,7 @@ func TestPersistToConversation_AssistantToolCallsOnlyNoText(t *testing.T) {
 			{ID: "call-1", Name: "search", Arguments: map[string]any{}},
 		},
 	})
-	rt.persistToConversation("sess-toolsonly", hist)
+	rt.persistToConversation("sess-toolsonly", hist, defaultPersistIdentity)
 
 	events, err := rt.conversationStore.GetEvents(context.Background(), "sess-toolsonly", conversation.GetEventsOpts{Limit: 100})
 	require.NoError(t, err)
@@ -329,14 +329,14 @@ func TestPersistToConversation_MultiSessionCursorIsolation(t *testing.T) {
 	histB := message.NewHistory()
 
 	histA.Append(message.Message{Role: "user", Content: "A1"})
-	rt.persistToConversation("sess-A", histA)
+	rt.persistToConversation("sess-A", histA, defaultPersistIdentity)
 
 	histB.Append(message.Message{Role: "user", Content: "B1"})
 	histB.Append(message.Message{Role: "assistant", Content: "B-reply"})
-	rt.persistToConversation("sess-B", histB)
+	rt.persistToConversation("sess-B", histB, defaultPersistIdentity)
 
 	histA.Append(message.Message{Role: "assistant", Content: "A-reply"})
-	rt.persistToConversation("sess-A", histA)
+	rt.persistToConversation("sess-A", histA, defaultPersistIdentity)
 
 	rt.convCursorMu.Lock()
 	cursorA := rt.convCursor["sess-A"]

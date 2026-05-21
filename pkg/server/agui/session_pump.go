@@ -75,13 +75,9 @@ func (s *runSession) pump(finishRun func()) {
 		select {
 		case evt, ok := <-s.eventCh:
 			if !ok {
-				// Runtime completed — persist and finalize.
+				// Runtime completed — finalize.
 				if len(state.artifacts) > 0 {
 					s.gateway.storeArtifacts(s.threadID, state.artifacts)
-				}
-				s.gateway.persistAssistantWithArtifacts(context.Background(), s.threadID, s.turnID, s.projectID, accumulated.String(), state.artifacts)
-				if s.gateway.deps.ConversationStore != nil {
-					_ = s.gateway.deps.ConversationStore.CloseTurn(context.Background(), s.turnID, "completed")
 				}
 				s.gateway.clearThreadRun(s.threadID, s.runID)
 				w = s.clientWriter()

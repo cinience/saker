@@ -120,13 +120,15 @@ func MessagesToRequest(ctx context.Context, msgs []ChatMessage, extra ExtraBody,
 	req := api.Request{
 		Prompt:        prompt,
 		ContentBlocks: blocks,
-		Ephemeral:     true,
 		Model:         modelTier,
 		Mode: api.ModeContext{
 			EntryPoint: api.EntryPointPlatform,
 		},
 		Tags: map[string]string{
 			"openai_gateway": "1",
+		},
+		Metadata: map[string]any{
+			"_persist_client": "openai",
 		},
 	}
 	if extra.SessionID != "" {

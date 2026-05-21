@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"time"
 
+	"github.com/gin-gonic/gin"
 	"github.com/saker-ai/saker/pkg/runhub"
 	toolbuiltin "github.com/saker-ai/saker/pkg/tool/builtin"
 	"github.com/google/uuid"
@@ -107,6 +109,56 @@ func marshalAskArgs(questions []toolbuiltin.Question) string {
 		return `{"questions":[]}`
 	}
 	return string(data)
+}
+
+// handleResumeToolCall resumes a paused run by delivering the client's tool
+// response to the blocked askFn, then streaming the continued output.
+func (g *Gateway) handleResumeToolCall(c *gin.Context, pa *pendingAsk, req ChatRequest, extra ExtraBody) {
+	lastMsg := req.Messages[len(req.Messages)-1]
+	if lastMsg.ToolCallID != pa.ToolCallID {
+		c.JSON(http.StatusBadRequest, gin.H{"error": gin.H{
+			"message": fmt.Sprintf("tool_call_id mismatch: got %q, expected %q", lastMsg.ToolCallID, pa.ToolCallID),
+			"type":    "invalid_request_error",
+			"code":    "tool_call_id_mismatch",
+		}})
+		return
+	}
+
+	answers, action, err := parseToolResponse(lastMsg.Content)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": gin.H{
+			"message": "invalid_tool_response_format: " + err.Error(),
+			"type":    "invalid_request_error",
+			"code":    "invalid_tool_response_format",
+		}})
+		return
+	}
+
+	hubRun, err := g.hub.Get(pa.RunID)
+	if err != nil {
+		ServerError(c, "failed to retrieve paused run: "+err.Error())
+		return
+	}
+
+	c.Writer.Header().Set("X-Saker-Run-Id", hubRun.ID)
+
+	newCh := pa.Pause.Reset()
+
+	// Deliver answer — this unblocks the askFn goroutine.
+	select {
+	case pa.AnswerCh <- askAnswer{Answers: answers, Action: action}:
+	case <-c.Request.Context().Done():
+		ServerError(c, "client disconnected before answer could be delivered")
+		return
+	}
+
+	includeUsage := req.Stream && parseIncludeUsage(req.StreamOptions)
+
+	if req.Stream {
+		g.streamChatSSE(c, hubRun, extra, includeUsage, newCh)
+	} else {
+		g.streamChatSync(c, hubRun, extra, req.Model, makeChatChunkID(hubRun.ID))
+	}
 }
 
 // parseToolResponse parses the client's tool response content into answers and action.

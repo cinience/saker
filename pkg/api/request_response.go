@@ -17,6 +17,21 @@ import (
 	"github.com/saker-ai/saker/pkg/tool"
 )
 
+// SystemPromptMode controls how a per-request system prompt composes with the built-in.
+type SystemPromptMode string
+
+const (
+	SystemPromptModePrepend SystemPromptMode = "prepend"
+	SystemPromptModeAppend  SystemPromptMode = "append"
+	SystemPromptModeReplace SystemPromptMode = "replace"
+)
+
+// SystemPromptOverride carries per-request system prompt configuration.
+type SystemPromptOverride struct {
+	Text string
+	Mode SystemPromptMode
+}
+
 // ModelOverrides bundles per-request sampling parameters that override
 // the runtime defaults for a single completion. All fields are pointer/
 // slice types so the zero value means "no override". Set by the OpenAI
@@ -46,7 +61,7 @@ type Request struct {
 	Mode                 ModeContext
 	SessionID            string
 	ParentSessionID      string // If set, fork parent session's history into this new session
-	Ephemeral            bool   // If true, session history is not persisted to disk
+	Ephemeral            bool   // If true, session is throwaway (title gen, canvas) — not persisted to DB
 	ResumeFromCheckpoint string
 	RequestID            string    `json:"request_id,omitempty"` // Auto-generated UUID or user-provided
 	Model                ModelTier // Optional: override model tier for this request
@@ -63,11 +78,18 @@ type Request struct {
 	ForceSkills          []string
 	User                 string // Authenticated username (set by server for per-user isolation)
 	UserRole             string // User role: "admin" or "user"
+	ProjectID            string // Tenant project identifier for persistence (empty falls back to "default")
 	// PassthroughTools lists tool names that should NOT be executed by the
 	// agent loop. When the model emits one of these tool calls, the agent
 	// exits with StopReasonToolPassthrough so the caller can relay the
 	// call back to the client (e.g. HITL tools like ask_user_question).
 	PassthroughTools []string
+	// SystemPromptOverride provides a per-request system prompt override.
+	// When non-nil, applied according to Mode (prepend/append/replace).
+	SystemPromptOverride *SystemPromptOverride
+	// ModelEndpoint specifies a client-provided LLM endpoint parsed from model_uri.
+	// When non-nil, the runtime creates a model instance from this entry.
+	ModelEndpoint *config.FailoverModelEntry
 	// ExtraTools are additional tool definitions injected by the caller
 	// (e.g. CopilotKit HITL tools) that are sent to the LLM alongside
 	// saker's internal registry tools. They are NOT registered in the

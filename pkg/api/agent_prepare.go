@@ -102,14 +102,7 @@ func (rt *Runtime) prepare(ctx context.Context, req Request) (preparedRun, error
 		normalized.RequestID = uuid.New().String()
 	}
 
-	var history *message.History
-	if normalized.Ephemeral {
-		// Ephemeral sessions (AG-UI) manage their own persistence; skip the DB
-		// loader to avoid duplicating messages the handler already persisted.
-		history = rt.histories.GetNoLoad(normalized.SessionID)
-	} else {
-		history = rt.histories.Get(normalized.SessionID)
-	}
+	history := rt.histories.Get(normalized.SessionID)
 	logging.From(ctx).Debug("prepare", "session_id", normalized.SessionID, "request_id", normalized.RequestID, "history_len", history.Len(), "force_skills", len(normalized.ForceSkills))
 
 	// Seed history from PreloadHistory when the caller provides more context

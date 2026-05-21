@@ -31,6 +31,14 @@ func WithTokenCallback(fn TokenCallback) func(*Options) {
 	}
 }
 
+// WithOnPersist registers a callback invoked after messages are written to
+// the conversation store. Useful for keeping in-memory caches in sync.
+func WithOnPersist(fn PersistCallback) func(*Options) {
+	return func(o *Options) {
+		o.OnPersist = fn
+	}
+}
+
 // WithAutoCompact configures automatic context compaction.
 func WithAutoCompact(config CompactConfig) func(*Options) {
 	return func(o *Options) {

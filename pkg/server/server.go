@@ -12,6 +12,7 @@ import (
 
 	"github.com/saker-ai/saker/pkg/api"
 	"github.com/saker-ai/saker/pkg/config"
+	"github.com/saker-ai/saker/pkg/message"
 	"github.com/saker-ai/saker/pkg/project"
 	storagecfg "github.com/saker-ai/saker/pkg/storage"
 	"github.com/gin-gonic/gin"
@@ -111,7 +112,9 @@ func New(runtime *api.Runtime, opts Options) (*Server, error) {
 	if cs := runtime.ConversationStore(); cs != nil {
 		_ = sessions.LoadFromConversation(cs, "default")
 	}
-	sessions.AttachConvTee(newConvTee(runtime.ConversationStore(), "default", opts.Logger))
+	runtime.SetOnPersist(func(sessionID string, msgs []message.Message) {
+		sessions.IngestFromRuntime(sessionID, msgs)
+	})
 	h := newHandler(runtime, sessions, opts.DataDir, opts.Logger)
 
 	// Initialize active turn tracker.

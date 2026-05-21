@@ -23,7 +23,7 @@ func resolveConfigBase(projectRoot, configRoot string) string {
 	return base
 }
 
-func (rt *Runtime) persistHistory(sessionID string, history *message.History) {
+func (rt *Runtime) persistHistory(sessionID string, history *message.History, id persistIdentity) {
 	if rt == nil || history == nil {
 		return
 	}
@@ -35,5 +35,5 @@ func (rt *Runtime) persistHistory(sessionID string, history *message.History) {
 	if len(snapshot) == 0 {
 		return
 	}
-	rt.persistToConversation(sessionID, history)
+	rt.persistToConversation(sessionID, history, id)
 }

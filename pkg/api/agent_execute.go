@@ -81,12 +81,40 @@ func (rt *Runtime) runAgentWithMiddleware(prep preparedRun, extras ...middleware
 		}
 	}
 
+	// Override model when client specifies a model_uri endpoint.
+	if ep := prep.normalized.ModelEndpoint; ep != nil {
+		if m, err := rt.createModelFromEntry(*ep); err == nil {
+			selectedModel = m
+		} else {
+			logger.Warn("client model_uri override failed", "error", err)
+		}
+	}
+
 	// Use persona-specific system prompt when a persona is active.
 	sysPrompt := rt.opts.SystemPrompt
 	sysBlocks := rt.systemPromptBlocks
 	if prep.personaSystemPrompt != "" {
 		sysPrompt = prep.personaSystemPrompt
 		sysBlocks = prep.personaPromptBlocks
+	}
+
+	// Apply per-request system prompt override (from AG-UI ForwardedProps).
+	if spo := prep.normalized.SystemPromptOverride; spo != nil && spo.Text != "" {
+		mode := spo.Mode
+		if mode == "" {
+			mode = SystemPromptModePrepend
+		}
+		switch mode {
+		case SystemPromptModeReplace:
+			sysPrompt = spo.Text
+			sysBlocks = []string{spo.Text}
+		case SystemPromptModePrepend:
+			sysPrompt = spo.Text + "\n\n" + sysPrompt
+			sysBlocks = append([]string{spo.Text}, sysBlocks...)
+		case SystemPromptModeAppend:
+			sysPrompt = sysPrompt + "\n\n" + spo.Text
+			sysBlocks = append(sysBlocks, spo.Text)
+		}
 	}
 
 	// Build tool definitions, filtering out persona-disallowed tools.
