@@ -47,11 +47,11 @@ VERBOSE=1
 REPEAT_THRESHOLD=0          # 0 = use saker default (5); -1 disables loop detection
 NO_TRANSCRIPTS=0
 WITH_MIRROR=0               # opt in to terminalbench.DefaultMirrorEnv (China firewall workaround)
-NO_VERIFIER_MIRROR=1        # disable per-call verifier mirror env (off by default; direct access is more reliable)
+NO_VERIFIER_MIRROR=0        # keep verifier mirror env ON so PyPI/GitHub fetches use domestic mirrors
 MIRRORS=()                  # repeated --mirror KEY=VAL pairs
-PROXY_URL=""                # http(s) proxy injected into containers (e.g. http://127.0.0.1:7890)
+PROXY_URL="http://127.0.0.1:7890"  # default: route container traffic via local proxy
 USE_ACP=0                   # use full Saker Runtime via ACP protocol
-ENV_FILE=""                 # .env file for model/provider configuration
+ENV_FILE=".env"             # default: read model/provider config from repo-root .env
 # Safety nets for per-task spend. Picked well above typical TB2 task usage so a
 # normal run never trips them, but a runaway loop (or a regression in repeat-
 # detection) can't quietly drain a budget overnight.
