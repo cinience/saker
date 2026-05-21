@@ -57,6 +57,12 @@ type Options struct {
 	MaxMCPServersPerSession int           // Max MCP servers per session (default 5, 0 = unlimited)
 	AllowMCPStdio           bool          // Whether stdio-type MCP servers are permitted (default false)
 	MCPConnectTimeout       time.Duration // Timeout for connecting to MCP servers (default 10s)
+
+	// Client override security switches. When true, the corresponding client
+	// capability is blocked. All default to false (= allowed).
+	DenyModelEndpoint       bool // Block client from specifying custom LLM endpoint via model_uri
+	DenySystemPromptReplace bool // Block client from using "replace" mode for system prompt
+	DenyToolOverride        bool // Block client from controlling tools via allowed_tools/passthrough_tools
 }
 
 // Gateway carries the runtime dependencies for AG-UI HTTP handlers.

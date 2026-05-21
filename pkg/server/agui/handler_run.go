@@ -191,6 +191,19 @@ func (g *Gateway) handleNewRun(c *gin.Context, input aguitypes.RunAgentInput, ru
 		"_agui_permission_handler": g.makePermissionHandler(runID, sideCh),
 	})
 
+	// Apply client-side LLM/tool/prompt configuration from ForwardedProps.
+	if props, ok := input.ForwardedProps.(map[string]any); ok && props != nil {
+		if err := applyForwardedProps(props, &sakerReq, g.deps.Options); err != nil {
+			baseCancel()
+			finishRun()
+			c.JSON(http.StatusBadRequest, gin.H{"error": gin.H{
+				"message": err.Error(),
+				"type":    "invalid_request_error",
+			}})
+			return
+		}
+	}
+
 	// Per-session dynamic MCP servers from client ForwardedProps.
 	var mcpReg *sessionMCPRegistry
 	if props, ok := input.ForwardedProps.(map[string]any); ok && props != nil {
