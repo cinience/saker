@@ -69,6 +69,9 @@ interface ChatState {
 
   showLogin: boolean;
   setShowLogin: (show: boolean) => void;
+
+  serverReachable: boolean;
+  setServerReachable: (reachable: boolean) => void;
 }
 
 export const useChatStore = create<ChatState>((set) => ({
@@ -137,4 +140,7 @@ export const useChatStore = create<ChatState>((set) => ({
 
   showLogin: false,
   setShowLogin: (showLogin) => set({ showLogin }),
+
+  serverReachable: true,
+  setServerReachable: (serverReachable) => set({ serverReachable }),
 }));

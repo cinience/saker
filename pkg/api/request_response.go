@@ -8,6 +8,7 @@ import (
 	"github.com/saker-ai/saker/pkg/artifact"
 	"github.com/saker-ai/saker/pkg/config"
 	coreevents "github.com/saker-ai/saker/pkg/core/events"
+	"github.com/saker-ai/saker/pkg/message"
 	"github.com/saker-ai/saker/pkg/model"
 	"github.com/saker-ai/saker/pkg/pipeline"
 	"github.com/saker-ai/saker/pkg/runtime/commands"
@@ -76,6 +77,11 @@ type Request struct {
 	// dynamically registered tools (e.g., MCP servers from AG-UI clients).
 	// Tools from this source are both visible to the model AND executable.
 	DynamicExecutor tool.DynamicToolSource `json:"-"`
+	// PreloadHistory seeds the session history when the runtime has no
+	// existing history for the SessionID (e.g. after worker failover).
+	// When non-nil and the session history is empty, these messages are
+	// used as the conversation context before the current Prompt.
+	PreloadHistory []message.Message `json:"-"`
 }
 
 // Response aggregates the final agent result together with metadata emitted

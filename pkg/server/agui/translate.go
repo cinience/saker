@@ -67,11 +67,17 @@ func newStreamState(threadID, runID string) *streamState {
 	}
 }
 
-// currentTextMsgID returns the message ID for the current text segment.
-// All text segments within a single run share the same message ID so that
-// CopilotKit associates tool calls and state with the visible message.
+// currentTextMsgID returns a unique message ID for each text segment within
+// a run. The first segment uses the base msgID; subsequent segments append a
+// numeric suffix. This ensures CopilotKit creates a fresh message element for
+// each text-between-tools segment, avoiding the render-finalization issue where
+// a re-opened message ID is not re-rendered. Tool calls use s.msgID directly
+// (via parentMessageId) to maintain association with the primary message.
 func (s *streamState) currentTextMsgID() string {
-	return s.msgID
+	if s.textMsgSeq <= 1 {
+		return s.msgID
+	}
+	return fmt.Sprintf("%s_%d", s.msgID, s.textMsgSeq)
 }
 
 // writeEvent emits an AG-UI event with a monotonic SSE id for resumability.

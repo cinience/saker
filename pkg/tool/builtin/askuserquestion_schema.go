@@ -32,7 +32,7 @@ var askUserQuestionSchema = &tool.JSONSchema{
 									"description": "Explanation of what this option means.",
 								},
 							},
-							"required":             []string{"label", "description"},
+							"required":             []string{"label"},
 							"additionalProperties": false,
 						},
 						"minItems":    2,

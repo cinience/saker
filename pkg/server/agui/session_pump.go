@@ -79,7 +79,7 @@ func (s *runSession) pump(finishRun func()) {
 				if len(state.artifacts) > 0 {
 					s.gateway.storeArtifacts(s.threadID, state.artifacts)
 				}
-				s.gateway.persistAssistantMessage(context.Background(), s.threadID, s.turnID, s.projectID, accumulated.String())
+				s.gateway.persistAssistantWithArtifacts(context.Background(), s.threadID, s.turnID, s.projectID, accumulated.String(), state.artifacts)
 				if s.gateway.deps.ConversationStore != nil {
 					_ = s.gateway.deps.ConversationStore.CloseTurn(context.Background(), s.turnID, "completed")
 				}

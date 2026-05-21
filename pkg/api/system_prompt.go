@@ -169,6 +169,8 @@ func sectionUsingTools(toolNames []string) string {
    - Choosing between multiple valid implementation approaches
    - Confirming before destructive or irreversible actions
    - Gathering specific requirements that cannot be reasonably inferred
+   - Offering follow-up options after completing a creative task (e.g. style variations)
+   When you DO need user input from one of these cases, you MUST call the ask_user_question tool — never present choices as plain text bullets or numbered lists. The tool provides a better interactive experience.
    NEVER use this tool for greetings, simple questions, or when you can provide a helpful direct answer. Always prefer responding directly unless the task truly requires a structured choice from the user.`)
 	}
 
@@ -313,6 +315,10 @@ func sectionLanguage(lang string) string {
 		lang = "English"
 	}
 	return fmt.Sprintf("# Language\nDefault to %s for all output including reasoning/thinking process and responses. If the user communicates in a different language, match the user's language for both your internal reasoning and your replies. Technical terms and code identifiers should remain in their original form.", lang)
+}
+
+func sectionLanguageAutoDetect() string {
+	return "# Language\nMatch the user's language for all output including reasoning/thinking process and responses. If you cannot determine the user's language, default to Chinese. Technical terms and code identifiers should remain in their original form."
 }
 
 func sectionSessionGuidance(toolNames []string, entryPoint EntryPoint) string {

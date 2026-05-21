@@ -199,10 +199,7 @@ func parseOption(qIdx, oIdx int, obj map[string]interface{}) (QuestionOption, er
 	if err != nil {
 		return QuestionOption{}, fmt.Errorf("questions[%d].options[%d].label: %w", qIdx, oIdx, err)
 	}
-	desc, err := readRequiredString(obj, "description")
-	if err != nil {
-		return QuestionOption{}, fmt.Errorf("questions[%d].options[%d].description: %w", qIdx, oIdx, err)
-	}
+	desc := readOptionalString(obj, "description")
 	return QuestionOption{Label: label, Description: desc}, nil
 }
 
@@ -281,6 +278,18 @@ func formatAnsweredOutput(questions []Question, answers map[string]string) strin
 	}
 	b.WriteString("You can now continue with the user's answers in mind.")
 	return b.String()
+}
+
+func readOptionalString(obj map[string]interface{}, key string) string {
+	raw, ok := obj[key]
+	if !ok || raw == nil {
+		return ""
+	}
+	s, err := coerceString(raw)
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(s)
 }
 
 func readRequiredString(obj map[string]interface{}, key string) (string, error) {

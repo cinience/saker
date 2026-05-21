@@ -1,5 +1,5 @@
-import { useState, useRef, useEffect, useMemo } from "react";
-import { Plus, Trash2, Check } from "lucide-react";
+import { useState, useRef, useEffect, useMemo, useCallback } from "react";
+import { Plus, Trash2, Check, Search, X } from "lucide-react";
 import type { Thread } from "@/features/rpc/types";
 import { useT } from "@/features/i18n";
 import { usePermissions } from "@/features/project/usePermissions";
@@ -20,16 +20,14 @@ export function ThreadPanel({
   const { t } = useT();
   const perms = usePermissions();
   const [confirmId, setConfirmId] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
   const confirmRef = useRef<HTMLDivElement>(null);
 
   const threads = useChatStore((s) => s.threads);
   const activeThreadId = useChatStore((s) => s.activeThreadId);
   const panelCollapsed = useChatStore((s) => s.panelCollapsed);
   const mobileOpen = useChatStore((s) => s.mobileDrawerOpen);
-  const wsConnected = useChatStore((s) => s.wsConnected);
-  const wsHasBeenConnected = useChatStore((s) => s.wsHasBeenConnected);
-  
-  const connected = wsConnected || !wsHasBeenConnected;
+  const connected = useChatStore((s) => s.serverReachable);
   const isMobile = useIsMobile();
 
   useEffect(() => {
@@ -42,6 +40,12 @@ export function ThreadPanel({
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
   }, [confirmId]);
+
+  const filteredThreads = useMemo(() => {
+    if (!searchQuery.trim()) return threads;
+    const q = searchQuery.toLowerCase();
+    return threads.filter((th) => th.title.toLowerCase().includes(q));
+  }, [threads, searchQuery]);
 
   // Group threads by date — must be before the early return to satisfy hooks rules.
   const groupedThreads = useMemo(() => {
@@ -58,7 +62,7 @@ export function ThreadPanel({
     const last7DaysStart = new Date(todayStart);
     last7DaysStart.setDate(last7DaysStart.getDate() - 7);
 
-    const sorted = [...threads].sort(
+    const sorted = [...filteredThreads].sort(
       (a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
     );
 
@@ -76,7 +80,7 @@ export function ThreadPanel({
     if (older.length > 0) groups.push({ label: t("thread.older"), items: older });
 
     return groups;
-  }, [threads, t]);
+  }, [filteredThreads, t]);
 
   if (!isMobile && panelCollapsed) return null;
 
@@ -94,6 +98,24 @@ export function ThreadPanel({
             <Plus size={20} />
             <span>{t("thread.newChat")}</span>
           </button>
+        </div>
+      )}
+
+      {threads.length > 5 && (
+        <div className="thread-search-wrapper">
+          <Search size={14} className="thread-search-icon" />
+          <input
+            className="thread-search-input"
+            type="text"
+            placeholder={t("thread.search")}
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+          />
+          {searchQuery && (
+            <button className="thread-search-clear" onClick={() => setSearchQuery("")}>
+              <X size={12} />
+            </button>
+          )}
         </div>
       )}
 
@@ -123,11 +145,13 @@ export function ThreadPanel({
                     <div className="thread-delete-confirm" ref={confirmRef}>
                       <button
                         className="thread-delete-yes"
+                        aria-label={t("thread.deleteConfirm")}
                         onClick={(e) => {
                           e.stopPropagation();
                           setConfirmId(null);
                           onDeleteThread(th.id);
                         }}
+                        onKeyDown={(e) => { if (e.key === "Escape") { e.stopPropagation(); setConfirmId(null); } }}
                       >
                         <Check size={14} />
                       </button>
@@ -135,10 +159,12 @@ export function ThreadPanel({
                   ) : perms.canEdit && th.id === activeThreadId ? (
                     <button
                       className="thread-delete-btn"
+                      aria-label={t("thread.deleteTitle")}
                       onClick={(e) => {
                         e.stopPropagation();
                         setConfirmId(th.id);
                       }}
+                      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); setConfirmId(th.id); } }}
                     >
                       <Trash2 size={14} />
                     </button>

@@ -1,5 +1,5 @@
 
-import { useState, useEffect, useMemo } from "react";
+import { useMemo } from "react";
 import { motion } from "framer-motion";
 import {
   Eye,
@@ -7,7 +7,6 @@ import {
   Volume2,
   Film,
 } from "lucide-react";
-import { resolveWsUrl } from "@/features/rpc/client";
 import type { SkillInfo } from "@/features/rpc/types";
 import { ParticleBackground } from "./ParticleBackground";
 import { useT } from "@/features/i18n";
@@ -23,10 +22,6 @@ export function EmptyState({
   onExampleClick?: (text: string) => void;
 }) {
   const { t } = useT();
-  const [wsDisplay, setWsDisplay] = useState("");
-  useEffect(() => {
-    setWsDisplay(resolveWsUrl().replace("ws://", "").replace("wss://", "").replace("/ws", ""));
-  }, []);
 
   const examples = useMemo(() => [
     { text: t("starter.analyzeImage"), icon: <Eye size={18} /> },
@@ -63,9 +58,9 @@ export function EmptyState({
         ))}
       </motion.div>
 
-      {!connected && wsDisplay && (
+      {!connected && (
         <p className="empty-hint empty-hint--danger">
-          {t("empty.disconnectedFrom")} {wsDisplay}
+          {t("empty.disconnectedFrom")} Saker
         </p>
       )}
     </div>

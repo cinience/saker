@@ -30,8 +30,8 @@ export function StatusBar({ connected, turnStatus }: Props) {
   }
 
   return (
-    <div className={`status-bar tone-${tone}`}>
-      <span className="status-dot" />
+    <div className={`status-bar tone-${tone}`} role="status" aria-live="polite">
+      <span className="status-dot" aria-hidden="true" />
       <span>{label}</span>
     </div>
   );

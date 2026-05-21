@@ -297,6 +297,43 @@ func TestAskUserQuestionAcceptsTypedArraysAndAnswers(t *testing.T) {
 	})
 }
 
+func TestAskUserQuestionOptionDescriptionOptional(t *testing.T) {
+	tool := NewAskUserQuestionTool()
+	params := map[string]interface{}{
+		"questions": []interface{}{
+			map[string]interface{}{
+				"question": "Which style do you prefer?",
+				"header":   "Style",
+				"options": []interface{}{
+					map[string]interface{}{"label": "Anime"},
+					map[string]interface{}{"label": "Realistic", "description": "Photo-realistic style"},
+					map[string]interface{}{"label": "Cartoon"},
+				},
+				"multiSelect": false,
+			},
+		},
+	}
+
+	ctx := withMockAskFn(context.Background(), map[string]string{
+		"Which style do you prefer?": "Anime",
+	})
+	res, err := tool.Execute(ctx, params)
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	if !res.Success {
+		t.Fatalf("expected success")
+	}
+	data := res.Data.(map[string]interface{})
+	qs := data["questions"].([]Question)
+	if qs[0].Options[0].Description != "" {
+		t.Fatalf("expected empty description for first option, got %q", qs[0].Options[0].Description)
+	}
+	if qs[0].Options[1].Description != "Photo-realistic style" {
+		t.Fatalf("expected description preserved for second option, got %q", qs[0].Options[1].Description)
+	}
+}
+
 func TestAskUserQuestionConcurrentExecutions(t *testing.T) {
 	tool := NewAskUserQuestionTool()
 
@@ -475,24 +512,6 @@ func TestAskUserQuestionErrors(t *testing.T) {
 				},
 			},
 			want: "cannot be empty",
-		},
-		{
-			name: "option missing description",
-			ctx:  context.Background(),
-			params: map[string]interface{}{
-				"questions": []interface{}{
-					map[string]interface{}{
-						"question": "Pick one?",
-						"header":   "H",
-						"options": []interface{}{
-							map[string]interface{}{"label": "A"},
-							map[string]interface{}{"label": "B", "description": "b"},
-						},
-						"multiSelect": false,
-					},
-				},
-			},
-			want: "options[0].description",
 		},
 		{
 			name: "multiSelect missing",

@@ -66,6 +66,7 @@ export const dictCore = {
   "message.imageFailedToLoad": { en: "Image failed to load", zh: "图片加载失败" },
   "message.mediaExpired": { en: "Media unavailable or expired", zh: "媒体资源不可用或已过期" },
   "message.fullSizePreview": { en: "Full size preview", zh: "全尺寸预览" },
+  "message.closeLightbox": { en: "Close preview", zh: "关闭预览" },
   "message.generatedImage": { en: "Generated image", zh: "生成的图片" },
 
   // -- ApprovalCard --

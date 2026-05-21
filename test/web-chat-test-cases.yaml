@@ -1,0 +1,575 @@
+# Saker Web Chat - Browser Test Cases
+# URL: http://localhost:17000
+# Total: 35 scenarios across 10 categories
+
+test_suite:
+  name: "Saker Web Chat 完整功能测试"
+  base_url: "http://localhost:17000"
+  categories:
+    - page_load_and_layout
+    - navigation
+    - thread_management
+    - message_sending
+    - composer_features
+    - streaming_and_status
+    - settings_panel
+    - skills_page
+    - theme_and_responsive
+    - edge_cases
+
+cases:
+
+  # ============================================================
+  # Category 1: 页面加载与布局 (Page Load & Layout)
+  # ============================================================
+
+  - id: TC01
+    category: page_load_and_layout
+    title: "首页加载 - 空状态显示"
+    description: "打开首页，验证 EmptyState 正确显示，包括 hero 标题、示例卡片"
+    steps:
+      - 打开 http://localhost:17000
+      - 等待页面完全加载
+    expected:
+      - 页面标题包含 "Saker"
+      - 显示 hero 区域（hero-title 和 hero-subtitle）
+      - 显示 4 个示例卡片（分析图片、生成图片、文字转语音、分析视频）
+      - Composer 输入框可见
+      - 无 JS 控制台错误
+    priority: P0
+
+  - id: TC02
+    category: page_load_and_layout
+    title: "页面核心元素渲染"
+    description: "验证所有核心 UI 元素正确渲染"
+    steps:
+      - 打开首页
+      - 检查各区域元素
+    expected:
+      - TopBar 顶部导航栏可见
+      - IconNav 侧边导航可见（Chats/Skills/Canvas/Apps/Tasks/Settings 图标）
+      - Composer 输入区域在底部
+      - 粒子背景动画运行（ParticleBackground）
+    priority: P0
+
+  - id: TC03
+    category: page_load_and_layout
+    title: "页面无 JS 错误"
+    description: "确认首页加载无任何 JavaScript 控制台错误"
+    steps:
+      - 打开浏览器控制台
+      - 加载首页
+      - 检查 console 是否有 error 级别日志
+    expected:
+      - 控制台无 error 级别消息
+      - 无未捕获异常
+    priority: P0
+
+  # ============================================================
+  # Category 2: 导航 (Navigation)
+  # ============================================================
+
+  - id: TC04
+    category: navigation
+    title: "侧边导航 - 切换到 Skills 页面"
+    description: "点击 Skills 导航图标，验证页面切换"
+    steps:
+      - 点击侧边栏 Skills 图标（扳手图标）
+    expected:
+      - URL hash 变为 #skills
+      - Skills 页面内容显示
+      - Skills 导航按钮高亮（active 状态）
+    priority: P0
+
+  - id: TC05
+    category: navigation
+    title: "侧边导航 - 切换到 Canvas 页面"
+    description: "点击 Canvas 导航图标"
+    steps:
+      - 点击侧边栏 Canvas 图标（调色板图标）
+    expected:
+      - URL hash 变为 #canvas
+      - Canvas 布局显示
+      - Canvas 导航按钮高亮
+    priority: P1
+
+  - id: TC06
+    category: navigation
+    title: "侧边导航 - 切换到 Settings 页面"
+    description: "点击 Settings 导航图标"
+    steps:
+      - 点击侧边栏 Settings 图标（齿轮图标）
+    expected:
+      - URL hash 变为 #settings
+      - Settings 面板内容显示
+      - 页面标题显示 "Settings" 或对应的国际化文本
+    priority: P0
+
+  - id: TC07
+    category: navigation
+    title: "侧边导航 - 切换到 Tasks 页面"
+    description: "点击 Tasks 导航图标"
+    steps:
+      - 点击侧边栏 Tasks 图标（列表图标）
+    expected:
+      - URL hash 变为 #tasks
+      - Tasks 视图内容显示
+    priority: P1
+
+  - id: TC08
+    category: navigation
+    title: "侧边导航 - 切换到 Apps 页面"
+    description: "点击 Apps 导航图标"
+    steps:
+      - 点击侧边栏 Apps 图标
+    expected:
+      - URL hash 变为 #apps
+      - Apps 视图内容显示
+    priority: P1
+
+  - id: TC09
+    category: navigation
+    title: "导航回到 Chats 页面"
+    description: "从其他页面切换回 Chats"
+    steps:
+      - 先切换到 Settings 页面
+      - 再点击 Chats 图标（对话气泡图标）
+    expected:
+      - 回到聊天主界面
+      - EmptyState 或之前的会话显示
+      - Chats 按钮高亮
+    priority: P0
+
+  - id: TC10
+    category: navigation
+    title: "URL Hash 导航 - 直接访问"
+    description: "通过 URL hash 直接访问各页面"
+    steps:
+      - 在地址栏输入 http://localhost:17000/#settings
+    expected:
+      - 直接进入 Settings 页面
+      - 对应导航按钮高亮
+    priority: P1
+
+  # ============================================================
+  # Category 3: 会话管理 (Thread Management)
+  # ============================================================
+
+  - id: TC11
+    category: thread_management
+    title: "创建新会话"
+    description: "通过侧边栏创建新的聊天会话"
+    steps:
+      - 展开左侧会话面板
+      - 点击 "+ New" 按钮
+    expected:
+      - 新会话出现在列表中，标题为 "New Chat"
+      - 新会话自动激活（高亮）
+      - 会话列表更新
+    priority: P0
+
+  - id: TC12
+    category: thread_management
+    title: "切换会话"
+    description: "在多个会话之间切换"
+    steps:
+      - 创建两个新会话
+      - 点击第一个会话
+      - 再点击第二个会话
+    expected:
+      - 切换时消息区域清空并加载对应会话的消息
+      - 被选中的会话高亮显示
+      - URL hash 更新为对应会话 ID
+    priority: P0
+
+  - id: TC13
+    category: thread_management
+    title: "删除会话 - 确认流程"
+    description: "删除会话需要二次确认"
+    steps:
+      - 创建一个新会话
+      - 点击会话条目右侧的 × 删除按钮
+      - 确认弹出"确认/取消"选项
+      - 点击"取消"
+    expected:
+      - 点击 × 后显示"确认"和"取消"两个按钮
+      - 点击"取消"后会话保留
+      - 会话列表不变
+    priority: P0
+
+  - id: TC14
+    category: thread_management
+    title: "删除会话 - 确认删除"
+    description: "确认删除会话后会话消失"
+    steps:
+      - 创建一个新会话
+      - 点击 × 按钮
+      - 点击"确认"
+    expected:
+      - 会话从列表中移除
+      - 如果删除的是当前活跃会话，消息区域清空
+    priority: P0
+
+  - id: TC15
+    category: thread_management
+    title: "会话面板折叠/展开"
+    description: "测试面板折叠按钮功能"
+    steps:
+      - 点击面板折叠按钮（PanelLeftClose 图标）
+      - 观察面板状态
+      - 再次点击（PanelLeftOpen 图标）
+    expected:
+      - 面板可以折叠和展开
+      - 折叠后聊天区域占满宽度
+      - 展开后显示会话列表
+    priority: P1
+
+  - id: TC16
+    category: thread_management
+    title: "会话列表排序"
+    description: "验证会话按更新时间倒序排列"
+    steps:
+      - 创建会话 A
+      - 创建会话 B
+      - 在会话 A 中发送消息
+    expected:
+      - 会话 A 排列在会话 B 前面（最近更新的在上面）
+    priority: P2
+
+  # ============================================================
+  # Category 4: 消息发送 (Message Sending)
+  # ============================================================
+
+  - id: TC17
+    category: message_sending
+    title: "发送简单文本消息"
+    description: "在会话中发送文本并查看响应"
+    steps:
+      - 确保有活跃会话（或自动创建）
+      - 在 Composer 输入框中输入 "Hello"
+      - 按 Enter 或点击发送按钮
+    expected:
+      - 用户消息显示在聊天区域（带 User 图标）
+      - 状态变为 "running"（显示加载指示）
+      - 收到 AI 响应后显示助手消息（带 Saker 头像）
+    priority: P0
+
+  - id: TC18
+    category: message_sending
+    title: "自动创建会话并发送"
+    description: "在无活跃会话时直接发送消息"
+    steps:
+      - 确保当前无选中会话
+      - 在 Composer 中输入 "你好" 并发送
+    expected:
+      - 自动创建新会话
+      - 会话标题从输入内容生成
+      - 消息正常发送
+    priority: P0
+
+  - id: TC19
+    category: message_sending
+    title: "发送多行文本"
+    description: "使用 Shift+Enter 换行后发送"
+    steps:
+      - 在 Composer 中输入第一行
+      - 按 Shift+Enter 换行
+      - 输入第二行
+      - 按 Enter 发送
+    expected:
+      - 消息包含换行内容
+      - Composer 清空并恢复单行高度
+    priority: P1
+
+  - id: TC20
+    category: message_sending
+    title: "空消息不发送"
+    description: "验证空内容无法发送"
+    steps:
+      - Composer 保持为空
+      - 按 Enter 或点击发送按钮
+    expected:
+      - 不发送任何消息
+      - 无网络请求发出
+    priority: P1
+
+  - id: TC21
+    category: message_sending
+    title: "会话标题自动更新"
+    description: "新会话发送第一条消息后标题自动更新"
+    steps:
+      - 创建新会话（标题为 "New Chat"）
+      - 发送消息 "请帮我分析这段代码"
+    expected:
+      - 会话标题自动更新为消息内容的前 40 个字符
+      - 不再显示 "New Chat"
+    priority: P1
+
+  # ============================================================
+  # Category 5: Composer 功能 (Composer Features)
+  # ============================================================
+
+  - id: TC22
+    category: composer_features
+    title: "Composer 自动高度调整"
+    description: "输入多行内容时 textarea 自动扩展"
+    steps:
+      - 在 Composer 中输入多行文本（5行以上）
+    expected:
+      - textarea 高度自动增长
+      - 最大高度不超过 200px
+      - 超出后出现滚动条
+    priority: P1
+
+  - id: TC23
+    category: composer_features
+    title: "Slash 命令选择器"
+    description: "输入 / 触发 slash 命令菜单"
+    steps:
+      - 在 Composer 中输入 "/"
+    expected:
+      - 弹出 SlashCommandPicker 浮层
+      - 显示 /help 和最近使用的技能
+      - 最多显示 8 个选项
+    priority: P1
+
+  - id: TC24
+    category: composer_features
+    title: "Slash 命令筛选"
+    description: "输入 / 后继续输入进行筛选"
+    steps:
+      - 输入 "/he"
+    expected:
+      - 列表过滤显示匹配 "he" 的命令（如 /help）
+      - 使用箭头键可导航
+    priority: P2
+
+  - id: TC25
+    category: composer_features
+    title: "Slash 命令键盘导航"
+    description: "使用键盘在 slash 菜单中导航"
+    steps:
+      - 输入 "/" 打开菜单
+      - 按 ArrowDown / ArrowUp 导航
+      - 按 Enter 或 Tab 选择
+      - 按 Escape 关闭
+    expected:
+      - 上下箭头改变高亮项
+      - Enter/Tab 插入选中的命令文本
+      - Escape 关闭菜单
+    priority: P2
+
+  - id: TC26
+    category: composer_features
+    title: "示例卡片快速输入"
+    description: "点击 EmptyState 的示例卡片自动填入文本"
+    steps:
+      - 在空状态页面点击任一示例卡片
+    expected:
+      - 点击后触发发送对应的预设文本
+      - 自动创建会话并发送
+    priority: P1
+
+  # ============================================================
+  # Category 6: 流式响应与状态 (Streaming & Status)
+  # ============================================================
+
+  - id: TC27
+    category: streaming_and_status
+    title: "流式文本响应显示"
+    description: "AI 响应以流式方式逐步显示"
+    steps:
+      - 发送一条消息
+      - 观察响应过程
+    expected:
+      - 响应文本逐步出现（流式效果）
+      - 显示 StreamText 内容
+      - 完成后状态变为 idle
+    priority: P0
+
+  - id: TC28
+    category: streaming_and_status
+    title: "停止生成按钮"
+    description: "在 AI 响应中点击停止按钮"
+    steps:
+      - 发送一条较长的提示
+      - 在流式响应过程中点击停止按钮（方块图标）
+    expected:
+      - 显示停止按钮（Square 图标）替代发送按钮
+      - 点击后停止生成
+      - 状态恢复为 idle
+      - 已生成的内容保留
+    priority: P0
+
+  - id: TC29
+    category: streaming_and_status
+    title: "工具执行事件显示"
+    description: "AI 调用工具时显示 ToolItem 卡片"
+    steps:
+      - 发送需要调用工具的提示（如 "生成一张图片"）
+      - 观察工具执行过程
+    expected:
+      - 显示 tool_execution_start 事件
+      - 显示工具名称和进度
+      - 工具完成后显示结果
+    priority: P1
+
+  - id: TC30
+    category: streaming_and_status
+    title: "错误提示显示"
+    description: "发送消息出错时显示 toast 错误"
+    steps:
+      - 触发一个错误场景（如服务端返回错误）
+    expected:
+      - 显示 toast 错误通知
+      - 错误持续 10 秒
+      - 状态恢复为 idle
+    priority: P1
+
+  # ============================================================
+  # Category 7: 设置面板 (Settings Panel)
+  # ============================================================
+
+  - id: TC31
+    category: settings_panel
+    title: "Settings 页面加载"
+    description: "验证 Settings 页面各区域正常渲染"
+    steps:
+      - 导航到 Settings 页面
+    expected:
+      - 显示页面标题 "Settings"
+      - 包含 Aigo/Auth/Failover/Sandbox/Storage 等配置区域
+      - 各区域的表单元素可交互
+    priority: P0
+
+  - id: TC32
+    category: settings_panel
+    title: "Settings 各 Section 可展开"
+    description: "验证每个设置 section 都可以展开查看"
+    steps:
+      - 在 Settings 页面逐个点击各 section
+    expected:
+      - AigoSection 显示 AI 模型相关配置
+      - AuthSection 显示认证相关配置
+      - FailoverSection 显示故障转移配置
+      - SandboxSection 显示沙箱配置
+      - StorageSection 显示存储配置
+    priority: P1
+
+  # ============================================================
+  # Category 8: Skills 页面 (Skills Page)
+  # ============================================================
+
+  - id: TC33
+    category: skills_page
+    title: "Skills 目录加载"
+    description: "验证 Skills 页面列出所有注册的技能"
+    steps:
+      - 导航到 Skills 页面
+    expected:
+      - 显示技能列表（SkillsCatalog）
+      - 每个技能显示名称和描述
+      - 页面布局正常无重叠
+    priority: P1
+
+  - id: TC34
+    category: skills_page
+    title: "Skill 详情查看"
+    description: "点击技能查看详细信息"
+    steps:
+      - 在 Skills 页面点击某个技能
+    expected:
+      - 显示技能详细内容
+      - 包含技能描述和关键词
+    priority: P2
+
+  # ============================================================
+  # Category 9: 主题与响应式 (Theme & Responsive)
+  # ============================================================
+
+  - id: TC35
+    category: theme_and_responsive
+    title: "暗色主题默认显示"
+    description: "验证默认主题样式正确"
+    steps:
+      - 加载首页
+      - 检查 CSS 变量和颜色方案
+    expected:
+      - 暗色主题正确应用
+      - 文字与背景对比度足够
+      - 无样式闪烁（FOUC）
+    priority: P1
+
+  - id: TC36
+    category: theme_and_responsive
+    title: "消息 Markdown 渲染"
+    description: "验证 AI 响应中的 Markdown 正确渲染"
+    steps:
+      - 发送提示要求返回包含代码块、列表、粗体等格式的内容
+    expected:
+      - 代码块有语法高亮
+      - 列表正确缩进
+      - 粗体/斜体正确渲染
+      - HTML 被正确清理（DOMPurify）
+    priority: P1
+
+  - id: TC37
+    category: theme_and_responsive
+    title: "消息复制功能"
+    description: "验证助手消息的复制按钮"
+    steps:
+      - 有一条 AI 回复消息
+      - 点击消息下方的复制按钮（Copy 图标）
+    expected:
+      - 消息内容复制到剪贴板
+      - 复制的是原始文本内容（非 HTML）
+    priority: P1
+
+  # ============================================================
+  # Category 10: 边界情况 (Edge Cases)
+  # ============================================================
+
+  - id: TC38
+    category: edge_cases
+    title: "快速连续发送消息"
+    description: "验证运行中不允许再次发送"
+    steps:
+      - 发送一条消息
+      - 在 AI 响应完成前再次按 Enter
+    expected:
+      - 第二条消息被阻止（turnStatus === 'running' 时不发送）
+      - 不会产生重复请求
+    priority: P1
+
+  - id: TC39
+    category: edge_cases
+    title: "长文本消息折叠"
+    description: "超长 AI 响应的折叠/展开功能"
+    steps:
+      - 发送提示要求生成超长内容
+      - 观察消息是否可折叠
+    expected:
+      - 超过 600px 高度的消息显示折叠
+      - 显示"展开更多/收起"按钮
+      - 点击按钮可切换折叠状态
+    priority: P2
+
+  - id: TC40
+    category: edge_cases
+    title: "页面刷新后恢复会话"
+    description: "刷新页面后恢复上次的会话状态"
+    steps:
+      - 在某个会话中发送消息
+      - 刷新页面 (F5)
+    expected:
+      - 页面重新加载后恢复到之前的会话
+      - localStorage 中的 saker_last_thread 生效
+      - 会话列表重新加载
+    priority: P1
+
+summary:
+  total_cases: 40
+  p0_cases: 12
+  p1_cases: 18
+  p2_cases: 5
+  categories: 10

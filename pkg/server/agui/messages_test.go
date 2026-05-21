@@ -251,3 +251,96 @@ func TestConvertFrontendTools_NilParameters(t *testing.T) {
 		t.Errorf("Parameters should be nil for nil input, got %v", out[0].Parameters)
 	}
 }
+
+func TestMessagesToRequest_PreloadHistory(t *testing.T) {
+	t.Parallel()
+	input := aguitypes.RunAgentInput{
+		ThreadID: "thread_restore",
+		Messages: []aguitypes.Message{
+			{Role: aguitypes.RoleUser, Content: "hello"},
+			{Role: aguitypes.RoleAssistant, Content: "hi there"},
+			{Role: aguitypes.RoleUser, Content: "what is 2+2?"},
+		},
+	}
+	req := messagesToRequest(input, Identity{})
+
+	if req.Prompt != "what is 2+2?" {
+		t.Errorf("Prompt = %q, want %q", req.Prompt, "what is 2+2?")
+	}
+	if len(req.PreloadHistory) != 2 {
+		t.Fatalf("PreloadHistory len = %d, want 2", len(req.PreloadHistory))
+	}
+	if req.PreloadHistory[0].Role != "user" || req.PreloadHistory[0].Content != "hello" {
+		t.Errorf("PreloadHistory[0] = %+v, want user/hello", req.PreloadHistory[0])
+	}
+	if req.PreloadHistory[1].Role != "assistant" || req.PreloadHistory[1].Content != "hi there" {
+		t.Errorf("PreloadHistory[1] = %+v, want assistant/hi there", req.PreloadHistory[1])
+	}
+}
+
+func TestMessagesToRequest_PreloadHistoryWithToolCalls(t *testing.T) {
+	t.Parallel()
+	input := aguitypes.RunAgentInput{
+		ThreadID: "thread_tools",
+		Messages: []aguitypes.Message{
+			{Role: aguitypes.RoleUser, Content: "search for cats"},
+			{
+				Role:    aguitypes.RoleAssistant,
+				Content: "",
+				ToolCalls: []aguitypes.ToolCall{
+					{ID: "call_1", Type: "function", Function: aguitypes.FunctionCall{
+						Name:      "web_search",
+						Arguments: `{"query":"cats"}`,
+					}},
+				},
+			},
+			{Role: aguitypes.RoleTool, Content: "found 10 results", ToolCallID: "call_1"},
+			{Role: aguitypes.RoleAssistant, Content: "I found 10 results about cats"},
+			{Role: aguitypes.RoleUser, Content: "tell me more"},
+		},
+	}
+	req := messagesToRequest(input, Identity{})
+
+	if req.Prompt != "tell me more" {
+		t.Errorf("Prompt = %q, want %q", req.Prompt, "tell me more")
+	}
+	if len(req.PreloadHistory) != 4 {
+		t.Fatalf("PreloadHistory len = %d, want 4", len(req.PreloadHistory))
+	}
+	// Assistant with tool call
+	if len(req.PreloadHistory[1].ToolCalls) != 1 {
+		t.Fatalf("PreloadHistory[1].ToolCalls len = %d, want 1", len(req.PreloadHistory[1].ToolCalls))
+	}
+	tc := req.PreloadHistory[1].ToolCalls[0]
+	if tc.Name != "web_search" || tc.ID != "call_1" {
+		t.Errorf("ToolCall = %+v, want web_search/call_1", tc)
+	}
+	if tc.Arguments["query"] != "cats" {
+		t.Errorf("ToolCall args = %v, want query=cats", tc.Arguments)
+	}
+	// Tool result
+	if req.PreloadHistory[2].Role != "tool" {
+		t.Errorf("PreloadHistory[2].Role = %q, want tool", req.PreloadHistory[2].Role)
+	}
+	if len(req.PreloadHistory[2].ToolCalls) != 1 || req.PreloadHistory[2].ToolCalls[0].Result != "found 10 results" {
+		t.Errorf("PreloadHistory[2] tool result mismatch: %+v", req.PreloadHistory[2])
+	}
+}
+
+func TestMessagesToRequest_SingleMessageNoPreload(t *testing.T) {
+	t.Parallel()
+	input := aguitypes.RunAgentInput{
+		ThreadID: "thread_new",
+		Messages: []aguitypes.Message{
+			{Role: aguitypes.RoleUser, Content: "first message"},
+		},
+	}
+	req := messagesToRequest(input, Identity{})
+
+	if req.Prompt != "first message" {
+		t.Errorf("Prompt = %q, want %q", req.Prompt, "first message")
+	}
+	if len(req.PreloadHistory) != 0 {
+		t.Errorf("PreloadHistory should be empty for single message, got %d", len(req.PreloadHistory))
+	}
+}

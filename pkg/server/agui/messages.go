@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/saker-ai/saker/pkg/api"
+	"github.com/saker-ai/saker/pkg/message"
 	"github.com/saker-ai/saker/pkg/model"
 
 	aguitypes "github.com/ag-ui-protocol/ag-ui/sdks/community/go/pkg/core/types"
@@ -29,14 +30,18 @@ func convertFrontendTools(tools []aguitypes.Tool) []model.ToolDefinition {
 // messagesToRequest converts AG-UI RunAgentInput into a saker api.Request.
 // Uses the ThreadID as SessionID so saker's runtime manages conversation
 // history across turns. The latest user message becomes the Prompt.
+// All preceding messages are converted to PreloadHistory so the runtime
+// can restore context after worker failover without requiring a shared DB.
 // Multimodal content (images, documents) is converted to ContentBlocks.
 func messagesToRequest(input aguitypes.RunAgentInput, identity Identity) api.Request {
 	var prompt string
 	var contentBlocks []model.ContentBlock
+	var lastUserIdx int = -1
 
 	for i := len(input.Messages) - 1; i >= 0; i-- {
 		if input.Messages[i].Role == aguitypes.RoleUser {
 			prompt, contentBlocks = extractMultimodalContent(input.Messages[i])
+			lastUserIdx = i
 			break
 		}
 	}
@@ -49,11 +54,19 @@ func messagesToRequest(input aguitypes.RunAgentInput, identity Identity) api.Req
 		prompt = strings.Join(parts, "\n") + "\n\n" + prompt
 	}
 
+	// Convert all messages preceding the last user message into PreloadHistory.
+	// This allows the runtime to seed session history on a fresh worker.
+	var preload []message.Message
+	if lastUserIdx > 0 {
+		preload = aguiMessagesToHistory(input.Messages[:lastUserIdx])
+	}
+
 	req := api.Request{
-		Prompt:        prompt,
-		ContentBlocks: contentBlocks,
-		SessionID:     input.ThreadID,
-		Ephemeral:     true,
+		Prompt:         prompt,
+		ContentBlocks:  contentBlocks,
+		SessionID:      input.ThreadID,
+		Ephemeral:      true,
+		PreloadHistory: preload,
 	}
 	if identity.Username != "" {
 		req.User = identity.Username
@@ -183,6 +196,70 @@ func mimeToBlockType(mimeType string) model.ContentBlockType {
 	default:
 		return ""
 	}
+}
+
+// aguiMessagesToHistory converts AG-UI messages into saker message.Message
+// slice suitable for seeding runtime history (PreloadHistory). This enables
+// stateless worker failover: synapse injects stored conversation history into
+// the AG-UI body, and saker uses it to rebuild context.
+func aguiMessagesToHistory(msgs []aguitypes.Message) []message.Message {
+	out := make([]message.Message, 0, len(msgs))
+	for _, m := range msgs {
+		role := mapAGUIRoleToHistory(m.Role)
+		if role == "" {
+			continue
+		}
+		msg := message.Message{
+			Role:    role,
+			Content: extractTextContent(m.Content),
+		}
+		for _, tc := range m.ToolCalls {
+			args := parseToolCallArgs(tc.Function.Arguments)
+			msg.ToolCalls = append(msg.ToolCalls, message.ToolCall{
+				ID:        tc.ID,
+				Name:      tc.Function.Name,
+				Arguments: args,
+			})
+		}
+		// Tool result messages: store the content as a tool call result
+		// linked back to the original call via ToolCallID.
+		if m.ToolCallID != "" && role == "tool" {
+			msg.ToolCalls = []message.ToolCall{{
+				ID:     m.ToolCallID,
+				Result: msg.Content,
+			}}
+		}
+		out = append(out, msg)
+	}
+	return out
+}
+
+// mapAGUIRoleToHistory maps AG-UI roles to saker message roles.
+func mapAGUIRoleToHistory(role aguitypes.Role) string {
+	switch role {
+	case aguitypes.RoleUser:
+		return "user"
+	case aguitypes.RoleAssistant:
+		return "assistant"
+	case aguitypes.RoleSystem, aguitypes.RoleDeveloper:
+		return "system"
+	case aguitypes.RoleTool:
+		return "tool"
+	default:
+		return ""
+	}
+}
+
+// parseToolCallArgs parses a JSON arguments string into a map.
+func parseToolCallArgs(raw string) map[string]any {
+	if raw == "" {
+		return nil
+	}
+	var args map[string]any
+	if json.Unmarshal([]byte(raw), &args) != nil {
+		return map[string]any{"_raw": raw}
+	}
+	return args
 }
 
 // extractTextContent coerces AG-UI message content (typed as any) into a

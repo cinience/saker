@@ -98,7 +98,11 @@ func (g *Gateway) makeAskQuestionHandler(runID string, sideCh chan<- sideEvent) 
 		for i, q := range questions {
 			opts := make([]map[string]string, len(q.Options))
 			for j, o := range q.Options {
-				opts[j] = map[string]string{"label": o.Label, "description": o.Description}
+				opt := map[string]string{"label": o.Label}
+				if o.Description != "" {
+					opt["description"] = o.Description
+				}
+				opts[j] = opt
 			}
 			items[i] = map[string]any{
 				"question":     q.Question,

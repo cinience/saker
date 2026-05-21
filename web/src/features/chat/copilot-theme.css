@@ -494,6 +494,100 @@ cpk-web-inspector {
   word-break: break-word;
 }
 
+/* ── Tool media thumbnail preview ── */
+.tool-call-progress .tool-media {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border, #2a2a3e);
+}
+.tool-call-progress .tool-media img {
+  max-height: 200px;
+  max-width: 300px;
+  border-radius: 8px;
+  cursor: zoom-in;
+  object-fit: cover;
+  transition: opacity 0.2s;
+}
+.tool-call-progress .tool-media img:hover {
+  opacity: 0.85;
+}
+.tool-call-progress .tool-media video,
+.tool-call-progress .tool-media audio {
+  max-width: 100%;
+  border-radius: 8px;
+  margin-top: 4px;
+}
+
+/* ── Slash command picker inside CopilotKit input ── */
+[data-copilotkit] .slash-picker {
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  right: 0;
+  z-index: 50;
+  margin-bottom: 4px;
+}
+
+/* ── Scroll-to-bottom button ── */
+.scroll-to-bottom-btn {
+  position: absolute;
+  bottom: 100px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 10;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 1px solid var(--border, #2a2a3e);
+  background: var(--bg-secondary, #1a1a2e);
+  color: var(--text, #e2e8f0);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  transition: background 0.15s, transform 0.15s;
+}
+.scroll-to-bottom-btn:hover {
+  background: var(--bg-tertiary, #2a2a3e);
+  transform: translateX(-50%) scale(1.1);
+}
+
+/* ── Chat Error Boundary fallback ── */
+.chat-error-fallback {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 48px 24px;
+  gap: 12px;
+  flex: 1;
+}
+.chat-error-icon {
+  font-size: 32px;
+  opacity: 0.6;
+}
+.chat-error-text {
+  color: var(--text-muted, #64748b);
+  font-size: 14px;
+}
+.chat-error-retry {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  border-radius: 8px;
+  border: 1px solid var(--border, #2a2a3e);
+  background: var(--bg-secondary, #1a1a2e);
+  color: var(--text, #e2e8f0);
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.chat-error-retry:hover {
+  background: var(--bg-tertiary, #2a2a3e);
+}
+
 /* ── Block Google Fonts & v2 Tailwind font overrides (CSP) ── */
 .saker-copilot-chat *,
 [data-copilotkit] * {

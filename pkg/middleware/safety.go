@@ -45,6 +45,17 @@ func (m *SafetyMiddleware) AfterModel(_ context.Context, _ *State) error  { retu
 func (m *SafetyMiddleware) BeforeTool(_ context.Context, _ *State) error  { return nil }
 func (m *SafetyMiddleware) AfterAgent(_ context.Context, _ *State) error  { return nil }
 
+// mediaGenTools lists tools whose output naturally contains high-entropy hex
+// strings (file hashes, CDN URLs) that should not trigger secret leak warnings.
+var mediaGenToolsExempt = map[string]bool{
+	"generate_image": true,
+	"generate_video": true,
+	"generate_music": true,
+	"generate_3d":    true,
+	"edit_image":     true,
+	"edit_video":     true,
+}
+
 // AfterTool scans tool output for secret leaks and prompt injection patterns.
 func (m *SafetyMiddleware) AfterTool(_ context.Context, st *State) error {
 	if st == nil || st.ToolResult == nil || m.extractOutput == nil {
@@ -63,6 +74,9 @@ func (m *SafetyMiddleware) AfterTool(_ context.Context, st *State) error {
 	}
 	for _, f := range findings {
 		if f.Action == security.LeakWarn {
+			if f.PatternName == "high_entropy_hex" && mediaGenToolsExempt[toolName] {
+				continue
+			}
 			slog.Warn("safety: potential secret in tool output", "tool", toolName, "pattern", f.PatternName, "severity", f.Severity)
 		}
 	}

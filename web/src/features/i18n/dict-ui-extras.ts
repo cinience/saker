@@ -24,8 +24,26 @@ export const dictUiExtras = {
   "composer.askSaker": { en: "Ask Saker...", zh: "问 Saker..." },
   "composer.viewerReadOnly": { en: "Read-only — viewer cannot send messages", zh: "只读 — 观察者无法发送消息" },
   "composer.slashHint": { en: "Type / to reference a skill", zh: "输入 / 引用技能" },
+  "composer.uploading": { en: "Uploading", zh: "上传中" },
+  "composer.fileTypeUnsupported": { en: "Unsupported file type", zh: "不支持的文件类型" },
+  "composer.addAttachments": { en: "Add attachments", zh: "添加附件" },
+  "composer.disclaimerCpk": { en: "AI can make mistakes. Please verify important information.", zh: "AI 可能会出错，请核实重要信息。" },
+
+  // -- Tool status --
+  "tool.preparing": { en: "Preparing...", zh: "准备中..." },
+  "tool.executing": { en: "Executing...", zh: "执行中..." },
+  "tool.complete": { en: "Done", zh: "完成" },
+
+  // -- Suggestions --
+  "suggestion.generateImage": { en: "Generate an image", zh: "生成一张图片" },
+  "suggestion.generateImageMsg": { en: "Help me generate a cyberpunk city image", zh: "帮我生成一张赛博朋克风格的城市图片" },
+  "suggestion.textToSpeech": { en: "Text to speech", zh: "文字转语音" },
+  "suggestion.textToSpeechMsg": { en: "Convert the following text to speech: Hello World", zh: "把下面的文字转成语音：你好世界" },
+  "suggestion.analyzeVideo": { en: "Analyze video content", zh: "分析视频内容" },
+  "suggestion.analyzeVideoMsg": { en: "Analyze the content of this video", zh: "分析这个视频的内容" },
 
   // -- Thread date groups --
+  "thread.search": { en: "Search chats...", zh: "搜索对话..." },
   "thread.today": { en: "Today", zh: "今天" },
   "thread.yesterday": { en: "Yesterday", zh: "昨天" },
   "thread.previous7Days": { en: "Previous 7 days", zh: "最近 7 天" },

@@ -108,8 +108,16 @@ func (g *Gateway) handleConnect(c *gin.Context, body []byte) {
 		}
 	}
 	// Emit state snapshot with cached artifacts from previous runs.
+	// Fall back to conversation DB when in-memory cache has expired.
 	var artifactState []any
-	if cached := g.loadArtifacts(threadID); len(cached) > 0 {
+	cached := g.loadArtifacts(threadID)
+	if len(cached) == 0 {
+		cached = g.loadArtifactsFromDB(c.Request.Context(), threadID)
+		if len(cached) > 0 {
+			g.storeArtifacts(threadID, cached)
+		}
+	}
+	if len(cached) > 0 {
 		for _, a := range cached {
 			artifactState = append(artifactState, map[string]string{
 				"type": a.Type, "url": a.URL, "name": a.Name,

@@ -105,6 +105,19 @@ func (rt *Runtime) prepare(ctx context.Context, req Request) (preparedRun, error
 	history := rt.histories.Get(normalized.SessionID)
 	logging.From(ctx).Debug("prepare", "session_id", normalized.SessionID, "request_id", normalized.RequestID, "history_len", history.Len(), "force_skills", len(normalized.ForceSkills))
 
+	// Seed history from PreloadHistory when the caller provides more context
+	// than the runtime currently has (worker failover/recycle or partial
+	// local history). Covers: empty history (fresh worker), partial history
+	// (local DB has fewer messages than synapse injected).
+	if len(normalized.PreloadHistory) > 0 && len(normalized.PreloadHistory) > history.Len() {
+		prevLen := history.Len()
+		history.Replace(normalized.PreloadHistory)
+		logging.From(ctx).Info("prepare: replaced history from PreloadHistory",
+			"session_id", normalized.SessionID,
+			"preload_len", len(normalized.PreloadHistory),
+			"prev_history_len", prevLen)
+	}
+
 	// Fork parent session's history if requested and child is empty.
 	if normalized.ParentSessionID != "" && history.Len() == 0 {
 		parentHistory := rt.histories.Get(normalized.ParentSessionID)

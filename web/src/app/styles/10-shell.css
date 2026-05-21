@@ -809,6 +809,46 @@
 }
 .collapse-btn:hover { color: var(--text) !important; background: color-mix(in srgb, var(--text) 4%, transparent) !important; }
 
+.thread-search-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 4px 8px 2px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--text) 4%, transparent);
+  border: 1px solid transparent;
+  transition: border-color 0.15s;
+}
+.thread-search-wrapper:focus-within {
+  border-color: color-mix(in srgb, var(--accent) 40%, transparent);
+}
+.thread-search-icon { color: var(--text-muted); flex-shrink: 0; }
+.thread-search-input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  font-size: 13px;
+  color: var(--text);
+  min-width: 0;
+}
+.thread-search-input::placeholder { color: var(--text-muted); }
+.thread-search-clear {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: none;
+  background: color-mix(in srgb, var(--text) 8%, transparent);
+  color: var(--text-muted);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.thread-search-clear:hover { background: color-mix(in srgb, var(--text) 14%, transparent); color: var(--text); }
+
 .thread-list { flex: 1; overflow-y: auto; padding: 6px; }
 
 .thread-empty {

@@ -627,6 +627,112 @@ func TestNewStreamState_ArtifactFields(t *testing.T) {
 	}
 }
 
+func TestTranslateEvent_TextToolText_UsesUniqueMessageIDs(t *testing.T) {
+	t.Parallel()
+	state := newStreamState("t1", "r1")
+	w := &capturingSSEWriter{}
+	ctx := context.Background()
+	buf := &bytes.Buffer{}
+
+	// Phase 1: First text delta — opens message with base msgID.
+	_, _ = state.translateEvent(ctx, buf, w, api.StreamEvent{
+		Type: api.EventContentBlockDelta, Delta: &api.Delta{Text: "hello"},
+	}, nopFilter{})
+
+	if state.textMsgSeq != 1 {
+		t.Fatalf("after first text: textMsgSeq = %d, want 1", state.textMsgSeq)
+	}
+	if state.currentTextMsgID() != "msg_t1_r1" {
+		t.Fatalf("first segment msgID = %q, want msg_t1_r1", state.currentTextMsgID())
+	}
+
+	// Phase 2: Tool execution start — closes text message.
+	w.events = nil
+	_, _ = state.translateEvent(ctx, buf, w, api.StreamEvent{
+		Type: api.EventToolExecutionStart, ToolUseID: "tc_1", Name: "generate_image",
+		Input: map[string]string{"prompt": "cat"},
+	}, nopFilter{})
+
+	if state.textStarted {
+		t.Fatal("textStarted should be false after tool start")
+	}
+	// Should have emitted: TEXT_MESSAGE_END, ACTIVITY_SNAPSHOT, TOOL_CALL_START, TOOL_CALL_ARGS
+	types := w.types()
+	if len(types) < 1 || types[0] != "TEXT_MESSAGE_END" {
+		t.Fatalf("tool start should close text first, got %v", types)
+	}
+
+	// Phase 3: Tool execution result.
+	w.events = nil
+	_, _ = state.translateEvent(ctx, buf, w, api.StreamEvent{
+		Type: api.EventToolExecutionResult, ToolUseID: "tc_1", Name: "generate_image",
+		Output: map[string]any{"output": "done"},
+	}, nopFilter{})
+
+	// Phase 4: Second text delta — should use a NEW message ID.
+	w.events = nil
+	_, _ = state.translateEvent(ctx, buf, w, api.StreamEvent{
+		Type: api.EventContentBlockDelta, Delta: &api.Delta{Text: "image ready"},
+	}, nopFilter{})
+
+	if state.textMsgSeq != 2 {
+		t.Fatalf("after second text: textMsgSeq = %d, want 2", state.textMsgSeq)
+	}
+	if state.currentTextMsgID() != "msg_t1_r1_2" {
+		t.Fatalf("second segment msgID = %q, want msg_t1_r1_2", state.currentTextMsgID())
+	}
+	types = w.types()
+	if len(types) != 2 {
+		t.Fatalf("expected 2 events (START+CONTENT), got %d: %v", len(types), types)
+	}
+	if types[0] != "TEXT_MESSAGE_START" {
+		t.Errorf("second segment should emit new TEXT_MESSAGE_START, got %q", types[0])
+	}
+	if types[1] != "TEXT_MESSAGE_CONTENT" {
+		t.Errorf("then TEXT_MESSAGE_CONTENT, got %q", types[1])
+	}
+}
+
+func TestTranslateEvent_TextToolText_ToolParentMessageID(t *testing.T) {
+	t.Parallel()
+	state := newStreamState("t1", "r1")
+	ctx := context.Background()
+	buf := &bytes.Buffer{}
+
+	// Emit first text.
+	_, _ = state.translateEvent(ctx, buf, &capturingSSEWriter{}, api.StreamEvent{
+		Type: api.EventContentBlockDelta, Delta: &api.Delta{Text: "hi"},
+	}, nopFilter{})
+
+	// Tool start — verify it uses s.msgID (base ID) for parentMessageId, not the segment ID.
+	// The parentMessageId is set in the event but we verify indirectly: s.msgID is always the base.
+	if state.msgID != "msg_t1_r1" {
+		t.Fatalf("base msgID should remain msg_t1_r1, got %q", state.msgID)
+	}
+}
+
+func TestCurrentTextMsgID_Segments(t *testing.T) {
+	t.Parallel()
+	s := newStreamState("thread1", "run1")
+
+	s.textMsgSeq = 0
+	if got := s.currentTextMsgID(); got != "msg_thread1_run1" {
+		t.Errorf("seq=0: got %q, want msg_thread1_run1", got)
+	}
+	s.textMsgSeq = 1
+	if got := s.currentTextMsgID(); got != "msg_thread1_run1" {
+		t.Errorf("seq=1: got %q, want msg_thread1_run1", got)
+	}
+	s.textMsgSeq = 2
+	if got := s.currentTextMsgID(); got != "msg_thread1_run1_2" {
+		t.Errorf("seq=2: got %q, want msg_thread1_run1_2", got)
+	}
+	s.textMsgSeq = 3
+	if got := s.currentTextMsgID(); got != "msg_thread1_run1_3" {
+		t.Errorf("seq=3: got %q, want msg_thread1_run1_3", got)
+	}
+}
+
 func TestFinalize_CleansUpToolNames(t *testing.T) {
 	t.Parallel()
 	state := newStreamState("t1", "r1")
