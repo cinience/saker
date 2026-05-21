@@ -20,29 +20,38 @@ import (
 
 // offlineSuites run without an API key.
 var offlineSuites = map[string]string{
-	"system_prompt":      "./eval/suites/system_prompt/...",
-	"tool_registration":  "./eval/suites/tool_registration/...",
-	"multi_turn":         "./eval/suites/multi_turn/...",
-	"safety_integration": "./eval/suites/safety_integration/...",
-	"pipeline":           "./eval/suites/pipeline/...",
-	"performance":        "./eval/suites/performance/...",
+	"system_prompt":           "./eval/suites/system_prompt/...",
+	"tool_registration":       "./eval/suites/tool_registration/...",
+	"multi_turn":              "./eval/suites/multi_turn/...",
+	"safety_integration":      "./eval/suites/safety_integration/...",
+	"pipeline":                "./eval/suites/pipeline/...",
+	"performance":             "./eval/suites/performance/...",
+	"creative_media_pipeline": "./eval/suites/creative_media_pipeline/...",
 }
 
 // onlineSuites require ANTHROPIC_API_KEY and use the integration build tag.
 var onlineSuites = map[string]string{
-	"llm_tool_selection": "./eval/suites/llm_tool_selection/...",
-	"llm_multi_turn":     "./eval/suites/llm_multi_turn/...",
-	"llm_safety":         "./eval/suites/llm_safety/...",
-	"llm_system_prompt":  "./eval/suites/llm_system_prompt/...",
+	"llm_tool_selection":      "./eval/suites/llm_tool_selection/...",
+	"llm_multi_turn":          "./eval/suites/llm_multi_turn/...",
+	"llm_safety":              "./eval/suites/llm_safety/...",
+	"llm_system_prompt":       "./eval/suites/llm_system_prompt/...",
+	"creative_tool_selection": "./eval/suites/creative_tool_selection/...",
+	"creative_multi_turn":     "./eval/suites/creative_multi_turn/...",
+	"creative_media_quality":  "./eval/suites/creative_media_quality/...",
+	"creative_writing":        "./eval/suites/creative_writing/...",
+	"creative_workflow":       "./eval/suites/creative_workflow/...",
 }
 
 var offlineOrder = []string{
 	"system_prompt", "tool_registration", "multi_turn",
 	"safety_integration", "pipeline", "performance",
+	"creative_media_pipeline",
 }
 
 var onlineOrder = []string{
 	"llm_tool_selection", "llm_multi_turn", "llm_safety", "llm_system_prompt",
+	"creative_tool_selection", "creative_multi_turn",
+	"creative_media_quality", "creative_writing", "creative_workflow",
 }
 
 type suiteResult struct {

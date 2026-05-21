@@ -231,8 +231,16 @@ test-eval-bench:
 test-eval-llm:
 	$(GO) test -tags integration ./eval/suites/llm_tool_selection/... ./eval/suites/llm_multi_turn/... ./eval/suites/llm_safety/... ./eval/suites/llm_system_prompt/... -v -timeout 600s
 
+# Creative eval suites -- offline (no API key)
+test-eval-creative:
+	$(GO) test ./eval/suites/creative_media_pipeline/... -v -timeout 300s
+
+# Creative eval suites -- online (requires ANTHROPIC_API_KEY)
+test-eval-creative-llm:
+	$(GO) test -tags integration ./eval/suites/creative_tool_selection/... ./eval/suites/creative_multi_turn/... ./eval/suites/creative_media_quality/... ./eval/suites/creative_writing/... ./eval/suites/creative_workflow/... -v -timeout 900s
+
 # All evals (offline + online)
-test-eval-all: test-eval test-eval-llm
+test-eval-all: test-eval test-eval-llm test-eval-creative test-eval-creative-llm
 
 # Terminal-Bench 2 (native Go runner) — unit tests, no docker required
 test-eval-tb2:
