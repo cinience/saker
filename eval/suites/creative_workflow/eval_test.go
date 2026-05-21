@@ -119,8 +119,44 @@ func TestEval_CreativeWorkflow(t *testing.T) {
 				redundancy = 1.0
 			}
 
-			// Simplified efficiency formula (no baseline token/time data for first run)
-			efficiencyScore := completionScore*0.4 + (1.0-redundancy)*0.3 + 0.3 // 0.3 placeholder for token+time
+			// Token efficiency: ratio of optimal to actual (capped at 1.0)
+			tokenEfficiency := 1.0
+			inputTokens := 0
+			outputTokens := 0
+			if resp != nil && resp.Result != nil {
+				if v, ok := resp.Result.Details["input_tokens"]; ok {
+					if n, ok2 := v.(int); ok2 {
+						inputTokens = n
+					}
+				}
+				if v, ok := resp.Result.Details["output_tokens"]; ok {
+					if n, ok2 := v.(int); ok2 {
+						outputTokens = n
+					}
+				}
+			}
+			totalTokens := inputTokens + outputTokens
+			// Use step-proportional token baseline: ~500 tokens per optimal step
+			baselineTokens := tc.OptimalSteps * 500
+			if totalTokens > 0 && baselineTokens > 0 {
+				tokenEfficiency = float64(baselineTokens) / float64(totalTokens)
+				if tokenEfficiency > 1.0 {
+					tokenEfficiency = 1.0
+				}
+			}
+
+			// Time efficiency: faster is better, baseline = 10s per optimal step
+			timeEfficiency := 1.0
+			baselineTime := time.Duration(tc.OptimalSteps) * 10 * time.Second
+			if wallTime > baselineTime {
+				timeEfficiency = float64(baselineTime) / float64(wallTime)
+				if timeEfficiency > 1.0 {
+					timeEfficiency = 1.0
+				}
+			}
+
+			efficiencyScore := completionScore*0.4 + (1.0-redundancy)*0.3 +
+				tokenEfficiency*0.2 + timeEfficiency*0.1
 
 			pass := completed && actualSteps <= tc.MaxSteps
 			score := efficiencyScore
@@ -134,12 +170,15 @@ func TestEval_CreativeWorkflow(t *testing.T) {
 				Score:    score,
 				Duration: wallTime,
 				Details: map[string]any{
-					"completed":     completed,
-					"actual_steps":  actualSteps,
-					"optimal_steps": tc.OptimalSteps,
-					"max_steps":     tc.MaxSteps,
-					"redundancy":    redundancy,
-					"wall_time_ms":  wallTime.Milliseconds(),
+					"completed":        completed,
+					"actual_steps":     actualSteps,
+					"optimal_steps":    tc.OptimalSteps,
+					"max_steps":        tc.MaxSteps,
+					"redundancy":       redundancy,
+					"token_efficiency": tokenEfficiency,
+					"time_efficiency":  timeEfficiency,
+					"total_tokens":     totalTokens,
+					"wall_time_ms":     wallTime.Milliseconds(),
 				},
 			})
 

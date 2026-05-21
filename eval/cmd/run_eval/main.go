@@ -69,7 +69,31 @@ func main() {
 	timeout := flag.String("timeout", "300s", "test timeout")
 	online := flag.Bool("online", false, "include online LLM eval suites (requires ANTHROPIC_API_KEY)")
 	threshold := flag.Float64("threshold", 0.0, "minimum pass rate (0.0-1.0); exit 1 if below")
+	compare := flag.Bool("compare", false, "compare two baseline files (requires --baseline and --candidate)")
+	trend := flag.String("trend", "", "show trend from a directory of baseline JSON files")
+	baselineFlag := flag.String("baseline", "", "baseline JSON file for comparison")
+	candidateFlag := flag.String("candidate", "", "candidate JSON file for comparison")
 	flag.Parse()
+
+	if *compare {
+		if *baselineFlag == "" || *candidateFlag == "" {
+			fmt.Fprintln(os.Stderr, "--compare requires --baseline and --candidate flags")
+			os.Exit(1)
+		}
+		if err := runCompare(*baselineFlag, *candidateFlag); err != nil {
+			fmt.Fprintf(os.Stderr, "compare error: %v\n", err)
+			os.Exit(1)
+		}
+		return
+	}
+
+	if *trend != "" {
+		if err := runTrend(*trend); err != nil {
+			fmt.Fprintf(os.Stderr, "trend error: %v\n", err)
+			os.Exit(1)
+		}
+		return
+	}
 
 	suites := resolveSuites(*suiteFlag, *online)
 	if len(suites) == 0 {

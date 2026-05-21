@@ -1,36 +1,42 @@
 {
   "version": "1",
-  "model": "claude-haiku-4-5-20251001",
-  "collected_at": "2025-05-20T00:00:00Z",
+  "model": "qwen3.7-max",
+  "collected_at": "2026-05-21T23:31:25Z",
   "suites": {
     "creative_tool_selection": {
-      "pass_rate": 0.85,
-      "avg_score": 0.82,
+      "pass_rate": 0.765,
+      "avg_score": 0.69,
+      "p10_score": 0.50,
       "case_count": 34
     },
     "creative_multi_turn": {
-      "pass_rate": 0.78,
-      "avg_score": 0.75,
+      "pass_rate": 1.00,
+      "avg_score": 1.00,
+      "p10_score": 1.00,
       "case_count": 20
     },
     "creative_media_pipeline": {
-      "pass_rate": 0.90,
-      "avg_score": 0.88,
+      "pass_rate": 1.00,
+      "avg_score": 1.00,
+      "p10_score": 1.00,
       "case_count": 12
     },
     "creative_media_quality": {
-      "pass_rate": 0.80,
-      "avg_score": 0.76,
+      "pass_rate": 1.00,
+      "avg_score": 0.97,
+      "p10_score": 0.90,
       "case_count": 10
     },
     "creative_writing": {
-      "pass_rate": 0.72,
-      "avg_score": 0.70,
+      "pass_rate": 0.933,
+      "avg_score": 0.97,
+      "p10_score": 0.85,
       "case_count": 15
     },
     "creative_workflow": {
-      "pass_rate": 0.68,
-      "avg_score": 0.65,
+      "pass_rate": 1.00,
+      "avg_score": 1.00,
+      "p10_score": 1.00,
       "case_count": 8
     }
   }

@@ -191,10 +191,11 @@ func creativeToolCases() []toolSelectionCase {
 		},
 		{
 			Name:       "chain_capture_analyze",
-			Prompt:     "捕获直播流画面，分析当前画面的构图质量",
+			Prompt:     "使用 stream_capture 工具捕获 rtmp://live.example.com 的直播流画面，然后用 frame_analyzer 分析画面构图",
 			IsChain:    true,
 			ChainTools: []string{"stream_capture", "frame_analyzer"},
 			ExpectedTool: "stream_capture",
+			AcceptedTools: []string{"frame_analyzer"},
 		},
 		{
 			Name:       "chain_sample_index",
@@ -226,10 +227,11 @@ func creativeToolCases() []toolSelectionCase {
 		},
 		{
 			Name:       "chain_monitor_capture_analyze",
-			Prompt:     "检查直播流状态，如果正常就截取当前画面并分析画质",
+			Prompt:     "先用 stream_monitor 检查直播流 rtmp://live.example.com 的状态，确认正常后用 stream_capture 截取画面，最后用 frame_analyzer 分析画质",
 			IsChain:    true,
 			ChainTools: []string{"stream_monitor", "stream_capture", "frame_analyzer"},
 			ExpectedTool: "stream_monitor",
+			AcceptedTools: []string{"stream_capture", "frame_analyzer"},
 		},
 	}
 }

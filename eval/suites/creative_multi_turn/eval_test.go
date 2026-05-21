@@ -29,13 +29,15 @@ func TestEval_CreativeMultiTurn(t *testing.T) {
 	testutil.RequireIntegration(t)
 
 	suite := &eval.EvalSuite{Name: "creative_multi_turn"}
-	rt := eval.NewLLMRuntime(t, "",
-		eval.WithSystemPrompt("You are a creative production assistant specializing in video and media content creation. Remember all details the user mentions across the conversation. Always respond concisely in Chinese."),
-	)
 
 	for _, tc := range creativeMultiTurnCases() {
 		tc := tc
 		t.Run(tc.Name, func(t *testing.T) {
+			// Each case gets its own runtime to ensure complete session isolation.
+			rt := eval.NewLLMRuntime(t, "",
+				eval.WithSystemPrompt("You are a creative production assistant specializing in video and media content creation. Remember all details the user mentions across the conversation. Always respond concisely in Chinese."),
+			)
+
 			passTurns := 0
 			totalChecked := 0
 
