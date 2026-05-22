@@ -61,20 +61,12 @@ func (a *App) viewNormal() tea.View {
 
 	view := lipgloss.JoinVertical(lipgloss.Left, parts...)
 
-	// Cap total height to prevent the live area from exceeding the terminal.
-	// In bubbletea inline mode, lines that scroll past the visible terminal
-	// become unreachable ghost content that can't be cleared on re-render.
-	if a.height > 0 {
-		lines := strings.Split(view, "\n")
-		maxLines := a.height - 1
-		if maxLines < 5 {
-			maxLines = 5
-		}
-		if len(lines) > maxLines {
-			lines = lines[len(lines)-maxLines:]
-			view = strings.Join(lines, "\n")
-		}
-	}
+	// Append CSI ED (Erase in Display, mode 0) to clear from cursor to end
+	// of screen. In bubbletea inline mode, when the live area shrinks (e.g.
+	// streaming finishes), cursor-up may not reach lines that scrolled past
+	// the terminal top, leaving "ghost" content below the new shorter view.
+	// \x1b[0J wipes those residual lines every frame.
+	view += "\x1b[0J"
 
 	return tea.NewView(view)
 }
