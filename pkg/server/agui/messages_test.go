@@ -327,6 +327,51 @@ func TestMessagesToRequest_PreloadHistoryWithToolCalls(t *testing.T) {
 	}
 }
 
+func TestMessagesToRequest_PreloadTrimsLeadingAssistant(t *testing.T) {
+	t.Parallel()
+	input := aguitypes.RunAgentInput{
+		ThreadID: "thread_trim",
+		Messages: []aguitypes.Message{
+			{Role: aguitypes.RoleAssistant, Content: "Welcome! How can I help?"},
+			{Role: aguitypes.RoleUser, Content: "generate an image"},
+		},
+	}
+	req := messagesToRequest(input, Identity{})
+	if req.Prompt != "generate an image" {
+		t.Errorf("Prompt = %q, want %q", req.Prompt, "generate an image")
+	}
+	if len(req.PreloadHistory) != 0 {
+		t.Errorf("PreloadHistory should be empty after trimming leading assistant, got %d", len(req.PreloadHistory))
+	}
+}
+
+func TestMessagesToRequest_PreloadTrimsMultipleLeadingAssistant(t *testing.T) {
+	t.Parallel()
+	input := aguitypes.RunAgentInput{
+		ThreadID: "thread_trim2",
+		Messages: []aguitypes.Message{
+			{Role: aguitypes.RoleAssistant, Content: "System init"},
+			{Role: aguitypes.RoleAssistant, Content: "Welcome!"},
+			{Role: aguitypes.RoleUser, Content: "first question"},
+			{Role: aguitypes.RoleAssistant, Content: "first answer"},
+			{Role: aguitypes.RoleUser, Content: "second question"},
+		},
+	}
+	req := messagesToRequest(input, Identity{})
+	if req.Prompt != "second question" {
+		t.Errorf("Prompt = %q, want %q", req.Prompt, "second question")
+	}
+	if len(req.PreloadHistory) != 2 {
+		t.Fatalf("PreloadHistory len = %d, want 2 (user+assistant after trim)", len(req.PreloadHistory))
+	}
+	if req.PreloadHistory[0].Role != "user" || req.PreloadHistory[0].Content != "first question" {
+		t.Errorf("PreloadHistory[0] = %+v, want user/first question", req.PreloadHistory[0])
+	}
+	if req.PreloadHistory[1].Role != "assistant" || req.PreloadHistory[1].Content != "first answer" {
+		t.Errorf("PreloadHistory[1] = %+v, want assistant/first answer", req.PreloadHistory[1])
+	}
+}
+
 func TestMessagesToRequest_SingleMessageNoPreload(t *testing.T) {
 	t.Parallel()
 	input := aguitypes.RunAgentInput{

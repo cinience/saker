@@ -59,6 +59,7 @@ func messagesToRequest(input aguitypes.RunAgentInput, identity Identity) api.Req
 	var preload []message.Message
 	if lastUserIdx > 0 {
 		preload = aguiMessagesToHistory(input.Messages[:lastUserIdx])
+		preload = trimLeadingAssistant(preload)
 	}
 
 	req := api.Request{
@@ -196,6 +197,17 @@ func mimeToBlockType(mimeType string) model.ContentBlockType {
 	default:
 		return ""
 	}
+}
+
+// trimLeadingAssistant removes leading assistant messages from preloaded
+// history that have no preceding user context. An orphaned assistant message
+// at the start biases the model into "continuation mode" and may cause it to
+// skip structured tool calls (e.g. ask_user_question).
+func trimLeadingAssistant(msgs []message.Message) []message.Message {
+	for len(msgs) > 0 && msgs[0].Role == "assistant" {
+		msgs = msgs[1:]
+	}
+	return msgs
 }
 
 // aguiMessagesToHistory converts AG-UI messages into saker message.Message
