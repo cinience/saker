@@ -117,6 +117,10 @@ cmd/saker/editor/dist/*
 !cmd/saker/editor/dist/.gitkeep
 cmd/desktop/frontend/dist/*
 !cmd/desktop/frontend/dist/.gitkeep
+pkg/cli/frontend/dist/*
+!pkg/cli/frontend/dist/.gitkeep
+pkg/cli/editor/dist/*
+!pkg/cli/editor/dist/.gitkeep
 
 # Local SDK state (not versioned)
 .saker/
