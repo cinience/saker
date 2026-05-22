@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"time"
 
+	"github.com/saker-ai/saker/pkg/metrics"
 	sandboxenv "github.com/saker-ai/saker/pkg/sandbox/env"
 	"github.com/saker-ai/saker/pkg/security"
 	"github.com/saker-ai/saker/pkg/tool"
@@ -368,8 +369,14 @@ func (b *BashTool) Execute(ctx context.Context, params map[string]interface{}) (
 		}
 		output := redactSecrets(combineOutput(res.Stdout, res.Stderr))
 		if err != nil {
+			metrics.SandboxExecutionsTotal.WithLabelValues("bash", metrics.StatusError).Inc()
 			return &tool.ToolResult{Success: false, Output: output, Data: data}, err
 		}
+		status := metrics.StatusOK
+		if res.ExitCode != 0 {
+			status = metrics.StatusError
+		}
+		metrics.SandboxExecutionsTotal.WithLabelValues("bash", status).Inc()
 		return &tool.ToolResult{Success: res.ExitCode == 0, Output: output, Data: data}, nil
 	}
 

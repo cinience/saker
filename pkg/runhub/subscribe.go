@@ -69,7 +69,9 @@ func (r *Run) Subscribe() (events <-chan Event, backfill []Event, unsub func()) 
 	s.lastReadAt.Store(time.Now().UnixNano())
 	r.subscribers = append(r.subscribers, s)
 	backfill = r.snapshotLocked()
+	metrics := r.metrics
 	r.mu.Unlock()
+	metrics.OnSubscribe()
 
 	var done atomic.Bool
 	unsub = func() {
@@ -85,6 +87,7 @@ func (r *Run) Subscribe() (events <-chan Event, backfill []Event, unsub func()) 
 		}
 		r.mu.Unlock()
 		s.closeChan()
+		metrics.OnUnsubscribe()
 	}
 	return s.ch, backfill, unsub
 }
@@ -120,7 +123,9 @@ func (r *Run) SubscribeSince(seq int) (events <-chan Event, backfill []Event, re
 	s := &subscriber{ch: make(chan Event, cap)}
 	s.lastReadAt.Store(time.Now().UnixNano())
 	r.subscribers = append(r.subscribers, s)
+	metrics := r.metrics
 	r.mu.Unlock()
+	metrics.OnSubscribe()
 
 	var done atomic.Bool
 	unsub = func() {
@@ -136,6 +141,7 @@ func (r *Run) SubscribeSince(seq int) (events <-chan Event, backfill []Event, re
 		}
 		r.mu.Unlock()
 		s.closeChan()
+		metrics.OnUnsubscribe()
 	}
 	return s.ch, backfill, true, unsub
 }
@@ -148,9 +154,11 @@ func (r *Run) closeAllSubscribers() {
 	subs := r.subscribers
 	r.subscribers = nil
 	r.closed = true
+	metrics := r.metrics
 	r.mu.Unlock()
 	for _, s := range subs {
 		s.closeChan()
+		metrics.OnUnsubscribe()
 	}
 }
 
@@ -182,9 +190,11 @@ func (r *Run) evictIdleSubscribers(now time.Time, timeout time.Duration) int {
 		}
 	}
 	r.subscribers = keep
+	metrics := r.metrics
 	r.mu.Unlock()
 	for _, s := range evicted {
 		s.closeChan()
+		metrics.OnUnsubscribe()
 	}
 	return len(evicted)
 }

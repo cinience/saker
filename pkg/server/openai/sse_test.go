@@ -92,3 +92,18 @@ func TestWriteComment(t *testing.T) {
 		t.Errorf("got %q, want comment frame", buf.String())
 	}
 }
+
+func BenchmarkWriteEvent(b *testing.B) {
+	var buf bytes.Buffer
+	evt := SSEEvent{
+		ID:    "test-id",
+		Event: "message",
+		Data:  map[string]any{"id": "chatcmpl-123", "object": "chat.completion.chunk", "model": "gpt-4", "choices": []map[string]any{{"index": 0, "delta": map[string]any{"content": "Hello world"}}}},
+	}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		buf.Reset()
+		WriteEvent(&buf, evt)
+	}
+}

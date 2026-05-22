@@ -100,6 +100,39 @@ var (
 		Name:      "tokens_total",
 		Help:      "Total tokens consumed by direction (input/output/cache_read/cache_creation).",
 	}, []string{"provider", "model", "direction"})
+
+	// CompactionTotal counts conversation compaction operations.
+	CompactionTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Namespace: "saker",
+		Subsystem: "compaction",
+		Name:      "total",
+		Help:      "Total compaction operations by outcome.",
+	}, []string{"status"})
+
+	// CompactionDuration measures wall-clock duration of compaction calls.
+	CompactionDuration = prometheus.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: "saker",
+		Subsystem: "compaction",
+		Name:      "duration_seconds",
+		Help:      "Compaction duration in seconds.",
+		Buckets:   []float64{0.5, 1, 2, 5, 10, 20, 30, 60},
+	}, []string{"status"})
+
+	// CompactionTokensSaved tracks tokens removed per compaction.
+	CompactionTokensSaved = prometheus.NewCounter(prometheus.CounterOpts{
+		Namespace: "saker",
+		Subsystem: "compaction",
+		Name:      "tokens_saved_total",
+		Help:      "Total input tokens saved by compaction.",
+	})
+
+	// SandboxExecutionsTotal counts sandbox code executions.
+	SandboxExecutionsTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Namespace: "saker",
+		Subsystem: "sandbox",
+		Name:      "executions_total",
+		Help:      "Total sandbox executions by language and outcome.",
+	}, []string{"language", "status"})
 )
 
 func init() {
@@ -112,6 +145,10 @@ func init() {
 		ModelRequestsTotal,
 		ModelRequestDuration,
 		ModelTokensTotal,
+		CompactionTotal,
+		CompactionDuration,
+		CompactionTokensSaved,
+		SandboxExecutionsTotal,
 	)
 }
 

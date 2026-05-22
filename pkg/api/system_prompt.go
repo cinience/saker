@@ -118,6 +118,25 @@ func sectionDoingTasks() string {
  - Report outcomes faithfully: if tests fail, say so with the relevant output; if you did not run a verification step, say that rather than implying it succeeded. Never claim "all tests pass" when output shows failures, and never characterize incomplete or broken work as done.`
 }
 
+// sectionDoingTasksCI is a focused variant for headless CI/eval execution.
+// It retains core task-execution principles (constraint adherence, verification,
+// code quality) while omitting user-interaction guidance (exploratory questions,
+// UI testing, user judgement deferral) that doesn't apply headless.
+func sectionDoingTasksCI() string {
+	return `# Task execution
+ - Read and understand the task requirements completely before starting. Strictly follow all constraints stated in the task — if the task says "only do X", do not do Y.
+ - Do not propose changes to code you haven't read. Read files first before suggesting modifications.
+ - Prefer editing existing files to creating new ones.
+ - If an approach fails, diagnose why before switching tactics — read the error, check your assumptions, try a focused fix. Don't retry the identical action blindly, but don't abandon a viable approach after a single failure either.
+ - Be careful not to introduce security vulnerabilities. Prioritize writing safe, secure, and correct code.
+ - Don't add features, refactor, or introduce abstractions beyond what the task requires. Don't design for hypothetical future requirements.
+ - Don't add error handling or validation for scenarios that can't happen. Only validate at system boundaries.
+ - Default to writing no comments. Only add one when the WHY is non-obvious.
+ - Before considering your work complete, verify it actually works: run the test, compile the code, check the output.
+ - After making changes, re-check that all original constraints are still satisfied. A fix that solves one problem but violates a stated constraint is not a valid solution.
+ - Report outcomes faithfully. Never claim success without evidence.`
+}
+
 func sectionActions() string {
 	return `# Executing actions with care
 
@@ -359,22 +378,33 @@ When the conversation grows long, some or all of the current context is summariz
 // buildDefaultSystemPrompt constructs the full default system prompt from all sections.
 // toolNames is a list of registered tool names (may be nil for generic guidance).
 func buildDefaultSystemPrompt(opts Options, env environmentInfo, toolNames []string) string {
-	sections := []string{
-		sectionIntro(),
-		sectionSystem(),
-		sectionDoingTasks(),
-		sectionActions(),
-		sectionUsingTools(toolNames),
-		sectionMultimodal(toolNames),
-		sectionCreativeTools(toolNames),
-		sectionToneAndStyle(),
-		sectionOutputEfficiency(),
-		sectionAgentTool(toolNames),
-		sectionSessionGuidance(toolNames, opts.EntryPoint),
-		sectionEnvironment(env),
-		sectionIdentity(env.ModelName),
-		sectionLanguage(opts.Language),
-		sectionContextManagement(),
+	var sections []string
+	if opts.EntryPoint == EntryPointCI {
+		sections = []string{
+			sectionIntro(),
+			sectionSystem(),
+			sectionDoingTasksCI(),
+			sectionUsingTools(toolNames),
+			sectionEnvironment(env),
+		}
+	} else {
+		sections = []string{
+			sectionIntro(),
+			sectionSystem(),
+			sectionDoingTasks(),
+			sectionActions(),
+			sectionUsingTools(toolNames),
+			sectionMultimodal(toolNames),
+			sectionCreativeTools(toolNames),
+			sectionToneAndStyle(),
+			sectionOutputEfficiency(),
+			sectionAgentTool(toolNames),
+			sectionSessionGuidance(toolNames, opts.EntryPoint),
+			sectionEnvironment(env),
+			sectionIdentity(env.ModelName),
+			sectionLanguage(opts.Language),
+			sectionContextManagement(),
+		}
 	}
 
 	var nonEmpty []string
@@ -389,27 +419,42 @@ func buildDefaultSystemPrompt(opts Options, env environmentInfo, toolNames []str
 // buildSystemPromptBlocks splits the system prompt into static (cacheable) and
 // dynamic (session-specific) blocks for prompt cache optimization.
 func buildSystemPromptBlocks(opts Options, env environmentInfo, toolNames []string) []string {
-	// Block 1: Static sections — cacheable across sessions
-	staticSections := []string{
-		sectionIntro(),
-		sectionSystem(),
-		sectionDoingTasks(),
-		sectionActions(),
-		sectionUsingTools(toolNames),
-		sectionMultimodal(toolNames),
-		sectionCreativeTools(toolNames),
-		sectionToneAndStyle(),
-		sectionOutputEfficiency(),
-		sectionAgentTool(toolNames),
-	}
+	var staticSections, dynamicSections []string
 
-	// Block 2: Dynamic sections — session-specific
-	dynamicSections := []string{
-		sectionSessionGuidance(toolNames, opts.EntryPoint),
-		sectionEnvironment(env),
-		sectionIdentity(env.ModelName),
-		sectionLanguage(opts.Language),
-		sectionContextManagement(),
+	if opts.EntryPoint == EntryPointCI {
+		// CI/eval mode: lean prompt focused on task execution and constraint
+		// adherence. Omits user-interaction, tone/style, confirmations, and
+		// media/creative sections that don't apply headless.
+		staticSections = []string{
+			sectionIntro(),
+			sectionSystem(),
+			sectionDoingTasksCI(),
+			sectionUsingTools(toolNames),
+		}
+		dynamicSections = []string{
+			sectionEnvironment(env),
+		}
+	} else {
+		// Interactive mode: full prompt with all sections.
+		staticSections = []string{
+			sectionIntro(),
+			sectionSystem(),
+			sectionDoingTasks(),
+			sectionActions(),
+			sectionUsingTools(toolNames),
+			sectionMultimodal(toolNames),
+			sectionCreativeTools(toolNames),
+			sectionToneAndStyle(),
+			sectionOutputEfficiency(),
+			sectionAgentTool(toolNames),
+		}
+		dynamicSections = []string{
+			sectionSessionGuidance(toolNames, opts.EntryPoint),
+			sectionEnvironment(env),
+			sectionIdentity(env.ModelName),
+			sectionLanguage(opts.Language),
+			sectionContextManagement(),
+		}
 	}
 
 	joinNonEmpty := func(parts []string) string {

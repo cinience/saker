@@ -169,6 +169,13 @@ var (
 		// two side-by-side without a unit mismatch.
 		Buckets: []float64{0.0001, 0.001, 0.005, 0.01, 0.05, 0.1, 0.25, 0.5, 1, 2, 5},
 	})
+
+	runhubSubscribersActive = prometheus.NewGauge(prometheus.GaugeOpts{
+		Namespace: "saker",
+		Subsystem: "runhub",
+		Name:      "subscribers_active",
+		Help:      "Current number of active SSE subscriber connections across all runs.",
+	})
 )
 
 // oversizedTenantCap bounds the cardinality of the runhub_oversized_events_total
@@ -194,6 +201,7 @@ func init() {
 		runhubSinkBreakerSkippedTotal,
 		runhubBatchSizeFlushed,
 		runhubBatchFlushDuration,
+		runhubSubscribersActive,
 	)
 	// Pre-instantiate every closed-enum label child so /metrics surfaces
 	// the series at value 0 from process start. Without this prometheus
@@ -345,3 +353,6 @@ func (runhubMetrics) OnBatchFlush(size int, dur time.Duration) {
 	}
 	runhubBatchFlushDuration.Observe(dur.Seconds())
 }
+
+func (runhubMetrics) OnSubscribe()   { runhubSubscribersActive.Inc() }
+func (runhubMetrics) OnUnsubscribe() { runhubSubscribersActive.Dec() }

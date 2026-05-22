@@ -239,21 +239,36 @@ func (c *Chat) View() string {
 	// Render unflushed messages (visible during active streaming).
 	c.renderMessages(&b, c.flushed, len(c.messages))
 
-	// Streaming buffer — ● dot on first line, space indent on continuation,
-	// cursor appended to the trailing line (no extra empty cursor row).
+	// Streaming buffer — ● dot on first line of a turn, space indent on
+	// continuation. Cursor appended to the trailing line.
 	if c.streaming && c.streamingBuffer.Len() > 0 {
 		cw := c.contentWidth()
 		text := strings.TrimRight(c.streamingBuffer.String(), "\n")
 		rendered := c.streamRenderer.Render(text, cw)
 		cursor := lipgloss.NewStyle().Foreground(c.styles.Theme.Primary).Render(IconCursor)
 		lines := strings.Split(rendered, "\n")
+
+		// Cap streaming lines to prevent the live area from exceeding the
+		// terminal height. Bubbletea inline mode can't clear lines that
+		// scroll into terminal scrollback, leaving "ghost" content below
+		// the input area.
+		maxLines := c.height - 5
+		if maxLines < 8 {
+			maxLines = 8
+		}
+		truncated := len(lines) > maxLines
+		if truncated {
+			lines = lines[len(lines)-maxLines:]
+		}
+
 		lastIdx := len(lines) - 1
+		firstInTurn := !truncated && c.isFirstAssistantInTurn(len(c.messages))
 		for i, line := range lines {
 			suffix := ""
 			if i == lastIdx {
 				suffix = " " + cursor
 			}
-			if i == 0 {
+			if i == 0 && firstInTurn {
 				dot := c.styles.AssistantDot.Render(IconCircle)
 				fmt.Fprintf(&b, "%s %s%s\n", dot, line, suffix)
 			} else {
@@ -301,7 +316,7 @@ func (c *Chat) renderMessages(b *strings.Builder, from, to int) {
 		case RoleUser:
 			c.renderUser(b, msg, cw)
 		case RoleAssistant:
-			c.renderAssistant(b, msg, cw)
+			c.renderAssistant(b, msg, cw, !c.isFirstAssistantInTurn(i))
 		case RoleTool:
 			c.renderTool(b, msg)
 		case RoleError:
@@ -349,14 +364,12 @@ func (c *Chat) renderUser(b *strings.Builder, msg ChatMsg, width int) {
 	b.WriteString("\n")
 }
 
-// renderAssistant renders an assistant message with ● dot on first line.
-// Continuation lines use space indentation only (no ⎿ symbol).
-// The ⎿ prefix is reserved for tool calls, keeping text clean and readable.
-//
-// Leading blank lines (often inserted by glamour's `document.block_prefix`)
-// are dropped, and runs of consecutive blank lines are folded down to one to
-// keep the chat area dense.
-func (c *Chat) renderAssistant(b *strings.Builder, msg ChatMsg, width int) {
+// renderAssistant renders an assistant message.
+// When continuation is false (first text in a response turn), the first line
+// gets a ● dot prefix. When continuation is true (text after a tool call),
+// all lines use space indentation only — matching claude-code's single-dot
+// response format.
+func (c *Chat) renderAssistant(b *strings.Builder, msg ChatMsg, width int, continuation bool) {
 	rendered := renderMarkdown(msg.Content, width)
 	lines := strings.Split(rendered, "\n")
 
@@ -369,29 +382,24 @@ func (c *Chat) renderAssistant(b *strings.Builder, msg ChatMsg, width int) {
 		}
 		prevBlank = isBlank
 
-		// Ensure lines without explicit ANSI color get bright foreground.
-		displayLine := line
-		if !strings.Contains(line, "\033[") {
-			displayLine = c.styles.AssistantText.Render(line)
-		}
-
-		if !firstWritten {
+		if !firstWritten && !continuation {
 			dot := c.styles.AssistantDot.Render(IconCircle)
-			fmt.Fprintf(b, "%s %s\n", dot, displayLine)
+			fmt.Fprintf(b, "%s %s\n", dot, line)
 			firstWritten = true
 			continue
 		}
-		fmt.Fprintf(b, " %s\n", displayLine)
+		firstWritten = true
+		fmt.Fprintf(b, " %s\n", line)
 	}
 }
 
-// renderTool renders a tool call compactly:
+// renderTool renders a tool call with ⎿ continuation prefix:
 //
 //	Pending:   ⎿  ● Read (file.go) …
 //	Complete:  ⎿  ✓ Read (file.go) — 42 lines
 //	Error:     ⎿  ✗ Read (file.go) — error message
 func (c *Chat) renderTool(b *strings.Builder, msg ChatMsg) {
-	dot := c.styles.AssistantDot.Render(IconCircle)
+	prefix := c.styles.ResponsePrefix.Render(responsePrefix)
 
 	// Build: icon + name + (params)
 	parts := []string{
@@ -412,11 +420,10 @@ func (c *Chat) renderTool(b *strings.Builder, msg ChatMsg) {
 		}
 	}
 
-	fmt.Fprintf(b, "%s %s\n", dot, strings.Join(parts, " "))
+	fmt.Fprintf(b, "%s%s\n", prefix, strings.Join(parts, " "))
 
 	// Show detail preview with ⎿ continuation prefix
 	if msg.ToolDetail != "" && msg.ToolStatus != "pending" {
-		prefix := c.styles.ResponsePrefix.Render(responsePrefix)
 		detailLines := strings.Split(msg.ToolDetail, "\n")
 		detailStyle := lipgloss.NewStyle().Foreground(c.styles.Theme.FgDim)
 		for _, line := range detailLines {
@@ -464,6 +471,22 @@ func (c *Chat) renderIM(b *strings.Builder, msg ChatMsg, width int) {
 	imLabel := lipgloss.NewStyle().Foreground(c.styles.Theme.Accent).Bold(true).Render("/im ")
 	question := lipgloss.NewStyle().Foreground(c.styles.Theme.FgDim).Width(width).Render(msg.Content)
 	fmt.Fprintf(b, "%s%s\n", imLabel, question)
+}
+
+// isFirstAssistantInTurn checks whether the message at index idx is the first
+// assistant content in its response turn. Returns true when there is no prior
+// assistant or tool message before the most recent user/btw/im message.
+func (c *Chat) isFirstAssistantInTurn(idx int) bool {
+	for i := idx - 1; i >= 0; i-- {
+		role := c.messages[i].Role
+		if role == RoleUser || role == RoleBtw || role == RoleIM {
+			return true
+		}
+		if role == RoleAssistant || role == RoleTool {
+			return false
+		}
+	}
+	return true
 }
 
 func (c *Chat) toolIcon(status string) string {

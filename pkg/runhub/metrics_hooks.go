@@ -84,6 +84,11 @@ type MetricsHooks interface {
 	// Notify calls. Operators chart the gap between the two histograms
 	// to detect NOTIFY storms or marshalling regressions.
 	OnBatchFlush(size int, dur time.Duration)
+	// OnSubscribe is called when a new SSE subscriber is registered.
+	OnSubscribe()
+	// OnUnsubscribe is called when a subscriber is removed (unsub, idle
+	// eviction, or run closure).
+	OnUnsubscribe()
 }
 
 // noopHooks is the default MetricsHooks used when none is provided. All
@@ -104,6 +109,8 @@ func (noopHooks) OnSinkBreakerState(string)                    {}
 func (noopHooks) OnSinkBreakerTransition(string, string)       {}
 func (noopHooks) OnSinkBreakerSkipped(int)                     {}
 func (noopHooks) OnBatchFlush(int, time.Duration)              {}
+func (noopHooks) OnSubscribe()                                 {}
+func (noopHooks) OnUnsubscribe()                               {}
 
 // NopMetricsHooks returns a MetricsHooks that ignores every call. Useful
 // for tests and for the MemoryHub default path.

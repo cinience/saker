@@ -112,6 +112,8 @@ func runEvalTerminalBench(stdout, stderr io.Writer, args []string) error {
 	var verifierEnv map[string]string
 	if *noVerifierMirror {
 		verifierEnv = map[string]string{}
+	} else {
+		verifierEnv = terminalbench.DefaultMirrorEnv
 	}
 
 	cfg := terminalbench.Config{

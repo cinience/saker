@@ -43,13 +43,6 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case StreamTextMsg:
 		a.chat.AppendStreamText(msg.Text)
 		a.smartSpinner.AddTokens(len(msg.Text))
-		// Flush streaming buffer periodically to prevent the live area from
-		// growing taller than the terminal and leaking into scrollback.
-		if a.chat.StreamingLineCount() > a.chat.FlushThreshold() {
-			a.chat.FinishStreaming()
-			cmds = append(cmds, a.flushChat())
-			a.chat.StartStreaming()
-		}
 
 	case StreamToolStartMsg:
 		a.chat.FinishStreaming()
@@ -760,7 +753,7 @@ func (a *App) handleSubmit(text string) (tea.Model, tea.Cmd) {
 
 	// Regular prompt.
 	a.chat.AddUserMessage(text)
-	a.flushChat()
+	flushCmd := a.flushChat()
 	a.chat.StartStreaming()
 	a.spinning = true
 	a.input.SetEnabled(false)
@@ -769,7 +762,7 @@ func (a *App) handleSubmit(text string) (tea.Model, tea.Cmd) {
 	runCtx, runCancel := context.WithCancel(a.ctx)
 	a.runCancel = runCancel
 	a.smartSpinner.Start()
-	return a, tea.Batch(a.smartSpinner.Tick(), a.runStream(runCtx, text))
+	return a, tea.Batch(flushCmd, a.smartSpinner.Tick(), a.runStream(runCtx, text))
 }
 
 // displaySandbox renders the sandbox backend name for /status, defaulting to "host".

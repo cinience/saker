@@ -60,6 +60,22 @@ func (a *App) viewNormal() tea.View {
 	parts = append(parts, inputView, statusView)
 
 	view := lipgloss.JoinVertical(lipgloss.Left, parts...)
+
+	// Cap total height to prevent the live area from exceeding the terminal.
+	// In bubbletea inline mode, lines that scroll past the visible terminal
+	// become unreachable ghost content that can't be cleared on re-render.
+	if a.height > 0 {
+		lines := strings.Split(view, "\n")
+		maxLines := a.height - 1
+		if maxLines < 5 {
+			maxLines = 5
+		}
+		if len(lines) > maxLines {
+			lines = lines[len(lines)-maxLines:]
+			view = strings.Join(lines, "\n")
+		}
+	}
+
 	return tea.NewView(view)
 }
 

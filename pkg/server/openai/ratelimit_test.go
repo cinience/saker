@@ -2,8 +2,10 @@ package openai
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"testing"
 	"time"
 
@@ -187,4 +189,53 @@ func TestRateLimiter_GCLoopRespectsContext(t *testing.T) {
 	// it in `go test -race` runs on CI.
 	time.Sleep(20 * time.Millisecond)
 	rl.Close()
+}
+
+func TestRateLimiter_ConcurrentAllowAndEvict(t *testing.T) {
+	rl := newRateLimiter(context.Background(), 100)
+	defer rl.Close()
+
+	var wg sync.WaitGroup
+	stop := make(chan struct{})
+	time.AfterFunc(500*time.Millisecond, func() { close(stop) })
+
+	// 20 goroutines calling Allow with mix of existing and new keys
+	for i := 0; i < 20; i++ {
+		wg.Add(1)
+		go func(id int) {
+			defer wg.Done()
+			for n := 0; ; n++ {
+				select {
+				case <-stop:
+					return
+				default:
+				}
+				// Mix of stable keys (hit fast path) and new keys (hit slow path)
+				var key string
+				if n%3 == 0 {
+					key = fmt.Sprintf("new-%d-%d", id, n)
+				} else {
+					key = fmt.Sprintf("stable-%d", id%5)
+				}
+				rl.Allow(key)
+			}
+		}(i)
+	}
+
+	// 1 goroutine calling evictIdle periodically
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for {
+			select {
+			case <-stop:
+				return
+			default:
+			}
+			rl.evictIdle(1 * time.Millisecond)
+			time.Sleep(5 * time.Millisecond)
+		}
+	}()
+
+	wg.Wait()
 }

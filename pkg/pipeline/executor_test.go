@@ -625,3 +625,227 @@ func TestFanOutStressHighConcurrency(t *testing.T) {
 		t.Fatalf("expected %d output artifacts, got %d", numArtifacts, len(result.Artifacts))
 	}
 }
+
+func TestMergeResults(t *testing.T) {
+	t.Run("BothEmpty", func(t *testing.T) {
+		got := MergeResults(Result{}, Result{})
+		if got.Output != "" || got.Summary != "" || len(got.Artifacts) != 0 || len(got.Items) != 0 || len(got.Lineage.Edges) != 0 {
+			t.Fatalf("expected zero-value result, got %+v", got)
+		}
+	})
+
+	t.Run("NextOutputOverridesBase", func(t *testing.T) {
+		got := MergeResults(Result{Output: "base"}, Result{Output: "next"})
+		if got.Output != "next" {
+			t.Fatalf("expected next output to override, got %q", got.Output)
+		}
+	})
+
+	t.Run("EmptyNextPreservesBaseOutput", func(t *testing.T) {
+		got := MergeResults(Result{Output: "base"}, Result{})
+		if got.Output != "base" {
+			t.Fatalf("expected base output preserved, got %q", got.Output)
+		}
+	})
+
+	t.Run("NextArtifactsReplaceBase", func(t *testing.T) {
+		base := Result{Artifacts: []artifact.ArtifactRef{
+			artifact.NewGeneratedRef("a1", artifact.ArtifactKindText),
+		}}
+		next := Result{Artifacts: []artifact.ArtifactRef{
+			artifact.NewGeneratedRef("a2", artifact.ArtifactKindImage),
+		}}
+		got := MergeResults(base, next)
+		if len(got.Artifacts) != 1 || got.Artifacts[0].ArtifactID != "a2" {
+			t.Fatalf("expected next artifacts to replace base, got %+v", got.Artifacts)
+		}
+	})
+
+	t.Run("ArtifactsAreIndependentCopies", func(t *testing.T) {
+		next := Result{Artifacts: []artifact.ArtifactRef{
+			artifact.NewGeneratedRef("a1", artifact.ArtifactKindText),
+		}}
+		got := MergeResults(Result{}, next)
+		// Mutate next after merge
+		next.Artifacts[0] = artifact.NewGeneratedRef("mutated", artifact.ArtifactKindText)
+		if got.Artifacts[0].ArtifactID != "a1" {
+			t.Fatalf("merge result should be independent of next, got %+v", got.Artifacts)
+		}
+	})
+
+	t.Run("LineageEdgesAccumulated", func(t *testing.T) {
+		base := Result{}
+		base.Lineage.AddEdge(
+			artifact.NewGeneratedRef("p1", artifact.ArtifactKindText),
+			artifact.NewGeneratedRef("c1", artifact.ArtifactKindText),
+			"step1",
+		)
+		next := Result{}
+		next.Lineage.AddEdge(
+			artifact.NewGeneratedRef("p2", artifact.ArtifactKindText),
+			artifact.NewGeneratedRef("c2", artifact.ArtifactKindText),
+			"step2",
+		)
+		got := MergeResults(base, next)
+		if len(got.Lineage.Edges) != 2 {
+			t.Fatalf("expected 2 lineage edges, got %d", len(got.Lineage.Edges))
+		}
+		if got.Lineage.Edges[0].Operation != "step1" || got.Lineage.Edges[1].Operation != "step2" {
+			t.Fatalf("lineage edges not accumulated correctly: %+v", got.Lineage.Edges)
+		}
+	})
+
+	t.Run("ItemsReplacedWhenNextHasItems", func(t *testing.T) {
+		base := Result{Items: []Result{{Output: "old"}}}
+		next := Result{Items: []Result{{Output: "new1"}, {Output: "new2"}}}
+		got := MergeResults(base, next)
+		if len(got.Items) != 2 || got.Items[0].Output != "new1" || got.Items[1].Output != "new2" {
+			t.Fatalf("expected next items to replace base, got %+v", got.Items)
+		}
+	})
+}
+
+func TestCloneInput(t *testing.T) {
+	t.Run("NilInput", func(t *testing.T) {
+		got := CloneInput(Input{})
+		if len(got.Artifacts) != 0 || got.Collections != nil || len(got.Items) != 0 {
+			t.Fatalf("expected zero-value clone, got %+v", got)
+		}
+	})
+
+	t.Run("PopulatedInputDeepCopy", func(t *testing.T) {
+		orig := Input{
+			Artifacts: []artifact.ArtifactRef{
+				artifact.NewGeneratedRef("a1", artifact.ArtifactKindText),
+			},
+			Collections: map[string][]artifact.ArtifactRef{
+				"frames": {artifact.NewGeneratedRef("f1", artifact.ArtifactKindImage)},
+			},
+			Items: []Result{{Output: "item1"}},
+		}
+		got := CloneInput(orig)
+
+		// Mutate original
+		orig.Artifacts[0] = artifact.NewGeneratedRef("mutated", artifact.ArtifactKindText)
+		orig.Collections["frames"][0] = artifact.NewGeneratedRef("mutated", artifact.ArtifactKindImage)
+		orig.Items[0].Output = "mutated"
+
+		if got.Artifacts[0].ArtifactID != "a1" {
+			t.Fatalf("clone artifacts should be independent, got %+v", got.Artifacts)
+		}
+		if got.Collections["frames"][0].ArtifactID != "f1" {
+			t.Fatalf("clone collections should be independent, got %+v", got.Collections)
+		}
+		if got.Items[0].Output != "item1" {
+			t.Fatalf("clone items should be independent, got %q", got.Items[0].Output)
+		}
+	})
+}
+
+func TestCloneCollections(t *testing.T) {
+	t.Run("Nil", func(t *testing.T) {
+		if got := CloneCollections(nil); got != nil {
+			t.Fatalf("expected nil, got %+v", got)
+		}
+	})
+
+	t.Run("EmptyMap", func(t *testing.T) {
+		if got := CloneCollections(map[string][]artifact.ArtifactRef{}); got != nil {
+			t.Fatalf("expected nil for empty map, got %+v", got)
+		}
+	})
+
+	t.Run("PopulatedMap", func(t *testing.T) {
+		orig := map[string][]artifact.ArtifactRef{
+			"frames": {
+				artifact.NewGeneratedRef("f1", artifact.ArtifactKindImage),
+				artifact.NewGeneratedRef("f2", artifact.ArtifactKindImage),
+			},
+		}
+		got := CloneCollections(orig)
+
+		// Mutate original
+		orig["frames"][0] = artifact.NewGeneratedRef("mutated", artifact.ArtifactKindImage)
+
+		if got["frames"][0].ArtifactID != "f1" {
+			t.Fatalf("clone should be independent, got %+v", got["frames"])
+		}
+		if len(got["frames"]) != 2 {
+			t.Fatalf("expected 2 refs, got %d", len(got["frames"]))
+		}
+	})
+}
+
+func TestInputFromResult(t *testing.T) {
+	prev := Input{
+		Artifacts: []artifact.ArtifactRef{
+			artifact.NewGeneratedRef("old_art", artifact.ArtifactKindText),
+		},
+		Collections: map[string][]artifact.ArtifactRef{
+			"frames": {artifact.NewGeneratedRef("f1", artifact.ArtifactKindImage)},
+		},
+		Items: []Result{{Output: "old_item"}},
+	}
+	res := Result{
+		Artifacts: []artifact.ArtifactRef{
+			artifact.NewGeneratedRef("new_art", artifact.ArtifactKindDocument),
+		},
+		Items: []Result{{Output: "new_item1"}, {Output: "new_item2"}},
+	}
+
+	got := InputFromResult(prev, res)
+
+	// Artifacts from result replace previous
+	if len(got.Artifacts) != 1 || got.Artifacts[0].ArtifactID != "new_art" {
+		t.Fatalf("expected result artifacts to replace previous, got %+v", got.Artifacts)
+	}
+	// Items from result replace previous
+	if len(got.Items) != 2 || got.Items[0].Output != "new_item1" {
+		t.Fatalf("expected result items to replace previous, got %+v", got.Items)
+	}
+	// Collections from previous preserved
+	if got.Collections["frames"][0].ArtifactID != "f1" {
+		t.Fatalf("expected previous collections preserved, got %+v", got.Collections)
+	}
+}
+
+func TestCloneResult(t *testing.T) {
+	t.Run("Empty", func(t *testing.T) {
+		got := CloneResult(Result{})
+		if got.Output != "" || len(got.Artifacts) != 0 || len(got.Items) != 0 || len(got.Lineage.Edges) != 0 {
+			t.Fatalf("expected zero-value result, got %+v", got)
+		}
+	})
+
+	t.Run("PopulatedIndependentCopy", func(t *testing.T) {
+		orig := Result{
+			Output: "hello",
+			Artifacts: []artifact.ArtifactRef{
+				artifact.NewGeneratedRef("a1", artifact.ArtifactKindText),
+			},
+			Items: []Result{{Output: "item1"}},
+		}
+		orig.Lineage.AddEdge(
+			artifact.NewGeneratedRef("p1", artifact.ArtifactKindText),
+			artifact.NewGeneratedRef("c1", artifact.ArtifactKindText),
+			"op",
+		)
+
+		got := CloneResult(orig)
+
+		// Mutate original after clone
+		orig.Artifacts[0] = artifact.NewGeneratedRef("mutated", artifact.ArtifactKindText)
+		orig.Items[0].Output = "mutated"
+		orig.Lineage.Edges[0].Operation = "mutated"
+
+		if got.Artifacts[0].ArtifactID != "a1" {
+			t.Fatalf("clone artifacts should be independent, got %+v", got.Artifacts)
+		}
+		if got.Items[0].Output != "item1" {
+			t.Fatalf("clone items should be independent, got %q", got.Items[0].Output)
+		}
+		if got.Lineage.Edges[0].Operation != "op" {
+			t.Fatalf("clone lineage should be independent, got %q", got.Lineage.Edges[0].Operation)
+		}
+	})
+}

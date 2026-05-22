@@ -214,7 +214,7 @@ func (s *runSession) markFinished() {
 
 // runSessionManager manages active run sessions.
 type runSessionManager struct {
-	mu       sync.Mutex
+	mu       sync.RWMutex
 	sessions map[string]*runSession // keyed by runID
 }
 
@@ -223,8 +223,8 @@ func newRunSessionManager() *runSessionManager {
 }
 
 func (m *runSessionManager) get(runID string) *runSession {
-	m.mu.Lock()
-	defer m.mu.Unlock()
+	m.mu.RLock()
+	defer m.mu.RUnlock()
 	return m.sessions[runID]
 }
 
@@ -241,8 +241,8 @@ func (m *runSessionManager) remove(runID string) {
 }
 
 func (m *runSessionManager) count() int {
-	m.mu.Lock()
-	defer m.mu.Unlock()
+	m.mu.RLock()
+	defer m.mu.RUnlock()
 	return len(m.sessions)
 }
 

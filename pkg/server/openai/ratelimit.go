@@ -3,6 +3,7 @@ package openai
 import (
 	"context"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -23,7 +24,7 @@ type rateLimiter struct {
 	rps   float64
 	burst int
 
-	mu       sync.Mutex
+	mu       sync.RWMutex
 	visitors map[string]*rateVisitor
 
 	stopCh chan struct{}
@@ -31,7 +32,7 @@ type rateLimiter struct {
 
 type rateVisitor struct {
 	limiter  *rate.Limiter
-	lastSeen time.Time
+	lastSeen atomic.Int64 // UnixNano timestamp
 }
 
 // newRateLimiter constructs a limiter and starts its background eviction
@@ -73,11 +74,11 @@ func (rl *rateLimiter) gcLoop(ctx context.Context) {
 }
 
 func (rl *rateLimiter) evictIdle(maxIdle time.Duration) {
-	cutoff := time.Now().Add(-maxIdle)
+	cutoff := time.Now().Add(-maxIdle).UnixNano()
 	rl.mu.Lock()
 	defer rl.mu.Unlock()
 	for k, v := range rl.visitors {
-		if v.lastSeen.Before(cutoff) {
+		if v.lastSeen.Load() < cutoff {
 			delete(rl.visitors, k)
 		}
 	}
@@ -91,13 +92,24 @@ func (rl *rateLimiter) Allow(tenantKey string) bool {
 	if tenantKey == "" {
 		tenantKey = "anonymous"
 	}
-	rl.mu.Lock()
+	// Fast path: existing tenant (RLock)
+	rl.mu.RLock()
 	v, ok := rl.visitors[tenantKey]
+	if ok {
+		v.lastSeen.Store(time.Now().UnixNano())
+		rl.mu.RUnlock()
+		return v.limiter.Allow()
+	}
+	rl.mu.RUnlock()
+
+	// Slow path: new tenant (Lock + double-check)
+	rl.mu.Lock()
+	v, ok = rl.visitors[tenantKey]
 	if !ok {
 		v = &rateVisitor{limiter: rate.NewLimiter(rate.Limit(rl.rps), rl.burst)}
 		rl.visitors[tenantKey] = v
 	}
-	v.lastSeen = time.Now()
+	v.lastSeen.Store(time.Now().UnixNano())
 	rl.mu.Unlock()
 	return v.limiter.Allow()
 }

@@ -3,36 +3,21 @@ package tui
 import (
 	"regexp"
 	"strings"
-	"sync"
-
-	"charm.land/glamour/v2"
 )
 
 var mdSyntaxRE = regexp.MustCompile(`(?m)(^#{1,6}\s|\*\*|__|~~|` + "```" + `|^>\s|^[-*+]\s|^\d+\.\s|\[.+\]\(.+\))`)
 
-var (
-	cachedRenderer      *glamour.TermRenderer
-	cachedRendererWidth int
-	cachedRendererMu    sync.Mutex
-)
+var currentTheme Theme
 
-func getOrCreateRenderer(width int) *glamour.TermRenderer {
-	cachedRendererMu.Lock()
-	defer cachedRendererMu.Unlock()
+func SetMarkdownTheme(t Theme) {
+	currentTheme = t
+}
 
-	if cachedRenderer != nil && cachedRendererWidth == width {
-		return cachedRenderer
+func defaultMDTheme() Theme {
+	if currentTheme == (Theme{}) {
+		return DefaultTheme()
 	}
-	r, err := glamour.NewTermRenderer(
-		glamour.WithStandardStyle("notty"),
-		glamour.WithWordWrap(width),
-	)
-	if err != nil {
-		return nil
-	}
-	cachedRenderer = r
-	cachedRendererWidth = width
-	return r
+	return currentTheme
 }
 
 func renderMarkdown(content string, width int) string {
@@ -42,15 +27,7 @@ func renderMarkdown(content string, width int) string {
 	if !mdSyntaxRE.MatchString(content) {
 		return content
 	}
-	r := getOrCreateRenderer(width)
-	if r == nil {
-		return content
-	}
-	result, err := r.Render(content)
-	if err != nil {
-		return content
-	}
-	return strings.TrimRight(result, "\n")
+	return mdRender(content, width, defaultMDTheme())
 }
 
 // StreamingRenderer caches rendered stable blocks to avoid re-rendering

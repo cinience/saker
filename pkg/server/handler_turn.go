@@ -445,10 +445,12 @@ func (h *Handler) MakePermissionHandler(threadID, turnID string) api.PermissionR
 		})
 
 		// Wait for frontend response, approval timeout, or context cancellation.
+		timeout := time.NewTimer(approvalTimeout)
+		defer timeout.Stop()
 		select {
 		case d := <-resultCh:
 			return d, nil
-		case <-time.After(approvalTimeout):
+		case <-timeout.C:
 			h.approvalMu.Lock()
 			delete(h.approvals, approvalID)
 			h.approvalMu.Unlock()

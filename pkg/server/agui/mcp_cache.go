@@ -3,6 +3,7 @@ package agui
 import (
 	"log/slog"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -15,14 +16,14 @@ const (
 // mcpCacheEntry holds a cached MCP registry for a thread.
 type mcpCacheEntry struct {
 	registry   *SessionMCPRegistry
-	lastAccess time.Time
+	lastAccess atomic.Int64 // UnixNano timestamp
 }
 
 // ThreadMCPCache provides thread-level caching of MCP registries so that
 // consecutive turns on the same thread reuse existing connections rather than
 // reconnecting each time.
 type ThreadMCPCache struct {
-	mu      sync.Mutex
+	mu      sync.RWMutex
 	entries map[string]*mcpCacheEntry
 	logger  *slog.Logger
 	stopCh  chan struct{}
@@ -56,7 +57,7 @@ func (c *ThreadMCPCache) evictExpired() {
 	defer c.mu.Unlock()
 	now := time.Now()
 	for id, entry := range c.entries {
-		if now.Sub(entry.lastAccess) > mcpCacheTTL {
+		if now.Sub(time.Unix(0, entry.lastAccess.Load())) > mcpCacheTTL {
 			entry.registry.Close()
 			delete(c.entries, id)
 			c.logger.Debug("mcp cache: evicted expired entry", "thread_id", id)
@@ -66,20 +67,28 @@ func (c *ThreadMCPCache) evictExpired() {
 
 // Get returns the cached registry for a thread, or nil if not cached / expired.
 func (c *ThreadMCPCache) Get(threadID string) *SessionMCPRegistry {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
+	c.mu.RLock()
 	entry, ok := c.entries[threadID]
 	if !ok {
+		c.mu.RUnlock()
 		return nil
 	}
-	if time.Since(entry.lastAccess) > mcpCacheTTL {
-		entry.registry.Close()
-		delete(c.entries, threadID)
+	if time.Since(time.Unix(0, entry.lastAccess.Load())) > mcpCacheTTL {
+		c.mu.RUnlock()
+		// Upgrade to write lock to evict
+		c.mu.Lock()
+		entry, ok = c.entries[threadID]
+		if ok && time.Since(time.Unix(0, entry.lastAccess.Load())) > mcpCacheTTL {
+			entry.registry.Close()
+			delete(c.entries, threadID)
+		}
+		c.mu.Unlock()
 		return nil
 	}
-	entry.lastAccess = time.Now()
-	return entry.registry
+	entry.lastAccess.Store(time.Now().UnixNano())
+	reg := entry.registry
+	c.mu.RUnlock()
+	return reg
 }
 
 // Put stores a registry in the cache, evicting stale entries if needed.
@@ -92,10 +101,9 @@ func (c *ThreadMCPCache) Put(threadID string, reg *SessionMCPRegistry) {
 		old.registry.Close()
 	}
 
-	c.entries[threadID] = &mcpCacheEntry{
-		registry:   reg,
-		lastAccess: time.Now(),
-	}
+	entry := &mcpCacheEntry{registry: reg}
+	entry.lastAccess.Store(time.Now().UnixNano())
+	c.entries[threadID] = entry
 
 	if len(c.entries) > mcpCacheMaxThreads {
 		c.evictOverflowLocked()
@@ -114,14 +122,14 @@ func (c *ThreadMCPCache) Remove(threadID string) {
 
 // GetServerNames returns the connected server names for a thread, or nil.
 func (c *ThreadMCPCache) GetServerNames(threadID string) []string {
-	c.mu.Lock()
+	c.mu.RLock()
 	entry, ok := c.entries[threadID]
 	if !ok {
-		c.mu.Unlock()
+		c.mu.RUnlock()
 		return nil
 	}
 	reg := entry.registry
-	c.mu.Unlock()
+	c.mu.RUnlock()
 	return reg.ServerNames()
 }
 
@@ -148,8 +156,8 @@ func (c *ThreadMCPCache) CloseAll() {
 
 // Size returns the number of cached entries.
 func (c *ThreadMCPCache) Size() int {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+	c.mu.RLock()
+	defer c.mu.RUnlock()
 	return len(c.entries)
 }
 
@@ -157,7 +165,7 @@ func (c *ThreadMCPCache) evictOverflowLocked() {
 	now := time.Now()
 	// First pass: remove expired entries.
 	for id, entry := range c.entries {
-		if now.Sub(entry.lastAccess) > mcpCacheTTL {
+		if now.Sub(time.Unix(0, entry.lastAccess.Load())) > mcpCacheTTL {
 			entry.registry.Close()
 			delete(c.entries, id)
 			c.logger.Debug("mcp cache: evicted expired entry", "thread_id", id)
@@ -166,11 +174,12 @@ func (c *ThreadMCPCache) evictOverflowLocked() {
 	// Second pass: if still over limit, evict oldest.
 	for len(c.entries) > mcpCacheMaxThreads {
 		var oldestID string
-		var oldestTime time.Time
+		var oldestNano int64
 		for id, entry := range c.entries {
-			if oldestID == "" || entry.lastAccess.Before(oldestTime) {
+			ts := entry.lastAccess.Load()
+			if oldestID == "" || ts < oldestNano {
 				oldestID = id
-				oldestTime = entry.lastAccess
+				oldestNano = ts
 			}
 		}
 		if oldestID == "" {

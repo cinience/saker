@@ -13,6 +13,7 @@ import (
 	corehooks "github.com/saker-ai/saker/pkg/core/hooks"
 	"github.com/saker-ai/saker/pkg/memory"
 	"github.com/saker-ai/saker/pkg/message"
+	"github.com/saker-ai/saker/pkg/metrics"
 	"github.com/saker-ai/saker/pkg/model"
 )
 
@@ -146,11 +147,17 @@ func (c *compactor) maybeCompact(ctx context.Context, hist *message.History, ses
 	}
 
 	// Try session memory compaction first (zero API cost).
+	compactStart := time.Now()
 	if c.cfg.SessionMemoryCompact.Enabled && c.memStore != nil {
 		res, err := c.sessionMemoryCompact(hist, snapshot, tokenCount)
 		if err == nil {
 			c.consecutiveFailures = 0
 			c.postCompact(sessionID, res, recorder)
+			metrics.CompactionTotal.WithLabelValues(metrics.StatusOK).Inc()
+			metrics.CompactionDuration.WithLabelValues(metrics.StatusOK).Observe(time.Since(compactStart).Seconds())
+			if saved := res.tokensBefore - res.tokensAfter; saved > 0 {
+				metrics.CompactionTokensSaved.Add(float64(saved))
+			}
 			return res, true, nil
 		}
 		slog.Warn("api: session memory compact failed, falling back to full compact", "error", err)
@@ -162,10 +169,17 @@ func (c *compactor) maybeCompact(ctx context.Context, hist *message.History, ses
 			return compactResult{}, false, nil
 		}
 		c.consecutiveFailures++
+		metrics.CompactionTotal.WithLabelValues(metrics.StatusError).Inc()
+		metrics.CompactionDuration.WithLabelValues(metrics.StatusError).Observe(time.Since(compactStart).Seconds())
 		return compactResult{}, false, err
 	}
 	c.consecutiveFailures = 0
 	c.postCompact(sessionID, res, recorder)
+	metrics.CompactionTotal.WithLabelValues(metrics.StatusOK).Inc()
+	metrics.CompactionDuration.WithLabelValues(metrics.StatusOK).Observe(time.Since(compactStart).Seconds())
+	if saved := res.tokensBefore - res.tokensAfter; saved > 0 {
+		metrics.CompactionTokensSaved.Add(float64(saved))
+	}
 	return res, true, nil
 }
 

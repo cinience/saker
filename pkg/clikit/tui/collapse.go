@@ -18,11 +18,17 @@ type CollapsedGroup struct {
 	EndIdx   int
 }
 
-// collapsibleTools lists tools that collapse when consecutive.
-var collapsibleTools = map[string]bool{
-	"Read": true,
-	"Grep": true,
-	"Glob": true,
+// collapsibleKey returns a normalised key for collapsing consecutive tool
+// calls. Tools whose names contain the same keyword are grouped together.
+// Returns "" if the tool should not be collapsed.
+func collapsibleKey(name string) string {
+	lower := strings.ToLower(name)
+	for _, kw := range []string{"read", "edit", "write", "bash", "grep", "glob", "lsp", "web_fetch", "webfetch", "web_search", "websearch"} {
+		if strings.Contains(lower, kw) {
+			return kw
+		}
+	}
+	return ""
 }
 
 // CollapseMessages scans messages and groups consecutive collapsible tool calls.
@@ -31,7 +37,11 @@ func CollapseMessages(messages []ChatMsg) []CollapsedGroup {
 	i := 0
 	for i < len(messages) {
 		msg := messages[i]
-		if msg.Role != RoleTool || !collapsibleTools[msg.ToolName] {
+		key := ""
+		if msg.Role == RoleTool {
+			key = collapsibleKey(msg.ToolName)
+		}
+		if key == "" {
 			i++
 			continue
 		}
@@ -45,7 +55,7 @@ func CollapseMessages(messages []ChatMsg) []CollapsedGroup {
 		group.Count = 1
 		j := i + 1
 
-		for j < len(messages) && messages[j].Role == RoleTool && messages[j].ToolName == msg.ToolName {
+		for j < len(messages) && messages[j].Role == RoleTool && collapsibleKey(messages[j].ToolName) == key {
 			group.Items = append(group.Items, messages[j].ToolParams)
 			group.Count++
 			if messages[j].ToolStatus != group.Status {
@@ -107,13 +117,26 @@ func RenderCollapsedGroup(g CollapsedGroup, styles Styles) string {
 }
 
 func toolGroupVerb(name string) string {
-	switch name {
-	case "Read":
+	key := collapsibleKey(name)
+	switch key {
+	case "read":
 		return "files read"
-	case "Grep":
+	case "edit":
+		return "edits"
+	case "write":
+		return "files written"
+	case "bash":
+		return "commands run"
+	case "grep":
 		return "searches"
-	case "Glob":
+	case "glob":
 		return "globs"
+	case "lsp":
+		return "lookups"
+	case "web_fetch", "webfetch":
+		return "pages fetched"
+	case "web_search", "websearch":
+		return "searches"
 	default:
 		return "calls"
 	}

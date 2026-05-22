@@ -371,6 +371,9 @@ func (h *countingHooks) OnBatchFlush(size int, dur time.Duration) {
 	h.batchFlushDurs = append(h.batchFlushDurs, dur)
 }
 
+func (h *countingHooks) OnSubscribe()   {}
+func (h *countingHooks) OnUnsubscribe() {}
+
 func (h *countingHooks) dropTotal() int {
 	h.mu.Lock()
 	defer h.mu.Unlock()

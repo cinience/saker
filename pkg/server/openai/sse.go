@@ -1,14 +1,20 @@
 package openai
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"strconv"
+	"sync"
 
 	"github.com/gin-gonic/gin"
 )
+
+var sseJSONPool = sync.Pool{
+	New: func() any { return new(bytes.Buffer) },
+}
 
 // PrepareSSE sets the response headers and disables gin's buffering for
 // the lifetime of the SSE stream. Returns the underlying flusher so the
@@ -70,14 +76,20 @@ func WriteEvent(w io.Writer, evt SSEEvent) error {
 		}
 	}
 
-	payload, err := json.Marshal(evt.Data)
-	if err != nil {
+	buf := sseJSONPool.Get().(*bytes.Buffer)
+	buf.Reset()
+	if err := json.NewEncoder(buf).Encode(evt.Data); err != nil {
+		sseJSONPool.Put(buf)
 		return fmt.Errorf("sse: marshal data: %w", err)
 	}
-	if _, err := fmt.Fprintf(w, "data: %s\n\n", payload); err != nil {
-		return err
+	// Encode appends a trailing newline; trim it
+	b := buf.Bytes()
+	if len(b) > 0 && b[len(b)-1] == '\n' {
+		b = b[:len(b)-1]
 	}
-	return nil
+	_, err := fmt.Fprintf(w, "data: %s\n\n", b)
+	sseJSONPool.Put(buf)
+	return err
 }
 
 // WriteDone writes the OpenAI streaming sentinel — `data: [DONE]\n\n` —
@@ -103,15 +115,21 @@ func WriteComment(w io.Writer, text string) error {
 // reason. EventSource implementations and the official OpenAI SDKs both
 // parse the standard `event:` line correctly.
 func WriteErrorEvent(w io.Writer, env ErrorEnvelope) error {
-	payload, err := json.Marshal(env)
-	if err != nil {
+	buf := sseJSONPool.Get().(*bytes.Buffer)
+	buf.Reset()
+	if err := json.NewEncoder(buf).Encode(env); err != nil {
+		sseJSONPool.Put(buf)
 		return fmt.Errorf("sse: marshal error envelope: %w", err)
 	}
+	b := buf.Bytes()
+	if len(b) > 0 && b[len(b)-1] == '\n' {
+		b = b[:len(b)-1]
+	}
 	if _, err := fmt.Fprintf(w, "event: error\n"); err != nil {
+		sseJSONPool.Put(buf)
 		return err
 	}
-	if _, err := fmt.Fprintf(w, "data: %s\n\n", payload); err != nil {
-		return err
-	}
-	return nil
+	_, err := fmt.Fprintf(w, "data: %s\n\n", b)
+	sseJSONPool.Put(buf)
+	return err
 }

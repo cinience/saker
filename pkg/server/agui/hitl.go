@@ -122,11 +122,13 @@ func (g *Gateway) makeAskQuestionHandler(runID string, sideCh chan<- sideEvent) 
 		g.deps.Logger.Info("question_request sent, waiting for answer",
 			"run_id", runID, "question_id", questionID)
 
+		timeout := time.NewTimer(hitlTimeout)
+		defer timeout.Stop()
 		select {
 		case answers := <-resultCh:
 			g.hitl.removeQuestion(runID)
 			return answers, nil
-		case <-time.After(hitlTimeout):
+		case <-timeout.C:
 			g.hitl.removeQuestion(runID)
 			return nil, fmt.Errorf("question timed out after %s without user response", hitlTimeout)
 		case <-ctx.Done():
@@ -160,11 +162,13 @@ func (g *Gateway) makePermissionHandler(runID string, sideCh chan<- sideEvent) a
 		g.deps.Logger.Info("approval_request sent, waiting for decision",
 			"run_id", runID, "approval_id", approvalID)
 
+		timeout := time.NewTimer(hitlTimeout)
+		defer timeout.Stop()
 		select {
 		case decision := <-resultCh:
 			g.hitl.removeApproval(runID)
 			return decision, nil
-		case <-time.After(hitlTimeout):
+		case <-timeout.C:
 			g.hitl.removeApproval(runID)
 			return coreevents.PermissionDeny, fmt.Errorf("approval timed out after %s", hitlTimeout)
 		case <-ctx.Done():

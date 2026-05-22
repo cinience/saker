@@ -98,10 +98,12 @@ func RunBridge(ctx context.Context, cfg BridgeConfig) {
 		}
 		_ = session.Close()
 
+		reconnect := time.NewTimer(500 * time.Millisecond)
 		select {
 		case <-ctx.Done():
+			reconnect.Stop()
 			return
-		case <-time.After(500 * time.Millisecond):
+		case <-reconnect.C:
 		}
 	}
 }

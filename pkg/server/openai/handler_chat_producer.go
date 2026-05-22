@@ -1,6 +1,7 @@
 package openai
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"strings"
@@ -25,6 +26,20 @@ func (g *Gateway) runChatProducer(eventCh <-chan api.StreamEvent, hubRun *runhub
 	filter := server.NewStreamArtifactFilter()
 	var assistantText strings.Builder
 
+	var jsonBuf bytes.Buffer
+	jsonEnc := json.NewEncoder(&jsonBuf)
+	marshalToBytes := func(v any) ([]byte, error) {
+		jsonBuf.Reset()
+		if err := jsonEnc.Encode(v); err != nil {
+			return nil, err
+		}
+		b := jsonBuf.Bytes()
+		if len(b) > 0 && b[len(b)-1] == '\n' {
+			b = b[:len(b)-1]
+		}
+		return append([]byte(nil), b...), nil // copy because hubRun.Publish may retain
+	}
+
 	finalStatus := runhub.RunStatusCompleted
 	for evt := range eventCh {
 		if evt.Type == api.EventError {
@@ -35,7 +50,7 @@ func (g *Gateway) runChatProducer(eventCh <-chan api.StreamEvent, hubRun *runhub
 		}
 		chunks, _ := builder.translate(evt, exposeTools, filter)
 		for _, ch := range chunks {
-			data, err := json.Marshal(ch)
+			data, err := marshalToBytes(ch)
 			if err != nil {
 				continue
 			}
@@ -51,7 +66,7 @@ func (g *Gateway) runChatProducer(eventCh <-chan api.StreamEvent, hubRun *runhub
 			Delta:        &ChatMessageOut{},
 			FinishReason: "stop",
 		})
-		if data, err := json.Marshal(chunk); err == nil {
+		if data, err := marshalToBytes(chunk); err == nil {
 			hubRun.Publish("chunk", data)
 		}
 	}
@@ -63,7 +78,7 @@ func (g *Gateway) runChatProducer(eventCh <-chan api.StreamEvent, hubRun *runhub
 	// path always consumes it for the response.usage field.
 	_ = includeUsage // SSE path filters by event Type, not by this flag
 	if chunk, ok := builder.usageChunk(); ok {
-		if data, err := json.Marshal(chunk); err == nil {
+		if data, err := marshalToBytes(chunk); err == nil {
 			hubRun.Publish("usage", data)
 		}
 	}

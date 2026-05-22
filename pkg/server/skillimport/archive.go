@@ -4,6 +4,7 @@ import (
 	"archive/tar"
 	"archive/zip"
 	"compress/gzip"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -11,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	git "github.com/go-git/go-git/v5"
 	transport "github.com/go-git/go-git/v5/plumbing/transport"
@@ -97,7 +99,14 @@ func isSSHRepoURL(repoURL string) bool {
 
 // DownloadArchive fetches an archive URL, extracts it, and returns the root directory.
 func DownloadArchive(archiveURL string) (string, func(), error) {
-	resp, err := http.Get(archiveURL)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, archiveURL, nil)
+	if err != nil {
+		return "", nil, fmt.Errorf("download archive: %w", err)
+	}
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return "", nil, fmt.Errorf("download archive: %w", err)
 	}

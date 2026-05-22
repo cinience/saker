@@ -50,7 +50,7 @@ WITH_MIRROR=0               # opt in to terminalbench.DefaultMirrorEnv (China fi
 NO_VERIFIER_MIRROR=0        # keep verifier mirror env ON so PyPI/GitHub fetches use domestic mirrors
 MIRRORS=()                  # repeated --mirror KEY=VAL pairs
 PROXY_URL="http://127.0.0.1:7890"  # default: route container traffic via local proxy
-USE_ACP=0                   # use full Saker Runtime via ACP protocol
+USE_ACP=1                   # use full Saker Runtime via ACP protocol
 ENV_FILE=".env"             # default: read model/provider config from repo-root .env
 # Safety nets for per-task spend. Picked well above typical TB2 task usage so a
 # normal run never trips them, but a runaway loop (or a regression in repeat-
@@ -91,6 +91,7 @@ while [[ $# -gt 0 ]]; do
         --mirror)             MIRRORS+=("$2"); shift 2 ;;
         --proxy)              PROXY_URL="$2"; shift 2 ;;
         --acp)                USE_ACP=1; shift ;;
+        --no-acp)             USE_ACP=0; shift ;;
         --env)                ENV_FILE="$2"; shift 2 ;;
         --max-tokens)         MAX_TOKENS="$2"; shift 2 ;;
         --max-budget-usd)     MAX_BUDGET_USD="$2"; shift 2 ;;

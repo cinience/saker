@@ -15,8 +15,9 @@ const (
 	IconError    = "✗"
 	IconDot      = "·"
 	IconBorder   = "│"
-	IconCursor   = "█"
-	IconResponse = "⎿" // Claude Code response prefix
+	IconCursor        = "█"
+	IconResponse      = "⎿" // Claude Code response prefix
+	IconBlockquoteBar = "▎" // U+258E, blockquote prefix
 )
 
 // Theme holds the color palette — matches Claude Code's dark theme.
@@ -33,6 +34,8 @@ type Theme struct {
 	Bg           color.Color // terminal black
 	PromptBorder color.Color // input border gray
 	UserMsgBg    color.Color // user message background
+	Permission   color.Color // inline code color (blue-purple)
+	Link         color.Color // hyperlink text color (blue)
 }
 
 // DetectTheme returns the appropriate theme based on terminal background.
@@ -58,6 +61,8 @@ func DefaultTheme() Theme {
 		Bg:           lipgloss.Color("#000000"), // black
 		PromptBorder: lipgloss.Color("#888888"), // mid grey
 		UserMsgBg:    lipgloss.Color("#373737"), // dark grey
+		Permission:   lipgloss.Color("#B1B9F9"), // inline code blue-purple
+		Link:         lipgloss.Color("#5B9BD5"), // hyperlink blue
 	}
 }
 
@@ -76,6 +81,8 @@ func LightTheme() Theme {
 		Bg:           lipgloss.Color("#FFFFFF"),
 		PromptBorder: lipgloss.Color("#AAAAAA"),
 		UserMsgBg:    lipgloss.Color("#EDEDED"), // light grey
+		Permission:   lipgloss.Color("#5769F7"), // inline code blue
+		Link:         lipgloss.Color("#2E5CA8"), // hyperlink blue
 	}
 }
 
